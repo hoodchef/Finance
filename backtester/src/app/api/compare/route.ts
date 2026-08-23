@@ -40,7 +40,7 @@ export async function POST(request: Request) {
       throw new ValidationError(`Compare at most ${MAX_ENTRIES} runs at once.`, 'entries');
     }
 
-    const provider = getProvider(body.provider);
+    const provider = getProvider();
     const results: BacktestResult[] = [];
 
     // Sequential on purpose: the price cache is warm for every run after the

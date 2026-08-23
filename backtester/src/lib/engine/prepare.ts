@@ -75,6 +75,14 @@ export async function prepareData({
     if (res.status === 'fulfilled' && res.value.bars.length) {
       seriesBySymbol.set(symbol, res.value);
       warnings.push(...checkSeries(res.value));
+      if (res.value.stale) {
+        warnings.push({
+          severity: 'warning',
+          code: 'stale-cache',
+          symbol,
+          message: `${symbol} was served from a cached copy retrieved ${res.value.fetchedAt.slice(0, 10)} because the data provider could not be reached. These are real prices, but the most recent sessions may be missing.`,
+        });
+      }
     } else {
       const reason =
         res.status === 'rejected'
@@ -456,6 +464,12 @@ export async function prepareData({
     symbol,
     source: s.source,
     synthetic: s.synthetic,
+    // When this series was retrieved, and the last date it actually covers.
+    // Both matter: a cached series can be fresh-looking but stale, and a live
+    // fetch can still be missing the most recent sessions.
+    fetchedAt: s.fetchedAt,
+    lastBarDate: s.bars.at(-1)?.date,
+    stale: s.stale === true,
   }));
 
   return {

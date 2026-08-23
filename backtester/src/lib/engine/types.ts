@@ -154,7 +154,15 @@ export interface PreparedData {
   /** Describes where the deflator came from; null when adjustment is off. */
   inflationSource: { label: string; synthetic: boolean } | null;
   periodsPerYear: number;
-  sources: Array<{ symbol: string; source: string; synthetic: boolean }>;
+  sources: Array<{
+    symbol: string;
+    source: string;
+    synthetic: boolean;
+    fetchedAt?: string;
+    lastBarDate?: string;
+    /** Served from an expired cache because the provider was unreachable. */
+    stale?: boolean;
+  }>;
   anySynthetic: boolean;
 }
 

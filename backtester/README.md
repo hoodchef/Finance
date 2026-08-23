@@ -5,7 +5,7 @@ historical market data, and see what actually drove the result.
 
 The engine is a deterministic, event-driven daily simulator that tracks share
 counts and cash through time. It is separate from the UI, has no React
-dependency, and is covered by 137 tests — including a parity check against an
+dependency, and is covered by 470 tests — including a parity check against an
 independently-computed reference.
 
 ```bash
@@ -310,6 +310,47 @@ interface MarketDataProvider {
 Swapping Yahoo for Polygon, Tiingo or EODHD means writing one class. The engine,
 metrics and UI never change.
 
+### Provider evaluation (August 2026)
+
+Providers were assessed on the criterion that actually decides whether a
+backtest is correct — corporate actions first, because a total return computed
+without dividends and splits is not approximately right, it is wrong.
+
+| Provider | Adjusted close, dividends, splits on the free tier | Free limit | Non-US | Commercial use | Verdict |
+|---|---|---|---|---|---|
+| **Yahoo Finance** | Yes | Unstated, throttles hard | Yes (`.TO`) | **No licence at all** | Default. Research only |
+| **Tiingo** | **Yes** — `adjClose`, `divCash`, `splitFactor` | 1,000/day, 500 symbols/mo | Limited | **Personal only, even at $30/mo** | Recommended free upgrade |
+| Alpha Vantage | **No** — adjusted close is premium | 25/day | Yes | — | **Rejected** |
+| Financial Modeling Prep | Partial | 250/day | **US only** on free | — | Rejected |
+| Nasdaq Data Link | **Discontinued** (WIKI, March 2018) | — | — | — | Rejected for prices |
+| EODHD | No on free; yes at $19.99/mo | 20/day | Yes, global | Enterprise plan | Best paid path |
+| Stooq | — | — | — | — | Behind a bot check |
+
+**Alpha Vantage was rejected on evidence, not preference.** Its own
+documentation states that `TIME_SERIES_DAILY_ADJUSTED` "is a premium API
+function". The free `TIME_SERIES_DAILY` returns raw OHLCV with no adjusted
+close, no dividends and no splits — a backtest on it would understate equity
+returns by roughly the dividend yield every year and produce nonsense at every
+split.
+
+### The licensing finding
+
+**No free provider is both corporate-action-complete and commercially
+licensable.** That is the structure of the market, not a gap in the search:
+market data is licensed, and redistribution costs money.
+
+- Yahoo is an undocumented endpoint with **no API agreement**. Fine for personal
+  research; not something to build a business on.
+- Tiingo's free *and* $30/month tiers are internal use only — "you may not
+  display or share the data with another person or organization."
+- EODHD's $19.99/month tier is likewise personal use; commercial needs their
+  enterprise plan.
+
+The application states this itself. `src/lib/market-data/licence.ts` records the
+terms per provider, Settings shows the active provider's licence and what
+commercialising would require, and `EVALUATED_AND_REJECTED` keeps the reasoning
+where it will be found rather than re-litigated.
+
 ### Yahoo Finance (default, no key)
 
 The verified data contract, asserted in `tests/market-data.test.ts` against a
@@ -326,23 +367,73 @@ recorded live response:
 free integrity check: every dividend is rederived from the adjusted close and
 compared to the reported amount.
 
-If the provider ever changes its convention, the suite fails at that assertion
-rather than producing quietly wrong backtests everywhere else.
+### Tiingo (recommended, needs a free key)
 
-### Demo provider (synthetic)
+```bash
+# .env.local
+TIINGO_API_KEY=your_key_here
+```
+
+Tiingo uses the **opposite** convention: raw prices with per-bar `divCash` and
+`splitFactor`. The series is declared `adjustment: 'raw'` and the engine applies
+splits to share counts itself — a path it already supports and tests. Absorbing
+that difference is exactly what the provider abstraction is for.
+
+### Verifying a provider before trusting it
+
+A provider that has not been checked against live data is not verified, however
+plausible its documentation. Every provider must clear the bar Yahoo did:
+
+```bash
+npm run verify:data
+```
+
+This fetches real data and asserts the contract — dividends reconcile with the
+adjusted close, the split convention matches what the provider declares, no
+unapplied splits, history deep enough for long-horizon work. It self-skips
+without a key, so the suite stays green offline.
+
+**Status: Yahoo is verified against recorded live data. Tiingo is implemented
+against its documented contract but has not been run against a live key here —
+run `npm run verify:data` after adding yours.**
+
+### When a provider is unreachable
+
+Yahoo throttles without warning, so this is routine rather than exceptional.
+
+- Requests retry with exponential backoff across both hosts.
+- If that fails and a cached copy exists, **real prices from an expired cache are
+  served** rather than failing the backtest — flagged `stale`, surfaced as a
+  warning, and shown in the provenance line under every result.
+- If no cache exists, the backtest **fails**. It never falls back to synthetic
+  data.
+
+### Demo mode (synthetic)
 
 ```bash
 npm run dev:demo     # http://localhost:3101
 ```
 
-A seeded geometric random walk with quarterly dividends and a realistic US
-trading calendar. Deterministic: the same ticker always produces the same
-series.
+A seeded random walk for offline exploration. **It is not market data**, and
+four separate mechanisms stop it being mistaken for it:
 
-**It is not market data**, and the product says so at every level — the provider
-declares `synthetic: true`, results carry a non-dismissible banner, and the CSV
-config export writes `Synthetic data,YES — NOT REAL MARKET DATA`. A backtest on
-invented prices that *looks* real is worse than no backtest.
+1. The provider is selected **server-side only**. `getProvider()` takes no
+   argument, so no request can ask for synthetic data. An unrecognised
+   `MARKET_DATA_PROVIDER` falls back to *real* data, never generated.
+2. Every synthetic series is stamped `synthetic: true`, propagating to
+   `dataSource.synthetic` on every result.
+3. Every surface that renders results shows a non-dismissible banner, and the
+   CSV config export writes `Synthetic data,YES — NOT REAL MARKET DATA`.
+4. `tests/data-integrity-guards.test.ts` enforces all of the above at source
+   level, including that a newly added results page cannot omit the banner.
+   Each guard was mutation-tested: reintroducing the hole fails a test.
+
+### Provenance shown with every result
+
+Each result carries where its prices came from, when they were retrieved, and
+the last session they cover — the *oldest* retrieval across all series, since a
+result is only as current as its stalest input. More than five days behind is
+called out explicitly.
 
 ### Caching
 

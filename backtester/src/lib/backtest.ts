@@ -7,6 +7,7 @@ import type {
 } from '@/lib/types';
 import { CASH_SYMBOL } from '@/lib/types';
 import { getProvider } from '@/lib/market-data';
+import { daysBetween, todayIso } from '@/lib/market-data/dates';
 import type { MarketDataProvider } from '@/lib/market-data/provider';
 import { prepareData } from '@/lib/engine/prepare';
 import { runEngine } from '@/lib/engine/engine';
@@ -84,7 +85,28 @@ export interface DataSourceInfo {
   providerLabel: string;
   providerDescription: string;
   synthetic: boolean;
-  symbols: Array<{ symbol: string; source: string; synthetic: boolean }>;
+  symbols: Array<{
+    symbol: string;
+    source: string;
+    synthetic: boolean;
+    fetchedAt?: string;
+    lastBarDate?: string;
+    stale?: boolean;
+  }>;
+  /**
+   * Oldest retrieval time across every series used. The oldest, not the
+   * newest: a result is only as current as its stalest input.
+   */
+  retrievedAt: string | null;
+  /**
+   * Most recent session any series covers, and how far behind today that is.
+   * A backtest run on Monday against data ending Thursday is not wrong, but the
+   * user should be told rather than left to assume it is current.
+   */
+  latestSessionDate: string | null;
+  dataAgeDays: number | null;
+  /** True when any series came from an expired cache after a provider failure. */
+  servedFromStaleCache: boolean;
 }
 
 export interface BacktestResult {
@@ -491,16 +513,43 @@ export async function runBacktest({
     warnings: dedupeWarnings(result.warnings),
     transactions,
     transactionsTruncated: result.transactions.length > transactions.length,
-    dataSource: {
-      providerId: provider.id,
-      providerLabel: provider.label,
-      providerDescription: provider.description,
-      synthetic: data.anySynthetic,
-      symbols: data.sources,
-    },
+    dataSource: buildDataSourceInfo(provider, data),
     engineVersion: ENGINE_VERSION,
     generatedAt: new Date().toISOString(),
     computeMs,
+  };
+}
+
+/**
+ * Assembles the provenance block shown under every result: who supplied the
+ * prices, when they were retrieved, and how current they are.
+ */
+function buildDataSourceInfo(
+  provider: MarketDataProvider,
+  data: PreparedData,
+): DataSourceInfo {
+  const retrievals = data.sources
+    .map((s) => s.fetchedAt)
+    .filter((d): d is string => Boolean(d))
+    .sort();
+  const sessions = data.sources
+    .map((s) => s.lastBarDate)
+    .filter((d): d is string => Boolean(d))
+    .sort();
+
+  const latestSessionDate = sessions.length ? sessions[sessions.length - 1] : null;
+
+  return {
+    providerId: provider.id,
+    providerLabel: provider.label,
+    providerDescription: provider.description,
+    synthetic: data.anySynthetic,
+    symbols: data.sources,
+    // Oldest retrieval: a result is only as current as its stalest input.
+    retrievedAt: retrievals.length ? retrievals[0] : null,
+    latestSessionDate,
+    dataAgeDays: latestSessionDate ? daysBetween(latestSessionDate, todayIso()) : null,
+    servedFromStaleCache: data.sources.some((s) => s.stale),
   };
 }
 
@@ -556,7 +605,12 @@ export async function runRebalanceAnalysis({
   portfolio: Pick<Portfolio, 'id' | 'name' | 'positions'>;
   config: BacktestConfig;
   provider?: MarketDataProvider;
-}): Promise<{ scenarios: RebalanceScenario[]; warnings: BacktestWarning[] }> {
+}): Promise<{
+  scenarios: RebalanceScenario[];
+  warnings: BacktestWarning[];
+  /** Provenance travels with every result, including derived studies. */
+  dataSource: DataSourceInfo;
+}> {
   const positions = portfolio.positions.filter((p) => p.symbol.trim());
   const data = await prepareData({ symbols: positions, config, provider });
 
@@ -594,5 +648,9 @@ export async function runRebalanceAnalysis({
     });
   }
 
-  return { scenarios, warnings: dedupeWarnings(data.warnings) };
+  return {
+    scenarios,
+    warnings: dedupeWarnings(data.warnings),
+    dataSource: buildDataSourceInfo(provider, data),
+  };
 }

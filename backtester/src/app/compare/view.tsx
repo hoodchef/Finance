@@ -37,6 +37,7 @@ import {
   makeDateTicks,
   tooltipDate,
 } from '@/components/charts/chart-chrome';
+import { DataFreshness, SyntheticDataBanner } from '@/components/results/panels';
 import { postBacktestCompare, type ApiError } from '@/hooks/use-backtest';
 import { useHydrated } from '@/hooks/use-hydrated';
 import { useWorkspace } from '@/store/workspace';
@@ -232,6 +233,10 @@ export function CompareView() {
 
         {results && results.length > 0 && (
           <div className={cn('space-y-5', pending && 'opacity-60')}>
+            {/* Comparison charts are as capable of misleading as any single
+                result, so the same provenance rules apply here. */}
+            <SyntheticDataBanner result={results[0]} />
+            <DataFreshness dataSource={results[0].dataSource} />
             <ComparisonChart results={results} />
             <ComparisonTable results={results} />
           </div>

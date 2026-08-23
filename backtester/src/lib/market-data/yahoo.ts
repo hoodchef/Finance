@@ -10,7 +10,7 @@ import type {
   SplitEvent,
 } from '@/lib/types';
 import { MarketDataError, UnknownSymbolError, type MarketDataProvider } from './provider';
-import { diskGet, diskSet, memoryGet, memorySet } from './cache';
+import { diskGetEntry, diskSet, memoryGet, memorySet } from './cache';
 import { toIso, todayIso, toUnixSeconds, unixToIso } from './dates';
 
 /**
@@ -269,15 +269,29 @@ export class YahooFinanceProvider implements MarketDataProvider {
     if (pending) return pending;
 
     const task = (async () => {
-      const cold = await diskGet(key);
-      if (cold) {
-        memorySet(key, cold);
-        return cold;
+      const cached = await diskGetEntry(key);
+      if (cached && !cached.expired) {
+        memorySet(key, cached.series);
+        return cached.series;
       }
-      const series = parseChart(symbol, await fetchChart(symbol));
-      memorySet(key, series);
-      void diskSet(key, series);
-      return series;
+
+      try {
+        const series = parseChart(symbol, await fetchChart(symbol));
+        memorySet(key, series);
+        void diskSet(key, series);
+        return series;
+      } catch (error) {
+        // The provider is unreachable. Real prices from an expired cache beat
+        // failing the whole backtest, and beat every alternative that involves
+        // inventing a number — but only if the result says so, which is what
+        // the `stale` flag carries through to the warnings and the UI.
+        if (cached) {
+          const stale: PriceSeries = { ...cached.series, stale: true };
+          memorySet(key, stale, 5 * 60 * 1000);
+          return stale;
+        }
+        throw error;
+      }
     })();
 
     inFlight.set(key, task);

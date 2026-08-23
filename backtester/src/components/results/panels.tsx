@@ -4,6 +4,7 @@ import * as React from 'react';
 import {
   AlertOctagon,
   AlertTriangle,
+  Database,
   Download,
   FlaskConical,
   Info,
@@ -52,6 +53,45 @@ export function SyntheticDataBanner({ result }: { result: BacktestResult }) {
         </p>
       </div>
     </div>
+  );
+}
+
+/**
+ * A compact, always-visible statement of where the numbers came from and how
+ * current they are. Provenance belongs next to the result, not only in a
+ * methodology block further down the page that nobody scrolls to.
+ */
+export function DataFreshness({ dataSource }: { dataSource: BacktestResult['dataSource'] }) {
+  const stale = dataSource.dataAgeDays != null && dataSource.dataAgeDays > 5;
+  return (
+    <span
+      className={cn(
+        'inline-flex flex-wrap items-center gap-x-1.5 text-2xs',
+        stale ? 'text-[hsl(var(--warning))]' : 'text-muted-foreground',
+      )}
+    >
+      <Database className="h-3 w-3" />
+      <span>{dataSource.providerLabel}</span>
+      {dataSource.latestSessionDate && (
+        <>
+          <span aria-hidden>·</span>
+          <span>data to {formatDate(dataSource.latestSessionDate)}</span>
+        </>
+      )}
+      {stale && (
+        <span>
+          ({dataSource.dataAgeDays} days behind — the market may have moved since)
+        </span>
+      )}
+      {dataSource.retrievedAt && (
+        <>
+          <span aria-hidden>·</span>
+          <span title={new Date(dataSource.retrievedAt).toLocaleString()}>
+            retrieved {new Date(dataSource.retrievedAt).toLocaleDateString()}
+          </span>
+        </>
+      )}
+    </span>
   );
 }
 
@@ -184,6 +224,24 @@ export function MethodologyPanel({ result }: { result: BacktestResult }) {
 
   const items: Array<[string, React.ReactNode]> = [
     ['Data source', `${dataSource.providerLabel}${dataSource.synthetic ? ' — SYNTHETIC' : ''}`],
+    [
+      'Data retrieved',
+      dataSource.retrievedAt
+        ? `${new Date(dataSource.retrievedAt).toLocaleString()}${
+            dataSource.symbols.length > 1 ? ' (oldest of the series used)' : ''
+          }`
+        : 'Not recorded',
+    ],
+    [
+      'Latest session covered',
+      dataSource.latestSessionDate
+        ? `${formatDate(dataSource.latestSessionDate)}${
+            dataSource.dataAgeDays != null && dataSource.dataAgeDays > 0
+              ? ` — ${dataSource.dataAgeDays} day${dataSource.dataAgeDays === 1 ? '' : 's'} before today`
+              : ''
+          }`
+        : 'Unknown',
+    ],
     ['Data frequency', 'Daily closing prices'],
     ['Price adjustment', 'Split-adjusted closes with dividends applied as separate cash events'],
     [
@@ -293,7 +351,12 @@ export function MethodologyPanel({ result }: { result: BacktestResult }) {
           <p className="mt-3 border-t border-border pt-3 text-2xs text-muted-foreground">
             Series loaded:{' '}
             {dataSource.symbols
-              .map((s) => `${s.symbol} (${s.source}${s.synthetic ? ', synthetic' : ''})`)
+              .map(
+                (s) =>
+                  `${s.symbol} (${s.source}${s.synthetic ? ', synthetic' : ''}${
+                    s.lastBarDate ? `, to ${s.lastBarDate}` : ''
+                  })`,
+              )
               .join(' · ')}
           </p>
         )}

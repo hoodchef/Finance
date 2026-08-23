@@ -2,7 +2,7 @@
 
 import * as React from 'react';
 import Link from 'next/link';
-import { AlertCircle, Dices, LineChart, Play, RefreshCw } from 'lucide-react';
+import { AlertCircle, Dices, FlaskConical, LineChart, Play, RefreshCw } from 'lucide-react';
 import { PageBody, PageHeader } from '@/components/layout/app-shell';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
@@ -22,13 +22,15 @@ import {
 } from '@/components/ui/table';
 import { InfoTip } from '@/components/ui/tooltip';
 import { postRebalanceAnalysis, type ApiError } from '@/hooks/use-backtest';
+import { DataFreshness } from '@/components/results/panels';
 import { ScenarioPanel } from '@/components/results/scenario-panel';
 import { useHydrated } from '@/hooks/use-hydrated';
 import { useWorkspace } from '@/store/workspace';
 import { formatCurrency, formatDate, formatNumber, formatPercent } from '@/lib/format';
 import { cn } from '@/lib/utils';
 
-type Scenario = Awaited<ReturnType<typeof postRebalanceAnalysis>>['scenarios'][number];
+type RebalanceResponse = Awaited<ReturnType<typeof postRebalanceAnalysis>>;
+type Scenario = RebalanceResponse['scenarios'][number];
 
 export function AnalyticsView() {
   const hydrated = useHydrated();
@@ -104,7 +106,8 @@ function RebalancingAnalysis({
   draft: ReturnType<typeof useWorkspace.getState>['draft'];
   config: ReturnType<typeof useWorkspace.getState>['config'];
 }) {
-  const [scenarios, setScenarios] = React.useState<Scenario[] | null>(null);
+  const [analysis, setAnalysis] = React.useState<RebalanceResponse | null>(null);
+  const scenarios = analysis?.scenarios ?? null;
   const [pending, setPending] = React.useState(false);
   const [error, setError] = React.useState<ApiError | null>(null);
   const controller = React.useRef<AbortController | null>(null);
@@ -121,7 +124,7 @@ function RebalancingAnalysis({
         config,
         ac.signal,
       );
-      if (!ac.signal.aborted) setScenarios(data.scenarios);
+      if (!ac.signal.aborted) setAnalysis(data);
     } catch (err) {
       if (!ac.signal.aborted) {
         setError(
@@ -195,6 +198,11 @@ function RebalancingAnalysis({
             {config.fees.tradingCostBps === 0 &&
               ' — with zero trading costs the higher-turnover rules are flattered'}
           </p>
+          {analysis && (
+            <div className="mt-1">
+              <DataFreshness dataSource={analysis.dataSource} />
+            </div>
+          )}
         </CardHeader>
 
         {error && (
@@ -212,6 +220,23 @@ function RebalancingAnalysis({
         {pending && !scenarios && (
           <CardContent>
             <Skeleton className="h-56 w-full" />
+          </CardContent>
+        )}
+
+        {analysis?.dataSource.synthetic && (
+          <CardContent>
+            <div
+              role="alert"
+              className="flex items-start gap-3 rounded-lg border-2 border-[hsl(var(--warning))] bg-[hsl(var(--warning))]/10 p-3"
+            >
+              <FlaskConical className="mt-0.5 h-4 w-4 shrink-0 text-[hsl(var(--warning))]" />
+              <p className="text-xs leading-relaxed">
+                <span className="font-semibold">These scenarios use synthetic data.</span> The
+                rebalancing rules below are compared against a seeded random walk, not against any
+                market. The comparison is internally consistent and tells you nothing about which
+                rule would have served you.
+              </p>
+            </div>
           </CardContent>
         )}
 

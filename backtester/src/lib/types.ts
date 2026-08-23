@@ -92,6 +92,12 @@ export interface PriceSeries {
   /** True when the numbers are generated rather than observed. */
   synthetic: boolean;
   fetchedAt: string;
+  /**
+   * True when this series was served from an expired cache because the
+   * provider could not be reached. The prices are real, but they may be
+   * missing recent sessions, and the user is told so.
+   */
+  stale?: boolean;
 }
 
 export interface DateRange {

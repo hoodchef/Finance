@@ -24,6 +24,7 @@ import {
   RiskTable,
 } from './tables';
 import {
+  DataFreshness,
   ExportMenu,
   InsightsPanel,
   MethodologyPanel,
@@ -65,6 +66,9 @@ export function ResultsDashboard({ result }: { result: BacktestResult }) {
             {result.totals.tradeCount} trades · {result.totals.rebalanceCount} rebalances ·
             computed in {result.computeMs} ms
           </p>
+          <div className="mt-1">
+            <DataFreshness dataSource={result.dataSource} />
+          </div>
         </div>
         <ExportMenu result={result} />
       </div>
