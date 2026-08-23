@@ -1,0 +1,97 @@
+// Postgres model for server-side portfolio storage.
+//
+// NOT WIRED IN. The running app keeps portfolios in browser local storage, so
+// it needs no database. This schema is the target for the migration described
+// in src/lib/storage.ts: implement PortfolioRepository against Prisma, point
+// the store at it, and nothing else changes.
+//
+//   npx prisma migrate dev --name init
+//
+// Note what is *not* here: no price or dividend tables. Market data is cached
+// on disk by the provider layer and is disposable — a warm cache is a
+// performance detail, never a source of truth, and a stale row in a prices
+// table is the easiest way to produce a wrong backtest that looks right.
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+model User {
+  id         String      @id @default(cuid())
+  email      String      @unique
+  name       String?
+  createdAt  DateTime    @default(now())
+  updatedAt  DateTime    @updatedAt
+  portfolios Portfolio[]
+  runs       BacktestRun[]
+}
+
+model Portfolio {
+  id        String     @id @default(cuid())
+  userId    String
+  user      User       @relation(fields: [userId], references: [id], onDelete: Cascade)
+  name      String
+  /// Set when the portfolio was created from a built-in preset.
+  presetId  String?
+  positions Position[]
+  runs      BacktestRun[]
+  createdAt DateTime   @default(now())
+  updatedAt DateTime   @updatedAt
+
+  @@index([userId, updatedAt])
+}
+
+model Position {
+  id          String    @id @default(cuid())
+  portfolioId String
+  portfolio   Portfolio @relation(fields: [portfolioId], references: [id], onDelete: Cascade)
+  symbol      String
+  /// Display name captured at the time the holding was added.
+  name        String?
+  /// Target weight as a percentage, e.g. 40 for 40%.
+  weight      Decimal   @db.Decimal(9, 4)
+  /// Annual fund expense ratio in percent. Null means "do not model one".
+  expenseRatio Decimal? @db.Decimal(7, 4)
+  /// Display order in the builder.
+  sortOrder   Int       @default(0)
+
+  @@index([portfolioId, sortOrder])
+}
+
+/// An executed backtest, kept so a result can be reopened by link.
+/// Only the inputs and the headline outputs are stored; the full daily ledger
+/// is recomputed on demand, because the engine is deterministic and storing
+/// derived series would let them drift from the code that produced them.
+model BacktestRun {
+  id          String    @id @default(cuid())
+  userId      String
+  user        User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  portfolioId String?
+  portfolio   Portfolio? @relation(fields: [portfolioId], references: [id], onDelete: SetNull)
+
+  /// Serialised BacktestConfig, exactly as the engine received it.
+  config        Json
+  /// Engine version, so an old run is never silently re-read under new maths.
+  engineVersion String
+  /// Provider id the prices came from, plus whether they were synthetic.
+  dataSource    String
+  synthetic     Boolean  @default(false)
+
+  effectiveStart DateTime @db.Date
+  effectiveEnd   DateTime @db.Date
+  finalValue     Decimal  @db.Decimal(20, 4)
+  totalReturn    Decimal  @db.Decimal(12, 8)
+  cagr           Decimal  @db.Decimal(12, 8)
+  volatility     Decimal  @db.Decimal(12, 8)
+  maxDrawdown    Decimal  @db.Decimal(12, 8)
+  sharpe         Decimal  @db.Decimal(12, 8)
+
+  createdAt DateTime @default(now())
+
+  @@index([userId, createdAt])
+}

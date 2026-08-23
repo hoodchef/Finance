@@ -1,0 +1,39 @@
+{
+  "version": "0.0.1",
+  "configurations": [
+    {
+      "name": "canpath",
+      "runtimeExecutable": "python3",
+      "runtimeArgs": [
+        "-m",
+        "http.server",
+        "8422",
+        "--directory",
+        "canpath"
+      ],
+      "port": 8422
+    },
+    {
+      "name": "backtester",
+      "runtimeExecutable": "npm",
+      "runtimeArgs": [
+        "--prefix",
+        "backtester",
+        "run",
+        "dev"
+      ],
+      "port": 3100
+    },
+    {
+      "name": "backtester-demo",
+      "runtimeExecutable": "npm",
+      "runtimeArgs": [
+        "--prefix",
+        "backtester",
+        "run",
+        "dev:demo"
+      ],
+      "port": 3101
+    }
+  ]
+}

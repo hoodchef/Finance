@@ -1,0 +1,16 @@
+node_modules
+
+# Build output
+.next
+dist
+out
+
+# Local environment and machine-specific settings
+.env
+.env.local
+.claude/settings.local.json
+
+# CanPath is its own repository (github.com/hoodchef/CanPath), checked out
+# here for convenience. Committing it would add a broken submodule pointer
+# rather than its files.
+canpath/
