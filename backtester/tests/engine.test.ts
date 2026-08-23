@@ -515,3 +515,76 @@ describe('regressions', () => {
     expect(r.warnings.some((w) => w.code === 'withdrawal-shortfall')).toBe(true);
   });
 });
+
+describe('price-return mode', () => {
+  const cal = makeCalendar('2020-01-02', 260);
+  const data = () =>
+    buildPrepared(cal, [
+      // A steady riser paying four quarterly dividends.
+      { symbol: 'A', prices: ramp(100, 130, 260), weight: 100, dividends: { 40: 1.5, 100: 1.5, 160: 1.5, 220: 1.5 } },
+    ]);
+
+  it('excludes dividends from the result entirely', () => {
+    const total = runEngine({
+      portfolio: portfolio([['A', 100]]),
+      config: testConfig({ dividends: 'reinvest' }),
+      data: data(),
+    });
+    const price = runEngine({
+      portfolio: portfolio([['A', 100]]),
+      config: testConfig({ dividends: 'ignore' }),
+      data: data(),
+    });
+
+    // No cash is credited and no shares are bought.
+    expect(price.totals.totalDividends).toBe(0);
+    expect(price.daily[price.daily.length - 1].cash).toBeCloseTo(0, 6);
+    expect(price.daily[price.daily.length - 1].positionShares.A).toBeCloseTo(100, 6);
+
+    // And the result is materially lower than the total return.
+    expect(price.totals.finalValue).toBeLessThan(total.totals.finalValue);
+  });
+
+  it('measures and reports what it left out rather than hiding it', () => {
+    const price = runEngine({
+      portfolio: portfolio([['A', 100]]),
+      config: testConfig({ dividends: 'ignore' }),
+      data: data(),
+    });
+
+    // 100 shares x 1.5 x four payments.
+    expect(price.totals.dividendsExcluded).toBeCloseTo(600, 6);
+
+    const warning = price.warnings.find((w) => w.code === 'price-return-only');
+    expect(warning, 'a price-return run must say so').toBeTruthy();
+    expect(warning!.severity).toBe('warning');
+    expect(warning!.message).toContain('PRICE returns');
+    expect(warning!.message).toContain('600.00');
+  });
+
+  it('equals a pure price series, confirming nothing else changed', () => {
+    const price = runEngine({
+      portfolio: portfolio([['A', 100]]),
+      config: testConfig({ dividends: 'ignore' }),
+      data: data(),
+    });
+    // 100 shares bought at 100, held to 130 — the dividends are simply absent.
+    expect(price.totals.finalValue).toBeCloseTo(13_000, 4);
+  });
+
+  it('leaves the default untouched, and reinvestment compounds', () => {
+    const defaulted = runEngine({
+      portfolio: portfolio([['A', 100]]),
+      config: testConfig(),
+      data: data(),
+    });
+
+    // More than the 600 a static 100 shares would receive: each reinvested
+    // dividend buys shares that collect the next one. That compounding is
+    // precisely what the price-return mode discards.
+    expect(defaulted.totals.totalDividends).toBeGreaterThan(600);
+    expect(defaulted.totals.totalDividends).toBeLessThan(650);
+    expect(defaulted.totals.dividendsExcluded).toBe(0);
+    expect(defaulted.warnings.some((w) => w.code === 'price-return-only')).toBe(false);
+  });
+});

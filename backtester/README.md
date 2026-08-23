@@ -5,7 +5,7 @@ historical market data, and see what actually drove the result.
 
 The engine is a deterministic, event-driven daily simulator that tracks share
 counts and cash through time. It is separate from the UI, has no React
-dependency, and is covered by 470 tests — including a parity check against an
+dependency, and is covered by 481 tests — including a parity check against an
 independently-computed reference.
 
 ```bash
@@ -427,6 +427,47 @@ four separate mechanisms stop it being mistaken for it:
 4. `tests/data-integrity-guards.test.ts` enforces all of the above at source
    level, including that a newly added results page cannot omit the banner.
    Each guard was mutation-tested: reintroducing the hole fails a test.
+
+### Symbol universe
+
+13,000+ US-listed securities — 5,637 ETFs and 7,499 equities — from the
+exchanges' own **Nasdaq Trader Symbol Directory**, which needs no API key,
+refreshes every trading day, and carries an explicit ETF flag so funds are known
+to be funds rather than inferred from their names.
+
+```bash
+npm run build:universe
+```
+
+It is a **server-side** index; at ~775 KB it has no business in a client bundle,
+so search runs behind `/api/search` and the browser receives only its matches.
+Beyond autocomplete, this means a mistyped ticker is caught before any request
+is made, and **search keeps working while the price provider is rate-limited** —
+exactly when someone is most likely to be retyping a symbol.
+
+Share-class notation is reconciled against the directory rather than guessed:
+`BRK.B` resolves to `BRK-B` because that symbol exists in the listing, while
+`XEQT.TO` is left alone because its dot is an exchange qualifier. A regex cannot
+tell those apart — `.B` is a share class and `.V` is the TSX Venture exchange.
+
+### Price return vs total return
+
+`dividends: 'ignore'` produces a **price return**. It exists for one honest
+purpose: comparing against a price index such as `^GSPC`, which itself excludes
+dividends.
+
+It is **not** a data-availability workaround — both providers supply dividends
+free — and the cost of using it otherwise is large:
+
+| | 30-year multiple with dividends | price only | result missing |
+|---|---|---|---|
+| Equity fund (1.8% yield) | 7.61× | 4.58× | 40% |
+| Dividend fund (3.5%) | 7.61× | 2.81× | 63% |
+| Bond fund (4.2%) | 7.61× | 2.29× | 70% |
+
+So every run that uses it measures the dividends it discarded and reports the
+figure, the methodology block states plainly that these are price returns, and
+the configuration panel shows the tradeoff at the point of choice.
 
 ### Provenance shown with every result
 

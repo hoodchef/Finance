@@ -1,5 +1,6 @@
 import { NextResponse } from 'next/server';
 import { getProvider, PROVIDER_LICENCES, EVALUATED_AND_REJECTED } from '@/lib/market-data';
+import { universeInfo } from '@/lib/market-data/universe';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -23,5 +24,6 @@ export async function GET() {
     allLicences: Object.values(PROVIDER_LICENCES),
     rejected: EVALUATED_AND_REJECTED,
     tiingoKeyConfigured: Boolean(process.env.TIINGO_API_KEY?.trim()),
+    universe: universeInfo(),
   });
 }

@@ -311,6 +311,7 @@ export function ConfigPanel() {
                 <SelectContent>
                   <SelectItem value="reinvest">Reinvest</SelectItem>
                   <SelectItem value="cash">Take as cash</SelectItem>
+                  <SelectItem value="ignore">Exclude (price return)</SelectItem>
                 </SelectContent>
               </Select>
             </Field>

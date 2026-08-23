@@ -181,7 +181,17 @@ export interface CashflowLeg {
   adjustForInflation: boolean;
 }
 
-export type DividendPolicy = 'reinvest' | 'cash';
+/**
+ * What happens to a cash dividend.
+ *
+ * `ignore` excludes them entirely, producing a PRICE RETURN rather than a total
+ * return. It exists for one honest reason: comparing against a price index such
+ * as ^GSPC, which itself excludes dividends. It is not a data-availability
+ * workaround — both supported providers supply dividends for free — and using
+ * it for a normal backtest understates results badly: roughly 40% of a 30-year
+ * equity result and 70% of a bond result. Every run that uses it says so.
+ */
+export type DividendPolicy = 'reinvest' | 'cash' | 'ignore';
 
 /**
  * How to handle assets whose price history starts after the requested start

@@ -257,3 +257,55 @@ describe('the provenance block is complete', () => {
     expect(d.symbols.length).toBeGreaterThan(0);
   });
 });
+
+describe('failure messages never steer users toward synthetic data', () => {
+  /**
+   * A provider outage is the exact moment a user is most likely to accept any
+   * suggestion that makes the error go away. Offering demo mode there is how
+   * generated numbers end up in a real decision, so the error paths are
+   * checked for it directly.
+   */
+  const providerSources = ['lib/market-data/yahoo.ts', 'lib/market-data/tiingo.ts'];
+
+  it.each(providerSources)('%s does not suggest demo mode on failure', (rel) => {
+    const body = read(rel);
+    const thrownMessages = body.match(/new MarketDataError\(\s*[\s\S]{0,600}?\)/g) ?? [];
+    expect(thrownMessages.length).toBeGreaterThan(0);
+    for (const message of thrownMessages) {
+      expect(
+        /demo (data )?provider|switch to demo|demo mode/i.test(message),
+        `${rel} offers demo mode in an error message`,
+      ).toBe(false);
+    }
+  });
+});
+
+describe('the symbol universe', () => {
+  it('is large enough to be a real universe, from a named source', async () => {
+    const { universeInfo, searchUniverse, normaliseSymbol } = await import(
+      '../src/lib/market-data/universe'
+    );
+    const info = universeInfo();
+
+    // The requirement was a four-digit universe; this is five.
+    expect(info.count).toBeGreaterThan(9_000);
+    expect(info.etfCount).toBeGreaterThan(2_000);
+    expect(info.equityCount).toBeGreaterThan(2_000);
+    expect(info.source).toContain('Nasdaq Trader');
+    expect(info.sourceUrl).toMatch(/^https:/);
+
+    // Resolves the common cases without a network call.
+    for (const t of ['SPY', 'QQQ', 'VTI', 'BND', 'AAPL', 'SCHD']) {
+      expect(searchUniverse(t, 1)[0]?.symbol, `${t} missing from universe`).toBe(t);
+    }
+    expect(normaliseSymbol('BRK.B')).toBe('BRK-B');
+  });
+
+  it('finds funds by description, not only by ticker', async () => {
+    const { searchUniverse } = await import('../src/lib/market-data/universe');
+    // Multi-word queries must match tokens anywhere in the name — the words are
+    // not adjacent in "Schwab US Dividend Equity ETF".
+    const hits = searchUniverse('schwab dividend', 5).map((r) => r.symbol);
+    expect(hits).toContain('SCHD');
+  });
+});

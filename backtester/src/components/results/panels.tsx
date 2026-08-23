@@ -254,12 +254,19 @@ export function MethodologyPanel({ result }: { result: BacktestResult }) {
         ? 'Matched in full'
         : `${formatDate(config.start)} → ${formatDate(config.end)}, narrowed to fit available history`,
     ],
-    ['Dividends included', 'Yes — every cash dividend the provider reports'],
+    [
+      'Dividends included',
+      config.dividends === 'ignore'
+        ? 'NO — dividends were excluded. These are price returns, not total returns.'
+        : 'Yes — every cash dividend the provider reports',
+    ],
     [
       'Dividend treatment',
       config.dividends === 'reinvest'
         ? 'Reinvested in the paying security at the closing price on the ex-dividend date, with no commission (modelled as a DRIP)'
-        : 'Credited to cash and left uninvested',
+        : config.dividends === 'cash'
+          ? 'Credited to cash and left uninvested'
+          : `Excluded entirely — ${formatCurrency(totals.dividendsExcluded)} of dividends paid over this period are not reflected in any figure on this page`,
     ],
     [
       'Return convention',

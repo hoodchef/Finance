@@ -32,6 +32,14 @@ interface DataSourceInfoResponse {
   } | null;
   rejected: Array<{ provider: string; reason: string }>;
   tiingoKeyConfigured: boolean;
+  universe: {
+    source: string;
+    sourceUrl: string;
+    builtAt: string;
+    count: number;
+    etfCount: number;
+    equityCount: number;
+  };
 }
 
 export function SettingsView() {
@@ -177,6 +185,36 @@ export function SettingsView() {
                     <code className="rounded bg-muted px-1 py-0.5 text-2xs">npm run verify:data</code>{' '}
                     to check its corporate-action conventions against live data before trusting a
                     backtest.
+                  </p>
+                </div>
+
+                <Separator />
+
+                <div>
+                  <p className="mb-1 text-xs font-medium">Symbol universe</p>
+                  <p className="text-xs leading-relaxed text-muted-foreground">
+                    <span className="numeric text-foreground">
+                      {source.universe.count.toLocaleString()}
+                    </span>{' '}
+                    US-listed securities —{' '}
+                    <span className="numeric text-foreground">
+                      {source.universe.etfCount.toLocaleString()}
+                    </span>{' '}
+                    ETFs and{' '}
+                    <span className="numeric text-foreground">
+                      {source.universe.equityCount.toLocaleString()}
+                    </span>{' '}
+                    equities — from the exchanges&rsquo; own directory. Search runs against this
+                    locally, so it keeps working even while the price provider is rate-limited.
+                    Refresh it with{' '}
+                    <code className="rounded bg-muted px-1 py-0.5 text-2xs">
+                      npm run build:universe
+                    </code>
+                    .
+                  </p>
+                  <p className="mt-1 text-2xs text-muted-foreground">
+                    {source.universe.source} · built{' '}
+                    {new Date(source.universe.builtAt).toLocaleDateString()}
                   </p>
                 </div>
 

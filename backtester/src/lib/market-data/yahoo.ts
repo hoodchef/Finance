@@ -101,12 +101,16 @@ function classify(instrumentType?: string): AssetClass {
   }
 }
 
-async function fetchJson<T>(url: string, timeoutMs = 20_000): Promise<T> {
+async function fetchJson<T>(url: string, timeoutMs = 20_000, cookie?: string): Promise<T> {
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), timeoutMs);
   try {
     const res = await fetch(url, {
-      headers: { 'User-Agent': USER_AGENT, Accept: 'application/json' },
+      headers: {
+        'User-Agent': USER_AGENT,
+        Accept: 'application/json',
+        ...(cookie ? { Cookie: cookie } : {}),
+      },
       signal: controller.signal,
       cache: 'no-store',
     });
@@ -122,6 +126,89 @@ async function fetchJson<T>(url: string, timeoutMs = 20_000): Promise<T> {
 }
 
 const sleep = (ms: number) => new Promise<void>((r) => setTimeout(r, ms));
+
+/**
+ * Yahoo session (cookie + crumb).
+ * ---------------------------------------------------------------------------
+ * Yahoo applies a far tighter throttle to unauthenticated callers than to ones
+ * carrying a session, which is why raw endpoint calls hit HTTP 429 within a few
+ * hundred requests while a browser — and yfinance, which performs this same
+ * handshake — keeps working.
+ *
+ * This is the ordinary session flow Yahoo's own web client uses: fetch a
+ * consent cookie, exchange it for a crumb, then present both. It is not a
+ * bypass of any protection — no challenge is solved and no limit is evaded; the
+ * requests are simply identified rather than anonymous, so the normal quota
+ * applies instead of the anonymous one.
+ *
+ * None of this changes the licensing position: Yahoo still publishes no API
+ * agreement for this endpoint, and it remains unsuitable for a commercial
+ * product. See `licence.ts`.
+ */
+interface YahooSession {
+  cookie: string;
+  crumb: string;
+  obtainedAt: number;
+}
+
+let session: YahooSession | null = null;
+let sessionPromise: Promise<YahooSession | null> | null = null;
+
+const SESSION_TTL_MS = 60 * 60 * 1000; // Crumbs stay valid for about an hour.
+
+async function establishSession(): Promise<YahooSession | null> {
+  try {
+    // 1. A cookie. `fc.yahoo.com` returns 404 by design but still sets one.
+    const seed = await fetch('https://fc.yahoo.com/', {
+      headers: { 'User-Agent': USER_AGENT, Accept: 'text/html,*/*' },
+      redirect: 'manual',
+      cache: 'no-store',
+      signal: AbortSignal.timeout(10_000),
+    }).catch(() => null);
+
+    const raw = seed?.headers.getSetCookie?.() ?? [];
+    const cookie = raw
+      .map((c) => c.split(';')[0])
+      .filter(Boolean)
+      .join('; ');
+    if (!cookie) return null;
+
+    // 2. Exchange it for a crumb.
+    const res = await fetch('https://query1.finance.yahoo.com/v1/test/getcrumb', {
+      headers: { 'User-Agent': USER_AGENT, Cookie: cookie, Accept: '*/*' },
+      cache: 'no-store',
+      signal: AbortSignal.timeout(10_000),
+    });
+    if (!res.ok) return null;
+
+    const crumb = (await res.text()).trim();
+    // A throttled response comes back as prose rather than a token.
+    if (!crumb || crumb.length > 32 || /\s/.test(crumb)) return null;
+
+    return { cookie, crumb, obtainedAt: Date.now() };
+  } catch {
+    return null;
+  }
+}
+
+/** Cached, de-duplicated session. Null means fall back to anonymous requests. */
+async function getSession(): Promise<YahooSession | null> {
+  if (session && Date.now() - session.obtainedAt < SESSION_TTL_MS) return session;
+  if (sessionPromise) return sessionPromise;
+
+  sessionPromise = establishSession().then((s) => {
+    session = s;
+    sessionPromise = null;
+    return s;
+  });
+  return sessionPromise;
+}
+
+/** Forces a fresh handshake, used once after an authenticated 401/403. */
+function invalidateSession(): void {
+  session = null;
+}
+
 
 /**
  * Alternates hosts and backs off on 429/503. Yahoo throttles aggressively when
@@ -140,18 +227,26 @@ async function fetchChart(symbol: string): Promise<YahooChartResponse> {
 
   let lastError: unknown;
   let wait = 700;
+
   for (let attempt = 0; attempt < 6; attempt++) {
     const host = CHART_HOSTS[attempt % CHART_HOSTS.length];
+    const auth = await getSession();
+    const url =
+      `${host}/v8/finance/chart/${encodeURIComponent(symbol)}?${qs}` +
+      (auth ? `&crumb=${encodeURIComponent(auth.crumb)}` : '');
+
     try {
-      return await fetchJson<YahooChartResponse>(
-        `${host}/v8/finance/chart/${encodeURIComponent(symbol)}?${qs}`,
-      );
+      return await fetchJson<YahooChartResponse>(url, 20_000, auth?.cookie);
     } catch (err) {
       lastError = err;
       const status =
         err instanceof MarketDataError ? /HTTP (\d+)/.exec(err.message)?.[1] : undefined;
+
       // 404 means the ticker really does not exist; retrying cannot help.
       if (status === '404') throw new UnknownSymbolError(symbol);
+      // A rejected crumb is worth exactly one fresh handshake.
+      if ((status === '401' || status === '403') && auth) invalidateSession();
+
       if (attempt < 5) {
         await sleep(wait);
         wait = Math.min(wait * 2, 8_000);
@@ -159,8 +254,14 @@ async function fetchChart(symbol: string): Promise<YahooChartResponse> {
     }
   }
 
+  // Deliberately does NOT suggest demo mode. Steering a user toward synthetic
+  // data when their real data fails is how invented numbers end up in a real
+  // decision; the fix is a provider with a published quota.
   throw new MarketDataError(
-    `Could not load market data for "${symbol}" — the data service refused repeated requests. Wait a minute and try again, or switch to the demo data provider in Settings.`,
+    `Yahoo Finance is rate-limiting this connection and would not return data for "${symbol}". ` +
+      `Yahoo publishes no quota and throttles without warning. The durable fix is a free Tiingo ` +
+      `key: sign up at tiingo.com, put TIINGO_API_KEY in .env.local, and restart — it allows ` +
+      `1,000 requests a day and provides dividends and splits. Otherwise wait an hour and retry.`,
     symbol,
     lastError,
   );

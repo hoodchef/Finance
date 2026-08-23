@@ -99,6 +99,8 @@ export interface EngineResult {
     /** finalValue − netInvested. */
     investmentGain: number;
     totalDividends: number;
+    /** Dividends deliberately excluded under the price-return policy. */
+    dividendsExcluded: number;
     totalManagementFees: number;
     totalExpenseRatioCost: number;
     totalTradingCosts: number;

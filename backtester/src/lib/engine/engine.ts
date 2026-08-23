@@ -117,6 +117,8 @@ export function runEngine(input: EngineInput): EngineResult {
   let totalContributions = 0;
   let totalWithdrawals = 0;
   let totalDividends = 0;
+  /** Dividends deliberately excluded under the price-return policy. */
+  let dividendsExcluded = 0;
   let totalManagementFees = 0;
   let totalExpenseRatioCost = 0;
   let totalTradingCosts = 0;
@@ -415,6 +417,14 @@ export function runEngine(input: EngineInput): EngineResult {
       const q = shares.get(a.symbol) ?? 0;
       if (q <= 0) continue;
       const gross = q * perShare;
+
+      // Price-return mode: the dividend is not credited, but it IS measured,
+      // so the result can state exactly how much return it left out rather
+      // than silently reporting a smaller number.
+      if (config.dividends === 'ignore') {
+        dividendsExcluded += gross;
+        continue;
+      }
       cash += gross;
       dividendIncome += gross;
       totalDividends += gross;
@@ -598,6 +608,16 @@ export function runEngine(input: EngineInput): EngineResult {
 
   const lotSummaries: LotSummary[] = [];
 
+  if (config.dividends === 'ignore' && dividendsExcluded > 0) {
+    const netInvestedForPct =
+      config.initialInvestment + totalContributions - totalWithdrawals || 1;
+    warnings.push({
+      severity: 'warning',
+      code: 'price-return-only',
+      message: `Dividends were excluded, so these are PRICE returns, not total returns. ${dividendsExcluded.toFixed(2)} of dividends were paid over this period and left out — about ${((dividendsExcluded / netInvestedForPct) * 100).toFixed(1)}% of the capital invested. Use this only to compare against a price index; for any question about what an investor would have earned, reinvest dividends instead.`,
+    });
+  }
+
   const ledgers: SymbolLedger[] = tradeable.map((a) => {
     const lot = lots.get(a.symbol)!;
     const endingShares = shares.get(a.symbol) ?? 0;
@@ -678,6 +698,7 @@ export function runEngine(input: EngineInput): EngineResult {
       finalValue,
       investmentGain,
       totalDividends,
+      dividendsExcluded,
       totalManagementFees,
       totalExpenseRatioCost,
       totalTradingCosts,
@@ -740,6 +761,7 @@ function emptyResult(
       finalValue: 0,
       investmentGain: 0,
       totalDividends: 0,
+      dividendsExcluded: 0,
       totalManagementFees: 0,
       totalExpenseRatioCost: 0,
       totalTradingCosts: 0,
