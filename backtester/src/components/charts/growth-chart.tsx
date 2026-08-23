@@ -13,7 +13,7 @@ import {
   XAxis,
   YAxis,
 } from 'recharts';
-import type { BacktestResult, SeriesPoint } from '@/lib/backtest';
+import { allSubjects, type SubjectSet } from '@/lib/analytics/subject';
 import { daysBetween } from '@/lib/market-data/dates';
 import { formatCurrency, formatCurrencyCompact, formatPercent } from '@/lib/format';
 import { cn, seriesColor } from '@/lib/utils';
@@ -32,9 +32,9 @@ import {
 type Scale = 'linear' | 'log';
 type Mode = 'value' | 'index';
 
+/** Keys are subject ids, so the row shape is dynamic by construction. */
 interface Row {
   date: string;
-  portfolio: number;
   contributed: number;
   [key: string]: number | string;
 }
@@ -49,49 +49,53 @@ const PORTFOLIO_COLOR = 'hsl(var(--primary))';
  * Benchmarks only make sense against the latter when contributions are on, so
  * the contributed-capital band is drawn only in value mode.
  */
-export function GrowthChart({ result }: { result: BacktestResult }) {
+export function GrowthChart({ subjects }: { subjects: SubjectSet }) {
   const [scale, setScale] = React.useState<Scale>('linear');
   const [mode, setMode] = React.useState<Mode>('value');
   const [hidden, setHidden] = React.useState<Set<string>>(new Set());
 
-  const hasContributions =
-    result.totals.totalContributions > 0 || result.totals.totalWithdrawals > 0;
+  const all = React.useMemo(() => allSubjects(subjects), [subjects]);
+
+  // The contributed-capital band only means something when capital actually
+  // moved, and only in dollar mode — an indexed series has no contributions.
+  const hasContributions = React.useMemo(
+    () => subjects.primary.series.some((p, i) => i > 0 && p.contributed !== subjects.primary.series[i - 1].contributed),
+    [subjects],
+  );
 
   const series = React.useMemo(
-    () => [
-      { key: 'portfolio', label: result.portfolio.name || 'Portfolio', color: PORTFOLIO_COLOR },
-      ...result.benchmarks.map((b, i) => ({
-        key: b.symbol,
-        label: b.symbol,
-        color: seriesColor(b.symbol, i + 1),
+    () =>
+      all.map((s, i) => ({
+        key: s.id,
+        label: s.label,
+        color: s.isPrimary ? PORTFOLIO_COLOR : seriesColor(s.id, i),
       })),
-    ],
-    [result],
+    [all],
   );
 
   const rows = React.useMemo(() => {
     const byDate = new Map<string, Row>();
     const base = mode === 'index' ? 10_000 : 1;
 
-    for (const p of result.series) {
+    for (const p of subjects.primary.series) {
       byDate.set(p.date, {
         date: p.date,
-        portfolio: mode === 'index' ? p.index * base : p.value,
+        [subjects.primary.id]: mode === 'index' ? p.index * base : p.value,
         contributed: p.contributed,
       });
     }
 
-    for (const bench of result.benchmarks) {
-      for (const p of bench.series) {
+    for (const c of subjects.comparisons) {
+      for (const p of c.series) {
         const row = byDate.get(p.date);
-        if (row) row[bench.symbol] = mode === 'index' ? p.index * base : p.value;
+        if (row) row[c.id] = mode === 'index' ? p.index * base : p.value;
       }
     }
 
-    return [...byDate.values()].sort((a, b) => (a.date < b.date ? -1 : 1));
-  }, [result, mode]);
+    return [...byDate.values()].sort((a, b) => (String(a.date) < String(b.date) ? -1 : 1));
+  }, [subjects, mode]);
 
-  const spanDays = daysBetween(result.effectiveStart, result.effectiveEnd);
+  const spanDays = daysBetween(subjects.primary.meta.start, subjects.primary.meta.end);
   const tickFormatter = makeDateTickFormatter(spanDays);
   const dateTicks = React.useMemo(() => makeDateTicks(rows.map((r) => r.date)), [rows]);
   const fmt = mode === 'index' ? formatCurrencyCompact : formatCurrencyCompact;
@@ -225,7 +229,7 @@ export function GrowthChart({ result }: { result: BacktestResult }) {
               content={({ active, payload, label }) => {
                 if (!active || !payload?.length) return null;
                 const row = payload[0].payload as Row;
-                const portfolioValue = Number(row.portfolio);
+                const portfolioValue = Number(row[subjects.primary.id]);
                 return (
                   <ChartTooltip
                     title={tooltipDate(label)}
@@ -278,8 +282,4 @@ export function GrowthChart({ result }: { result: BacktestResult }) {
       </div>
     </ChartFrame>
   );
-}
-
-export function contributedAtEnd(series: SeriesPoint[]): number {
-  return series.at(-1)?.contributed ?? 0;
 }

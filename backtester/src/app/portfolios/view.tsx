@@ -6,7 +6,6 @@ import { useRouter } from 'next/navigation';
 import {
   Briefcase,
   Copy,
-  GitCompare,
   MoreHorizontal,
   Pencil,
   Play,
@@ -43,12 +42,10 @@ export function PortfoliosView() {
   const router = useRouter();
   const hydrated = useHydrated();
   const portfolios = useWorkspace((s) => s.portfolios);
-  const compareIds = useWorkspace((s) => s.compareIds);
   const loadPortfolio = useWorkspace((s) => s.loadPortfolio);
   const duplicatePortfolio = useWorkspace((s) => s.duplicatePortfolio);
   const renamePortfolio = useWorkspace((s) => s.renamePortfolio);
   const deletePortfolio = useWorkspace((s) => s.deletePortfolio);
-  const toggleCompare = useWorkspace((s) => s.toggleCompare);
   const clearDraft = useWorkspace((s) => s.clearDraft);
 
   const [renaming, setRenaming] = React.useState<{ id: string; name: string } | null>(null);
@@ -66,14 +63,6 @@ export function PortfoliosView() {
         description="Saved allocations. Everything here lives in this browser — nothing is uploaded."
         actions={
           <>
-            {compareIds.length > 1 && (
-              <Button asChild variant="outline" size="sm">
-                <Link href="/compare">
-                  <GitCompare />
-                  Compare {compareIds.length}
-                </Link>
-              </Button>
-            )}
             <Button
               size="sm"
               onClick={() => {
@@ -114,7 +103,6 @@ export function PortfoliosView() {
           <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
             {portfolios.map((p) => {
               const total = totalWeight(p.positions);
-              const selected = compareIds.includes(p.id);
               return (
                 <article
                   key={p.id}
@@ -148,10 +136,6 @@ export function PortfoliosView() {
                         <DropdownMenuItem onSelect={() => duplicatePortfolio(p.id)}>
                           <Copy />
                           Duplicate
-                        </DropdownMenuItem>
-                        <DropdownMenuItem onSelect={() => toggleCompare(p.id)}>
-                          <GitCompare />
-                          {selected ? 'Remove from comparison' : 'Add to comparison'}
                         </DropdownMenuItem>
                         <DropdownMenuSeparator />
                         <DropdownMenuItem
@@ -187,7 +171,6 @@ export function PortfoliosView() {
                     {Math.abs(total - 100) > 0.005 && (
                       <Badge variant="warning">{total}% allocated</Badge>
                     )}
-                    {selected && <Badge variant="primary">In comparison</Badge>}
                     <div className="flex-1" />
                     <Button size="sm" variant="outline" onClick={() => openInBuilder(p.id)}>
                       <Play />

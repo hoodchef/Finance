@@ -2,6 +2,7 @@
 
 import * as React from 'react';
 import type { BacktestResult } from '@/lib/backtest';
+import { fromBacktest } from '@/lib/analytics/adapters';
 import { formatDate } from '@/lib/format';
 import { Badge } from '@/components/ui/badge';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
@@ -42,6 +43,8 @@ import { PeriodReturnsTable } from './period-returns';
  */
 export function ResultsDashboard({ result }: { result: BacktestResult }) {
   const [selectedAsset, setSelectedAsset] = React.useState<string | null>(null);
+  // One conversion at the boundary; every chart below is origin-agnostic.
+  const subjects = React.useMemo(() => fromBacktest(result), [result]);
 
   return (
     <div className="space-y-5">
@@ -83,13 +86,13 @@ export function ResultsDashboard({ result }: { result: BacktestResult }) {
         </TabsList>
 
         <TabsContent value="performance" className="space-y-5">
-          <GrowthChart result={result} />
+          <GrowthChart subjects={subjects} />
           <RealTermsPanel result={result} />
           <BenchmarkTable result={result} />
         </TabsContent>
 
         <TabsContent value="risk" className="space-y-5">
-          <DrawdownChart result={result} />
+          <DrawdownChart subjects={subjects} />
           <DrawdownTable result={result} />
           <CorrelationPanel result={result} />
           <RiskTable result={result} />

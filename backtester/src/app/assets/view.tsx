@@ -17,6 +17,7 @@ import { RiskTable, DrawdownTable } from '@/components/results/tables';
 import { MethodologyPanel, SyntheticDataBanner, WarningsPanel } from '@/components/results/panels';
 import { KpiGrid } from '@/components/results/kpi-grid';
 import { useBacktest } from '@/hooks/use-backtest';
+import { fromBacktest } from '@/lib/analytics/adapters';
 import { useWorkspace } from '@/store/workspace';
 import { useHydrated } from '@/hooks/use-hydrated';
 import { RANGE_PRESETS, MAX_HISTORY_START } from '@/lib/defaults';
@@ -183,8 +184,8 @@ export function AssetsView() {
             </div>
             <WarningsPanel warnings={result.warnings} />
             <KpiGrid result={result} />
-            <GrowthChart result={result} />
-            <DrawdownChart result={result} />
+            <GrowthChart subjects={fromBacktest(result)} />
+            <DrawdownChart subjects={fromBacktest(result)} />
             <DrawdownTable result={result} />
             <AnnualReturnsChart result={result} />
             <MonthlyHeatmap monthly={result.metrics.monthly} annual={result.metrics.annual} />

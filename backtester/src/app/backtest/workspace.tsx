@@ -48,6 +48,7 @@ export function BacktestWorkspace() {
   const draft = useWorkspace((s) => s.draft);
   const config = useWorkspace((s) => s.config);
   const saveDraft = useWorkspace((s) => s.saveDraft);
+  const saveRun = useWorkspace((s) => s.saveRun);
   const { result, error, pending, run } = useBacktest();
 
   // Only affects layouts below `lg`; the desktop grid shows everything at once.
@@ -70,8 +71,14 @@ export function BacktestWorkspace() {
     if (validHoldings.length === 0 || pending) return;
     setMobileView('results');
     const outcome = await run(draft, config);
-    if (outcome) setRanSignature(inputSignature(draft, config));
-  }, [validHoldings.length, pending, run, draft, config]);
+    if (outcome) {
+      setRanSignature(inputSignature(draft, config));
+      // Every completed run is recorded with an immutable snapshot of the
+      // portfolio and config behind it, so a later edit cannot rewrite what
+      // this result measured.
+      saveRun(outcome);
+    }
+  }, [validHoldings.length, pending, run, draft, config, saveRun]);
 
   // A shared link is untrusted input, so it goes through the same validation a
   // typed request does before any of it reaches the store.

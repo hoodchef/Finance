@@ -6,6 +6,8 @@ import type { BacktestConfig, CashflowLeg, Portfolio, Position } from '@/lib/typ
 import { defaultConfig } from '@/lib/defaults';
 import { PRESETS, type PortfolioPreset } from '@/lib/presets';
 import { uid } from '@/lib/utils';
+import { createRun, type SavedRun } from '@/lib/runs';
+import type { BacktestResult } from '@/lib/backtest';
 
 /**
  * All persisted user state lives here, in browser storage.
@@ -44,8 +46,13 @@ export interface WorkspaceState {
   portfolios: Portfolio[];
   draft: Portfolio;
   config: BacktestConfig;
-  /** Portfolio ids selected on the Compare page. */
-  compareIds: string[];
+  /**
+   * Completed backtests, each holding an immutable snapshot of the portfolio
+   * and config it ran against. Editing a portfolio never alters a saved run.
+   */
+  runs: SavedRun[];
+  /** Run ids selected for comparison. Runs, not portfolios — see `lib/runs`. */
+  compareRunIds: string[];
 
   setDraft: (p: Portfolio) => void;
   renameDraft: (name: string) => void;
@@ -73,8 +80,13 @@ export interface WorkspaceState {
   addBenchmark: (symbol: string) => void;
   removeBenchmark: (symbol: string) => void;
 
-  toggleCompare: (id: string) => void;
-  setCompareIds: (ids: string[]) => void;
+
+  saveRun: (result: BacktestResult, label?: string) => SavedRun;
+  renameRun: (runId: string, label: string) => void;
+  deleteRun: (runId: string) => void;
+  clearRuns: () => void;
+  toggleCompareRun: (runId: string) => void;
+  setCompareRunIds: (ids: string[]) => void;
 }
 
 const touch = (p: Portfolio): Portfolio => ({ ...p, updatedAt: new Date().toISOString() });
@@ -87,7 +99,8 @@ export const useWorkspace = create<WorkspaceState>()(
       portfolios: [],
       draft: portfolioFromPreset(PRESETS[2]), // 60/40 — a sensible first run.
       config: defaultConfig(),
-      compareIds: [],
+      runs: [],
+      compareRunIds: [],
 
       setDraft: (p) => set({ draft: touch(p) }),
       renameDraft: (name) => set((s) => ({ draft: touch({ ...s.draft, name }) })),
@@ -216,7 +229,6 @@ export const useWorkspace = create<WorkspaceState>()(
       deletePortfolio: (id) =>
         set((s) => ({
           portfolios: s.portfolios.filter((p) => p.id !== id),
-          compareIds: s.compareIds.filter((c) => c !== id),
         })),
 
       setConfig: (patch) => set((s) => ({ config: { ...s.config, ...patch } })),
@@ -276,14 +288,42 @@ export const useWorkspace = create<WorkspaceState>()(
           },
         })),
 
-      toggleCompare: (id) =>
+
+      saveRun: (result, label) => {
+        const run = createRun(result, label);
         set((s) => ({
-          compareIds: s.compareIds.includes(id)
-            ? s.compareIds.filter((c) => c !== id)
-            : [...s.compareIds, id],
+          // Newest first, and capped: a run list is a working set, not an
+          // archive, and every entry costs persisted storage. Runs are NOT
+          // auto-pinned for comparison — silently filling the comparison as a
+          // side effect of iterating would be surprising.
+          runs: [run, ...s.runs].slice(0, 50),
+        }));
+        return run;
+      },
+
+      renameRun: (runId, label) =>
+        set((s) => ({
+          runs: s.runs.map((r) => (r.runId === runId ? { ...r, label } : r)),
         })),
 
-      setCompareIds: (ids) => set({ compareIds: ids }),
+      deleteRun: (runId) =>
+        set((s) => ({
+          runs: s.runs.filter((r) => r.runId !== runId),
+          compareRunIds: s.compareRunIds.filter((id) => id !== runId),
+        })),
+
+      clearRuns: () => set({ runs: [], compareRunIds: [] }),
+
+      toggleCompareRun: (runId) =>
+        set((s) => ({
+          compareRunIds: s.compareRunIds.includes(runId)
+            ? s.compareRunIds.filter((id) => id !== runId)
+            : s.compareRunIds.length >= 6
+              ? s.compareRunIds
+              : [...s.compareRunIds, runId],
+        })),
+
+      setCompareRunIds: (ids) => set({ compareRunIds: ids.slice(0, 6) }),
     }),
     {
       name: 'backtester.workspace.v1',
@@ -314,7 +354,8 @@ export const useWorkspace = create<WorkspaceState>()(
         portfolios: s.portfolios,
         draft: s.draft,
         config: s.config,
-        compareIds: s.compareIds,
+        runs: s.runs,
+        compareRunIds: s.compareRunIds,
       }),
       onRehydrateStorage: () => (state) => {
         // Flipped after rehydration so components can avoid rendering persisted

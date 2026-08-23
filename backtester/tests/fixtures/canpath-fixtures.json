@@ -1,0 +1,2296 @@
+{
+  "tax_year": 2026,
+  "generated_by": "python reference engine via tools/gen_fixtures.py",
+  "marginal_cases": [
+    {
+      "income": 50000,
+      "partner_income": 0,
+      "child_ages": [],
+      "afni": 50000.0,
+      "tax": 6756.62,
+      "benefits_total": 500.6,
+      "benefit_split": {
+        "ccb": 0.0,
+        "bcfb": 0.0,
+        "pcb": 0.0,
+        "cgeb": 500.6,
+        "total": 500.6
+      },
+      "statutory_rate": 0.196,
+      "clawback_rate": 0.05,
+      "effective_rate": 0.246,
+      "value_10k_tax_refund": 2136.29,
+      "value_10k_benefit": 178.4
+    },
+    {
+      "income": 50000,
+      "partner_income": 40000,
+      "child_ages": [
+        3,
+        6
+      ],
+      "afni": 90000.0,
+      "tax": 6756.62,
+      "benefits_total": 10134.93,
+      "benefit_split": {
+        "ccb": 8609.93,
+        "bcfb": 1525,
+        "pcb": 0.0,
+        "cgeb": 0.0,
+        "total": 10134.93
+      },
+      "statutory_rate": 0.196,
+      "clawback_rate": 0.057,
+      "effective_rate": 0.253,
+      "value_10k_tax_refund": 2136.29,
+      "value_10k_benefit": 792.07
+    },
+    {
+      "income": 95000,
+      "partner_income": 0,
+      "child_ages": [
+        3,
+        6,
+        9
+      ],
+      "afni": 95000.0,
+      "tax": 18885.01,
+      "benefits_total": 14724.86,
+      "benefit_split": {
+        "ccb": 12474.86,
+        "bcfb": 2250,
+        "pcb": 0.0,
+        "cgeb": 0.0,
+        "total": 14724.86
+      },
+      "statutory_rate": 0.282,
+      "clawback_rate": 0.08,
+      "effective_rate": 0.362,
+      "value_10k_tax_refund": 2820.0,
+      "value_10k_benefit": 800.0
+    },
+    {
+      "income": 95000,
+      "partner_income": 45000,
+      "child_ages": [
+        3,
+        6,
+        9
+      ],
+      "afni": 140000.0,
+      "tax": 18885.01,
+      "benefits_total": 9387.34,
+      "benefit_split": {
+        "ccb": 8874.86,
+        "bcfb": 512.48,
+        "pcb": 0.0,
+        "cgeb": 0.0,
+        "total": 9387.34
+      },
+      "statutory_rate": 0.282,
+      "clawback_rate": 0.12,
+      "effective_rate": 0.402,
+      "value_10k_tax_refund": 2820.0,
+      "value_10k_benefit": 1200.0
+    },
+    {
+      "income": 70000,
+      "partner_income": 0,
+      "child_ages": [
+        2
+      ],
+      "afni": 70000.0,
+      "tax": 11835.01,
+      "benefits_total": 6708.59,
+      "benefit_split": {
+        "ccb": 5933.59,
+        "bcfb": 775,
+        "pcb": 0.0,
+        "cgeb": 0.0,
+        "total": 6708.59
+      },
+      "statutory_rate": 0.282,
+      "clawback_rate": 0.07,
+      "effective_rate": 0.352,
+      "value_10k_tax_refund": 2820.0,
+      "value_10k_benefit": 1216.64
+    },
+    {
+      "income": 38000,
+      "partner_income": 0,
+      "child_ages": [
+        4
+      ],
+      "afni": 38000.0,
+      "tax": 4157.13,
+      "benefits_total": 11007.04,
+      "benefit_split": {
+        "ccb": 8157.0,
+        "bcfb": 1937.04,
+        "pcb": 0.0,
+        "cgeb": 913.0,
+        "total": 11007.04
+      },
+      "statutory_rate": 0.2316,
+      "clawback_rate": 0.04,
+      "effective_rate": 0.2716,
+      "value_10k_tax_refund": 2316.0,
+      "value_10k_benefit": 312.96
+    },
+    {
+      "income": 125000,
+      "partner_income": 0,
+      "child_ages": [],
+      "afni": 125000.0,
+      "tax": 28629.55,
+      "benefits_total": 0.0,
+      "benefit_split": {
+        "ccb": 0.0,
+        "bcfb": 0.0,
+        "pcb": 0.0,
+        "cgeb": 0.0,
+        "total": 0.0
+      },
+      "statutory_rate": 0.3829,
+      "clawback_rate": 0.0,
+      "effective_rate": 0.3829,
+      "value_10k_tax_refund": 3704.93,
+      "value_10k_benefit": 0.0
+    },
+    {
+      "income": 200000,
+      "partner_income": 0,
+      "child_ages": [
+        5,
+        10
+      ],
+      "afni": 200000.0,
+      "tax": 59595.72,
+      "benefits_total": 2339.93,
+      "benefit_split": {
+        "ccb": 2339.93,
+        "bcfb": 0.0,
+        "pcb": 0.0,
+        "cgeb": 0.0,
+        "total": 2339.93
+      },
+      "statutory_rate": 0.460949,
+      "clawback_rate": 0.057,
+      "effective_rate": 0.517949,
+      "value_10k_tax_refund": 4600.99,
+      "value_10k_benefit": 570.0
+    },
+    {
+      "income": 25000,
+      "partner_income": 0,
+      "child_ages": [],
+      "afni": 25000.0,
+      "tax": 1196.72,
+      "benefits_total": 679.0,
+      "benefit_split": {
+        "ccb": 0.0,
+        "bcfb": 0.0,
+        "pcb": 0.0,
+        "cgeb": 679.0,
+        "total": 679.0
+      },
+      "statutory_rate": 0.14,
+      "clawback_rate": 0.0,
+      "effective_rate": 0.14,
+      "value_10k_tax_refund": 1196.72,
+      "value_10k_benefit": 0.0
+    },
+    {
+      "income": 82847,
+      "partner_income": 0,
+      "child_ages": [
+        1,
+        3
+      ],
+      "afni": 82847.0,
+      "tax": 15457.86,
+      "benefits_total": 11816.65,
+      "benefit_split": {
+        "ccb": 10291.65,
+        "bcfb": 1525,
+        "pcb": 0.0,
+        "cgeb": 0.0,
+        "total": 11816.65
+      },
+      "statutory_rate": 0.282,
+      "clawback_rate": 0.057,
+      "effective_rate": 0.339,
+      "value_10k_tax_refund": 2820.0,
+      "value_10k_benefit": 1468.16
+    },
+    {
+      "income": 58523,
+      "partner_income": 0,
+      "child_ages": [
+        1,
+        3,
+        5,
+        7
+      ],
+      "afni": 58523.0,
+      "tax": 8598.49,
+      "benefits_total": 31714.79,
+      "benefit_split": {
+        "ccb": 26688.22,
+        "bcfb": 4016.12,
+        "pcb": 0.0,
+        "cgeb": 1010.45,
+        "total": 31714.79
+      },
+      "statutory_rate": 0.282,
+      "clawback_rate": 0.32,
+      "effective_rate": 0.602,
+      "value_10k_tax_refund": 2131.36,
+      "value_10k_benefit": 3200.0
+    },
+    {
+      "income": 300000,
+      "partner_income": 0,
+      "child_ages": [
+        8
+      ],
+      "afni": 300000.0,
+      "tax": 108503.75,
+      "benefits_total": 0.0,
+      "benefit_split": {
+        "ccb": 0.0,
+        "bcfb": 0.0,
+        "pcb": 0.0,
+        "cgeb": 0.0,
+        "total": 0.0
+      },
+      "statutory_rate": 0.535,
+      "clawback_rate": 0.0,
+      "effective_rate": 0.535,
+      "value_10k_tax_refund": 5350.0,
+      "value_10k_benefit": 0.0
+    },
+    {
+      "income": 50000,
+      "partner_income": 0,
+      "child_ages": [
+        5,
+        18
+      ],
+      "afni": 50000.0,
+      "tax": 6756.62,
+      "benefits_total": 9759.23,
+      "benefit_split": {
+        "ccb": 7333.59,
+        "bcfb": 1457.04,
+        "pcb": 0.0,
+        "cgeb": 968.6,
+        "total": 9759.23
+      },
+      "statutory_rate": 0.196,
+      "clawback_rate": 0.16,
+      "effective_rate": 0.356,
+      "value_10k_tax_refund": 2136.29,
+      "value_10k_benefit": 1278.4
+    },
+    {
+      "income": 50000,
+      "partner_income": 0,
+      "child_ages": [
+        17,
+        18
+      ],
+      "afni": 50000.0,
+      "tax": 6756.62,
+      "benefits_total": 8485.23,
+      "benefit_split": {
+        "ccb": 6059.59,
+        "bcfb": 1457.04,
+        "pcb": 0.0,
+        "cgeb": 968.6,
+        "total": 8485.23
+      },
+      "statutory_rate": 0.196,
+      "clawback_rate": 0.16,
+      "effective_rate": 0.356,
+      "value_10k_tax_refund": 2136.29,
+      "value_10k_benefit": 1278.4
+    },
+    {
+      "income": 60000,
+      "partner_income": 0,
+      "child_ages": [
+        3,
+        7,
+        18,
+        22
+      ],
+      "afni": 60000.0,
+      "tax": 9015.01,
+      "benefits_total": 14961.64,
+      "benefit_split": {
+        "ccb": 12101.99,
+        "bcfb": 2157.04,
+        "pcb": 0.0,
+        "cgeb": 702.6,
+        "total": 14961.64
+      },
+      "statutory_rate": 0.282,
+      "clawback_rate": 0.225,
+      "effective_rate": 0.507,
+      "value_10k_tax_refund": 2258.38,
+      "value_10k_benefit": 2250.0
+    },
+    {
+      "income": 30176,
+      "partner_income": 0,
+      "child_ages": [
+        4
+      ],
+      "afni": 30176.0,
+      "tax": 2345.09,
+      "benefits_total": 11320.0,
+      "benefit_split": {
+        "ccb": 8157.0,
+        "bcfb": 2250.0,
+        "pcb": 0.0,
+        "cgeb": 913.0,
+        "total": 11320.0
+      },
+      "statutory_rate": 0.2316,
+      "clawback_rate": 0.04,
+      "effective_rate": 0.2716,
+      "value_10k_tax_refund": 1823.73,
+      "value_10k_benefit": 0.0
+    },
+    {
+      "income": 45000,
+      "partner_income": 0,
+      "child_ages": [
+        4
+      ],
+      "afni": 45000.0,
+      "tax": 5776.62,
+      "benefits_total": 10253.63,
+      "benefit_split": {
+        "ccb": 7683.59,
+        "bcfb": 1657.04,
+        "pcb": 0.0,
+        "cgeb": 913.0,
+        "total": 10253.63
+      },
+      "statutory_rate": 0.196,
+      "clawback_rate": 0.11,
+      "effective_rate": 0.306,
+      "value_10k_tax_refund": 2314.29,
+      "value_10k_benefit": 873.41
+    },
+    {
+      "income": 54551,
+      "partner_income": 0,
+      "child_ages": [
+        4
+      ],
+      "afni": 54551.0,
+      "tax": 7736.57,
+      "benefits_total": 8797.07,
+      "benefit_split": {
+        "ccb": 7015.02,
+        "bcfb": 1275.0,
+        "pcb": 0.0,
+        "cgeb": 507.05,
+        "total": 8797.07
+      },
+      "statutory_rate": 0.217,
+      "clawback_rate": 0.16,
+      "effective_rate": 0.377,
+      "value_10k_tax_refund": 2062.22,
+      "value_10k_benefit": 1505.95
+    },
+    {
+      "income": 70000,
+      "partner_income": 0,
+      "child_ages": [
+        4
+      ],
+      "afni": 70000.0,
+      "tax": 11835.01,
+      "benefits_total": 6708.59,
+      "benefit_split": {
+        "ccb": 5933.59,
+        "bcfb": 775,
+        "pcb": 0.0,
+        "cgeb": 0.0,
+        "total": 6708.59
+      },
+      "statutory_rate": 0.282,
+      "clawback_rate": 0.07,
+      "effective_rate": 0.352,
+      "value_10k_tax_refund": 2820.0,
+      "value_10k_benefit": 1216.64
+    },
+    {
+      "income": 96562,
+      "partner_income": 0,
+      "child_ages": [
+        4
+      ],
+      "afni": 96562.0,
+      "tax": 19325.49,
+      "benefits_total": 5370.42,
+      "benefit_split": {
+        "ccb": 4595.42,
+        "bcfb": 775,
+        "pcb": 0.0,
+        "cgeb": 0.0,
+        "total": 5370.42
+      },
+      "statutory_rate": 0.282,
+      "clawback_rate": 0.072,
+      "effective_rate": 0.354,
+      "value_10k_tax_refund": 2820.0,
+      "value_10k_benefit": 320.0
+    },
+    {
+      "income": 110000,
+      "partner_income": 0,
+      "child_ages": [
+        4
+      ],
+      "afni": 110000.0,
+      "tax": 23374.62,
+      "benefits_total": 4402.88,
+      "benefit_split": {
+        "ccb": 4165.4,
+        "bcfb": 237.48,
+        "pcb": 0.0,
+        "cgeb": 0.0,
+        "total": 4402.88
+      },
+      "statutory_rate": 0.31,
+      "clawback_rate": 0.072,
+      "effective_rate": 0.382,
+      "value_10k_tax_refund": 3079.62,
+      "value_10k_benefit": 720.0
+    },
+    {
+      "income": 46432,
+      "partner_income": 0,
+      "child_ages": [],
+      "afni": 46432.0,
+      "tax": 6057.3,
+      "benefits_total": 679.0,
+      "benefit_split": {
+        "ccb": 0.0,
+        "bcfb": 0.0,
+        "pcb": 0.0,
+        "cgeb": 679.0,
+        "total": 679.0
+      },
+      "statutory_rate": 0.196,
+      "clawback_rate": 0.05,
+      "effective_rate": 0.246,
+      "value_10k_tax_refund": 2263.31,
+      "value_10k_benefit": 0.0
+    },
+    {
+      "income": 53000,
+      "partner_income": 0,
+      "child_ages": [],
+      "afni": 53000.0,
+      "tax": 7400.0,
+      "benefits_total": 350.6,
+      "benefit_split": {
+        "ccb": 0.0,
+        "bcfb": 0.0,
+        "pcb": 0.0,
+        "cgeb": 350.6,
+        "total": 350.6
+      },
+      "statutory_rate": 0.217,
+      "clawback_rate": 0.05,
+      "effective_rate": 0.267,
+      "value_10k_tax_refund": 2084.87,
+      "value_10k_benefit": 328.4
+    },
+    {
+      "income": 60012,
+      "partner_income": 0,
+      "child_ages": [],
+      "afni": 60012.0,
+      "tax": 9018.39,
+      "benefits_total": 0.0,
+      "benefit_split": {
+        "ccb": 0.0,
+        "bcfb": 0.0,
+        "pcb": 0.0,
+        "cgeb": 0.0,
+        "total": 0.0
+      },
+      "statutory_rate": 0.282,
+      "clawback_rate": 0.0,
+      "effective_rate": 0.282,
+      "value_10k_tax_refund": 2259.41,
+      "value_10k_benefit": 500.0
+    },
+    {
+      "income": 75000,
+      "partner_income": 40000,
+      "child_ages": [
+        3,
+        7
+      ],
+      "afni": 115000.0,
+      "tax": 13245.01,
+      "benefits_total": 7972.41,
+      "benefit_split": {
+        "ccb": 7184.93,
+        "bcfb": 787.48,
+        "pcb": 0.0,
+        "cgeb": 0.0,
+        "total": 7972.41
+      },
+      "statutory_rate": 0.282,
+      "clawback_rate": 0.097,
+      "effective_rate": 0.379,
+      "value_10k_tax_refund": 2820.0,
+      "value_10k_benefit": 970.0
+    },
+    {
+      "income": 30000,
+      "partner_income": 15000,
+      "child_ages": [
+        3,
+        7
+      ],
+      "afni": 45000.0,
+      "tax": 2304.33,
+      "benefits_total": 17742.03,
+      "benefit_split": {
+        "ccb": 14126.99,
+        "bcfb": 2257.04,
+        "pcb": 0.0,
+        "cgeb": 1358.0,
+        "total": 17742.03
+      },
+      "statutory_rate": 0.2316,
+      "clawback_rate": 0.175,
+      "effective_rate": 0.4066,
+      "value_10k_tax_refund": 1807.61,
+      "value_10k_benefit": 1313.01
+    },
+    {
+      "income": 25000,
+      "partner_income": 20000,
+      "child_ages": [
+        4
+      ],
+      "afni": 45000.0,
+      "tax": 1196.72,
+      "benefits_total": 9964.63,
+      "benefit_split": {
+        "ccb": 7683.59,
+        "bcfb": 1157.04,
+        "pcb": 0.0,
+        "cgeb": 1124.0,
+        "total": 9964.63
+      },
+      "statutory_rate": 0.14,
+      "clawback_rate": 0.11,
+      "effective_rate": 0.25,
+      "value_10k_tax_refund": 1196.72,
+      "value_10k_benefit": 873.41
+    },
+    {
+      "income": 35000,
+      "partner_income": 10000,
+      "child_ages": [
+        2,
+        5,
+        9
+      ],
+      "afni": 45000.0,
+      "tax": 3462.33,
+      "benefits_total": 26661.07,
+      "benefit_split": {
+        "ccb": 21912.03,
+        "bcfb": 3157.04,
+        "pcb": 0.0,
+        "cgeb": 1592.0,
+        "total": 26661.07
+      },
+      "statutory_rate": 0.2316,
+      "clawback_rate": 0.23,
+      "effective_rate": 0.4616,
+      "value_10k_tax_refund": 2265.61,
+      "value_10k_benefit": 1684.97
+    }
+  ],
+  "allocation_cases": [
+    {
+      "income": 95000,
+      "capacity": 20000,
+      "child_ages": [
+        3,
+        6,
+        9
+      ],
+      "fhsa_eligible": true,
+      "match_rate": 0.5,
+      "match_cap": 4000,
+      "retirement_rate": 0.25,
+      "allocation": {
+        "employer_match": 4000.0,
+        "fhsa": 8000.0,
+        "resp": 7500.0,
+        "rrsp": 500.0
+      },
+      "total_deducted": 12500.0,
+      "rrsp_room": 17100.0,
+      "resp_grant_earned": 1500.0,
+      "tax_refund": 3525.0,
+      "benefit_restored": 1038.17
+    },
+    {
+      "income": 38000,
+      "capacity": 5000,
+      "child_ages": [
+        4
+      ],
+      "fhsa_eligible": false,
+      "match_rate": 0.0,
+      "match_cap": 0,
+      "retirement_rate": 0.45,
+      "allocation": {
+        "resp": 2500.0,
+        "tfsa": 2500.0
+      },
+      "total_deducted": 0.0,
+      "rrsp_room": 6840.0,
+      "resp_grant_earned": 500.0,
+      "tax_refund": 0.0,
+      "benefit_restored": 0.0
+    },
+    {
+      "income": 150000,
+      "capacity": 30000,
+      "child_ages": [],
+      "fhsa_eligible": true,
+      "match_rate": 0.0,
+      "match_cap": 0,
+      "retirement_rate": 0.3,
+      "allocation": {
+        "fhsa": 8000.0,
+        "rrsp": 22000.0
+      },
+      "total_deducted": 30000.0,
+      "rrsp_room": 27000.0,
+      "resp_grant_earned": 0.0,
+      "tax_refund": 11717.64,
+      "benefit_restored": 0.0
+    },
+    {
+      "income": 150000,
+      "capacity": 60000,
+      "child_ages": [],
+      "fhsa_eligible": false,
+      "match_rate": 0.5,
+      "match_cap": 25000,
+      "retirement_rate": 0.25,
+      "allocation": {
+        "employer_match": 18000.0,
+        "tfsa": 7000.0,
+        "non_registered": 35000.0
+      },
+      "total_deducted": 18000.0,
+      "rrsp_room": 27000.0,
+      "resp_grant_earned": 0.0,
+      "tax_refund": 7122.84,
+      "benefit_restored": 0.0
+    },
+    {
+      "income": 150000,
+      "capacity": 30000,
+      "child_ages": [],
+      "fhsa_eligible": true,
+      "match_rate": 0.0,
+      "match_cap": 0,
+      "retirement_rate": 0.25,
+      "allocation": {
+        "fhsa": 8000.0,
+        "rrsp": 22000.0
+      },
+      "total_deducted": 30000.0,
+      "rrsp_room": 27000.0,
+      "resp_grant_earned": 0.0,
+      "tax_refund": 11717.64,
+      "benefit_restored": 0.0
+    },
+    {
+      "income": 55000,
+      "capacity": 24000,
+      "child_ages": [],
+      "fhsa_eligible": false,
+      "match_rate": 0.0,
+      "match_cap": 0,
+      "retirement_rate": 0.3,
+      "allocation": {
+        "rrsp": 9900.0,
+        "tfsa": 7000.0,
+        "non_registered": 7100.0
+      },
+      "total_deducted": 9900.0,
+      "rrsp_room": 9900.0,
+      "resp_grant_earned": 0.0,
+      "tax_refund": 2037.78,
+      "benefit_restored": 428.4
+    },
+    {
+      "income": 95000,
+      "capacity": 20000,
+      "child_ages": [
+        4,
+        8
+      ],
+      "fhsa_eligible": true,
+      "match_rate": 0.0,
+      "match_cap": 0,
+      "retirement_rate": 0.25,
+      "allocation": {
+        "fhsa": 8000.0,
+        "resp": 5000.0,
+        "rrsp": 7000.0
+      },
+      "total_deducted": 15000.0,
+      "rrsp_room": 17100.0,
+      "resp_grant_earned": 1000.0,
+      "tax_refund": 4230.0,
+      "benefit_restored": 1077.07
+    },
+    {
+      "income": 45000,
+      "capacity": 12000,
+      "child_ages": [
+        4,
+        8
+      ],
+      "fhsa_eligible": true,
+      "match_rate": 0.0,
+      "match_cap": 0,
+      "retirement_rate": 0.25,
+      "allocation": {
+        "fhsa": 8000.0,
+        "resp": 4000.0
+      },
+      "total_deducted": 8000.0,
+      "rrsp_room": 8100.0,
+      "resp_grant_earned": 800.0,
+      "tax_refund": 1851.09,
+      "benefit_restored": 1233.01
+    },
+    {
+      "income": 150000,
+      "capacity": 40000,
+      "child_ages": [
+        3,
+        6,
+        9
+      ],
+      "fhsa_eligible": true,
+      "match_rate": 0.5,
+      "match_cap": 4000,
+      "retirement_rate": 0.3,
+      "allocation": {
+        "employer_match": 4000.0,
+        "fhsa": 8000.0,
+        "resp": 7000.0,
+        "rrsp": 21000.0
+      },
+      "total_deducted": 33000.0,
+      "rrsp_room": 27000.0,
+      "resp_grant_earned": 1400.0,
+      "tax_refund": 12863.86,
+      "benefit_restored": 3960.0
+    },
+    {
+      "income": 68000,
+      "capacity": 3000,
+      "child_ages": [
+        5
+      ],
+      "fhsa_eligible": false,
+      "match_rate": 0.0,
+      "match_cap": 0,
+      "retirement_rate": 0.25,
+      "allocation": {
+        "resp": 2500.0,
+        "rrsp": 500.0
+      },
+      "total_deducted": 500.0,
+      "rrsp_room": 12240.0,
+      "resp_grant_earned": 500.0,
+      "tax_refund": 141.0,
+      "benefit_restored": 35.0
+    }
+  ],
+  "projection_cases": [
+    {
+      "principal": 0,
+      "monthly": 500,
+      "rate": 0.08,
+      "years": 30,
+      "fv": 704275.2936,
+      "real_rate": 0.05882353,
+      "fv_real": 477038.3924,
+      "req_monthly": 354.9748
+    },
+    {
+      "principal": 10000,
+      "monthly": 0,
+      "rate": 0.08,
+      "years": 30,
+      "fv": 100626.5689,
+      "real_rate": 0.05882353,
+      "fv_real": 55552.9993,
+      "req_monthly": 283.535
+    },
+    {
+      "principal": 15000,
+      "monthly": 600,
+      "rate": 0.08,
+      "years": 25,
+      "fv": 648121.703,
+      "real_rate": 0.05882353,
+      "fv_real": 461523.9339,
+      "req_monthly": 437.0482
+    },
+    {
+      "principal": 0,
+      "monthly": 250,
+      "rate": 0.05,
+      "years": 10,
+      "fv": 38590.7903,
+      "real_rate": 0.02941176,
+      "fv_real": 34758.5546,
+      "req_monthly": 3239.1148
+    },
+    {
+      "principal": 5000,
+      "monthly": 300,
+      "rate": 0.0,
+      "years": 15,
+      "fv": 59000,
+      "real_rate": -0.01960784,
+      "fv_real": 50472.0274,
+      "req_monthly": 2750.0
+    },
+    {
+      "principal": 2000,
+      "monthly": 1000,
+      "rate": 0.12,
+      "years": 40,
+      "fv": 9887121.9838,
+      "real_rate": 0.09803922,
+      "fv_real": 5342511.2964,
+      "req_monthly": 32.3572
+    },
+    {
+      "principal": 50000,
+      "monthly": 0,
+      "rate": 0.06,
+      "years": 20,
+      "fv": 160356.7736,
+      "real_rate": 0.03921569,
+      "fv_real": 107915.5117,
+      "req_monthly": 749.039
+    },
+    {
+      "principal": 0,
+      "monthly": 100,
+      "rate": 0.08,
+      "years": 5,
+      "fv": 7294.465,
+      "real_rate": 0.05882353,
+      "fv_real": 6928.7114,
+      "req_monthly": 6854.5123
+    }
+  ],
+  "province_cases": [
+    {
+      "province": "AB",
+      "income": 25000,
+      "prov_tax": 178.48,
+      "combined_tax": 1375.2,
+      "effective_rate": 0.22
+    },
+    {
+      "province": "AB",
+      "income": 60000,
+      "prov_tax": 2978.48,
+      "combined_tax": 9171.2,
+      "effective_rate": 0.291
+    },
+    {
+      "province": "AB",
+      "income": 120000,
+      "prov_tax": 8954.48,
+      "combined_tax": 27609.73,
+      "effective_rate": 0.36
+    },
+    {
+      "province": "AB",
+      "income": 250000,
+      "prov_tax": 24550.06,
+      "combined_tax": 79264.31,
+      "effective_rate": 0.432949
+    },
+    {
+      "province": "BC",
+      "income": 25000,
+      "prov_tax": 0.0,
+      "combined_tax": 1196.72,
+      "effective_rate": 0.14
+    },
+    {
+      "province": "BC",
+      "income": 60000,
+      "prov_tax": 2822.28,
+      "combined_tax": 9015.01,
+      "effective_rate": 0.288
+    },
+    {
+      "province": "BC",
+      "income": 120000,
+      "prov_tax": 8059.8,
+      "combined_tax": 26715.05,
+      "effective_rate": 0.3829
+    },
+    {
+      "province": "BC",
+      "income": 250000,
+      "prov_tax": 27928.93,
+      "combined_tax": 82643.18,
+      "effective_rate": 0.460949
+    },
+    {
+      "province": "MB",
+      "income": 25000,
+      "prov_tax": 995.76,
+      "combined_tax": 2192.48,
+      "effective_rate": 0.248
+    },
+    {
+      "province": "MB",
+      "income": 60000,
+      "prov_tax": 5029.26,
+      "combined_tax": 11221.99,
+      "effective_rate": 0.3385
+    },
+    {
+      "province": "MB",
+      "income": 120000,
+      "prov_tax": 13609.26,
+      "combined_tax": 32264.51,
+      "effective_rate": 0.434
+    },
+    {
+      "province": "MB",
+      "income": 250000,
+      "prov_tax": 36229.26,
+      "combined_tax": 90943.51,
+      "effective_rate": 0.466949
+    },
+    {
+      "province": "NB",
+      "income": 25000,
+      "prov_tax": 1065.58,
+      "combined_tax": 2262.3,
+      "effective_rate": 0.234
+    },
+    {
+      "province": "NB",
+      "income": 60000,
+      "prov_tax": 4708.27,
+      "combined_tax": 10900.99,
+      "effective_rate": 0.351
+    },
+    {
+      "province": "NB",
+      "income": 120000,
+      "prov_tax": 13414.95,
+      "combined_tax": 32070.2,
+      "effective_rate": 0.42
+    },
+    {
+      "province": "NB",
+      "income": 250000,
+      "prov_tax": 36179.81,
+      "combined_tax": 90894.07,
+      "effective_rate": 0.487949
+    },
+    {
+      "province": "NL",
+      "income": 25000,
+      "prov_tax": 157.44,
+      "combined_tax": 1354.16,
+      "effective_rate": 0.387
+    },
+    {
+      "province": "NL",
+      "income": 60000,
+      "prov_tax": 4831.86,
+      "combined_tax": 11024.59,
+      "effective_rate": 0.356
+    },
+    {
+      "province": "NL",
+      "income": 120000,
+      "prov_tax": 13930.26,
+      "combined_tax": 32585.51,
+      "effective_rate": 0.418
+    },
+    {
+      "province": "NL",
+      "income": 250000,
+      "prov_tax": 36812.9,
+      "combined_tax": 91527.16,
+      "effective_rate": 0.490949
+    },
+    {
+      "province": "NS",
+      "income": 25000,
+      "prov_tax": 1148.68,
+      "combined_tax": 2345.4,
+      "effective_rate": 0.2279
+    },
+    {
+      "province": "NS",
+      "income": 60000,
+      "prov_tax": 6011.89,
+      "combined_tax": 12204.61,
+      "effective_rate": 0.3605
+    },
+    {
+      "province": "NS",
+      "income": 120000,
+      "prov_tax": 16167.08,
+      "combined_tax": 34822.33,
+      "effective_rate": 0.435
+    },
+    {
+      "province": "NS",
+      "income": 250000,
+      "prov_tax": 42167.74,
+      "combined_tax": 96881.99,
+      "effective_rate": 0.502949
+    },
+    {
+      "province": "ON",
+      "income": 25000,
+      "prov_tax": 606.56,
+      "combined_tax": 1803.28,
+      "effective_rate": 0.1905
+    },
+    {
+      "province": "ON",
+      "income": 60000,
+      "prov_tax": 2624.52,
+      "combined_tax": 8817.25,
+      "effective_rate": 0.3025
+    },
+    {
+      "province": "ON",
+      "income": 120000,
+      "prov_tax": 8360.05,
+      "combined_tax": 27015.3,
+      "effective_rate": 0.3716
+    },
+    {
+      "province": "ON",
+      "income": 250000,
+      "prov_tax": 24168.05,
+      "combined_tax": 78882.3,
+      "effective_rate": 0.424549
+    },
+    {
+      "province": "PE",
+      "income": 25000,
+      "prov_tax": 700.0,
+      "combined_tax": 1896.72,
+      "effective_rate": 0.285
+    },
+    {
+      "province": "PE",
+      "income": 60000,
+      "prov_tax": 5310.06,
+      "combined_tax": 11502.78,
+      "effective_rate": 0.3457
+    },
+    {
+      "province": "PE",
+      "income": 120000,
+      "prov_tax": 15221.61,
+      "combined_tax": 33876.86,
+      "effective_rate": 0.4362
+    },
+    {
+      "province": "PE",
+      "income": 250000,
+      "prov_tax": 40110.84,
+      "combined_tax": 94825.09,
+      "effective_rate": 0.492949
+    },
+    {
+      "province": "SK",
+      "income": 25000,
+      "prov_tax": 484.99,
+      "combined_tax": 1681.72,
+      "effective_rate": 0.245
+    },
+    {
+      "province": "SK",
+      "income": 60000,
+      "prov_tax": 4269.35,
+      "combined_tax": 10462.08,
+      "effective_rate": 0.336
+    },
+    {
+      "province": "SK",
+      "income": 120000,
+      "prov_tax": 11769.35,
+      "combined_tax": 30424.6,
+      "effective_rate": 0.385
+    },
+    {
+      "province": "SK",
+      "income": 250000,
+      "prov_tax": 29903.26,
+      "combined_tax": 84617.51,
+      "effective_rate": 0.437949
+    }
+  ],
+  "pcb_cases": [
+    {
+      "province": "AB",
+      "afni": 15000,
+      "pcb": 3787.0,
+      "total": 20185.0
+    },
+    {
+      "province": "AB",
+      "afni": 20397,
+      "pcb": 3787.0,
+      "total": 20185.0
+    },
+    {
+      "province": "AB",
+      "afni": 26000,
+      "pcb": 3787.0,
+      "total": 20185.0
+    },
+    {
+      "province": "AB",
+      "afni": 26865,
+      "pcb": 3787.0,
+      "total": 20185.0
+    },
+    {
+      "province": "AB",
+      "afni": 28116,
+      "pcb": 3787.0,
+      "total": 20185.0
+    },
+    {
+      "province": "AB",
+      "afni": 30000,
+      "pcb": 3579.76,
+      "total": 19977.76
+    },
+    {
+      "province": "AB",
+      "afni": 34000,
+      "pcb": 3139.76,
+      "total": 19537.76
+    },
+    {
+      "province": "AB",
+      "afni": 44999,
+      "pcb": 1929.87,
+      "total": 17415.0
+    },
+    {
+      "province": "AB",
+      "afni": 45001,
+      "pcb": 1929.65,
+      "total": 17414.51
+    },
+    {
+      "province": "AB",
+      "afni": 47115,
+      "pcb": 1697.11,
+      "total": 16862.43
+    },
+    {
+      "province": "AB",
+      "afni": 60000,
+      "pcb": 0.0,
+      "total": 12781.59
+    },
+    {
+      "province": "AB",
+      "afni": 79999,
+      "pcb": 0.0,
+      "total": 9402.13
+    },
+    {
+      "province": "AB",
+      "afni": 80001,
+      "pcb": 0.0,
+      "total": 9401.86
+    },
+    {
+      "province": "AB",
+      "afni": 100000,
+      "pcb": 0.0,
+      "total": 8039.93
+    },
+    {
+      "province": "BC",
+      "afni": 15000,
+      "pcb": 0.0,
+      "total": 19248.0
+    },
+    {
+      "province": "BC",
+      "afni": 20397,
+      "pcb": 0.0,
+      "total": 19248.0
+    },
+    {
+      "province": "BC",
+      "afni": 26000,
+      "pcb": 0.0,
+      "total": 19248.0
+    },
+    {
+      "province": "BC",
+      "afni": 26865,
+      "pcb": 0.0,
+      "total": 19248.0
+    },
+    {
+      "province": "BC",
+      "afni": 28116,
+      "pcb": 0.0,
+      "total": 19248.0
+    },
+    {
+      "province": "BC",
+      "afni": 30000,
+      "pcb": 0.0,
+      "total": 19248.0
+    },
+    {
+      "province": "BC",
+      "afni": 34000,
+      "pcb": 0.0,
+      "total": 19095.04
+    },
+    {
+      "province": "BC",
+      "afni": 44999,
+      "pcb": 0.0,
+      "total": 17742.21
+    },
+    {
+      "province": "BC",
+      "afni": 45001,
+      "pcb": 0.0,
+      "total": 17741.86
+    },
+    {
+      "province": "BC",
+      "afni": 47115,
+      "pcb": 0.0,
+      "total": 17337.76
+    },
+    {
+      "province": "BC",
+      "afni": 60000,
+      "pcb": 0.0,
+      "total": 14438.64
+    },
+    {
+      "province": "BC",
+      "afni": 79999,
+      "pcb": 0.0,
+      "total": 10927.13
+    },
+    {
+      "province": "BC",
+      "afni": 80001,
+      "pcb": 0.0,
+      "total": 10926.86
+    },
+    {
+      "province": "BC",
+      "afni": 100000,
+      "pcb": 0.0,
+      "total": 9427.41
+    },
+    {
+      "province": "MB",
+      "afni": 15000,
+      "pcb": 840.0,
+      "total": 17238.0
+    },
+    {
+      "province": "MB",
+      "afni": 20397,
+      "pcb": 705.08,
+      "total": 17103.08
+    },
+    {
+      "province": "MB",
+      "afni": 26000,
+      "pcb": 565.0,
+      "total": 16963.0
+    },
+    {
+      "province": "MB",
+      "afni": 26865,
+      "pcb": 543.38,
+      "total": 16941.38
+    },
+    {
+      "province": "MB",
+      "afni": 28116,
+      "pcb": 512.1,
+      "total": 16910.1
+    },
+    {
+      "province": "MB",
+      "afni": 30000,
+      "pcb": 465.0,
+      "total": 16863.0
+    },
+    {
+      "province": "MB",
+      "afni": 34000,
+      "pcb": 365.0,
+      "total": 16763.0
+    },
+    {
+      "province": "MB",
+      "afni": 44999,
+      "pcb": 90.02,
+      "total": 15575.15
+    },
+    {
+      "province": "MB",
+      "afni": 45001,
+      "pcb": 89.97,
+      "total": 15574.84
+    },
+    {
+      "province": "MB",
+      "afni": 47115,
+      "pcb": 37.12,
+      "total": 15202.44
+    },
+    {
+      "province": "MB",
+      "afni": 60000,
+      "pcb": 0.0,
+      "total": 12781.59
+    },
+    {
+      "province": "MB",
+      "afni": 79999,
+      "pcb": 0.0,
+      "total": 9402.13
+    },
+    {
+      "province": "MB",
+      "afni": 80001,
+      "pcb": 0.0,
+      "total": 9401.86
+    },
+    {
+      "province": "MB",
+      "afni": 100000,
+      "pcb": 0.0,
+      "total": 8039.93
+    },
+    {
+      "province": "NB",
+      "afni": 15000,
+      "pcb": 500.0,
+      "total": 16898.0
+    },
+    {
+      "province": "NB",
+      "afni": 20397,
+      "pcb": 492.06,
+      "total": 16890.06
+    },
+    {
+      "province": "NB",
+      "afni": 26000,
+      "pcb": 380.0,
+      "total": 16778.0
+    },
+    {
+      "province": "NB",
+      "afni": 26865,
+      "pcb": 362.7,
+      "total": 16760.7
+    },
+    {
+      "province": "NB",
+      "afni": 28116,
+      "pcb": 337.68,
+      "total": 16735.68
+    },
+    {
+      "province": "NB",
+      "afni": 30000,
+      "pcb": 300.0,
+      "total": 16698.0
+    },
+    {
+      "province": "NB",
+      "afni": 34000,
+      "pcb": 220.0,
+      "total": 16618.0
+    },
+    {
+      "province": "NB",
+      "afni": 44999,
+      "pcb": 0.02,
+      "total": 15485.15
+    },
+    {
+      "province": "NB",
+      "afni": 45001,
+      "pcb": 0.0,
+      "total": 15484.86
+    },
+    {
+      "province": "NB",
+      "afni": 47115,
+      "pcb": 0.0,
+      "total": 15165.32
+    },
+    {
+      "province": "NB",
+      "afni": 60000,
+      "pcb": 0.0,
+      "total": 12781.59
+    },
+    {
+      "province": "NB",
+      "afni": 79999,
+      "pcb": 0.0,
+      "total": 9402.13
+    },
+    {
+      "province": "NB",
+      "afni": 80001,
+      "pcb": 0.0,
+      "total": 9401.86
+    },
+    {
+      "province": "NB",
+      "afni": 100000,
+      "pcb": 0.0,
+      "total": 8039.93
+    },
+    {
+      "province": "NL",
+      "afni": 15000,
+      "pcb": 3889.92,
+      "total": 20287.92
+    },
+    {
+      "province": "NL",
+      "afni": 20397,
+      "pcb": 3889.92,
+      "total": 20287.92
+    },
+    {
+      "province": "NL",
+      "afni": 26000,
+      "pcb": 2993.44,
+      "total": 19391.44
+    },
+    {
+      "province": "NL",
+      "afni": 26865,
+      "pcb": 2855.04,
+      "total": 19253.04
+    },
+    {
+      "province": "NL",
+      "afni": 28116,
+      "pcb": 2654.88,
+      "total": 19052.88
+    },
+    {
+      "province": "NL",
+      "afni": 30000,
+      "pcb": 2353.44,
+      "total": 18751.44
+    },
+    {
+      "province": "NL",
+      "afni": 34000,
+      "pcb": 1713.44,
+      "total": 18111.44
+    },
+    {
+      "province": "NL",
+      "afni": 44999,
+      "pcb": 0.0,
+      "total": 15485.13
+    },
+    {
+      "province": "NL",
+      "afni": 45001,
+      "pcb": 0.0,
+      "total": 15484.86
+    },
+    {
+      "province": "NL",
+      "afni": 47115,
+      "pcb": 0.0,
+      "total": 15165.32
+    },
+    {
+      "province": "NL",
+      "afni": 60000,
+      "pcb": 0.0,
+      "total": 12781.59
+    },
+    {
+      "province": "NL",
+      "afni": 79999,
+      "pcb": 0.0,
+      "total": 9402.13
+    },
+    {
+      "province": "NL",
+      "afni": 80001,
+      "pcb": 0.0,
+      "total": 9401.86
+    },
+    {
+      "province": "NL",
+      "afni": 100000,
+      "pcb": 0.0,
+      "total": 8039.93
+    },
+    {
+      "province": "NS",
+      "afni": 15000,
+      "pcb": 3049.92,
+      "total": 19447.92
+    },
+    {
+      "province": "NS",
+      "afni": 20397,
+      "pcb": 3049.92,
+      "total": 19447.92
+    },
+    {
+      "province": "NS",
+      "afni": 26000,
+      "pcb": 3049.92,
+      "total": 19447.92
+    },
+    {
+      "province": "NS",
+      "afni": 26865,
+      "pcb": 2617.42,
+      "total": 19015.42
+    },
+    {
+      "province": "NS",
+      "afni": 28116,
+      "pcb": 1991.92,
+      "total": 18389.92
+    },
+    {
+      "province": "NS",
+      "afni": 30000,
+      "pcb": 1049.92,
+      "total": 17447.92
+    },
+    {
+      "province": "NS",
+      "afni": 34000,
+      "pcb": 0.0,
+      "total": 16398.0
+    },
+    {
+      "province": "NS",
+      "afni": 44999,
+      "pcb": 0.0,
+      "total": 15485.13
+    },
+    {
+      "province": "NS",
+      "afni": 45001,
+      "pcb": 0.0,
+      "total": 15484.86
+    },
+    {
+      "province": "NS",
+      "afni": 47115,
+      "pcb": 0.0,
+      "total": 15165.32
+    },
+    {
+      "province": "NS",
+      "afni": 60000,
+      "pcb": 0.0,
+      "total": 12781.59
+    },
+    {
+      "province": "NS",
+      "afni": 79999,
+      "pcb": 0.0,
+      "total": 9402.13
+    },
+    {
+      "province": "NS",
+      "afni": 80001,
+      "pcb": 0.0,
+      "total": 9401.86
+    },
+    {
+      "province": "NS",
+      "afni": 100000,
+      "pcb": 0.0,
+      "total": 8039.93
+    },
+    {
+      "province": "ON",
+      "afni": 15000,
+      "pcb": 3519.84,
+      "total": 19917.84
+    },
+    {
+      "province": "ON",
+      "afni": 20397,
+      "pcb": 3519.84,
+      "total": 19917.84
+    },
+    {
+      "province": "ON",
+      "afni": 26000,
+      "pcb": 3519.84,
+      "total": 19917.84
+    },
+    {
+      "province": "ON",
+      "afni": 26865,
+      "pcb": 3519.84,
+      "total": 19917.84
+    },
+    {
+      "province": "ON",
+      "afni": 28116,
+      "pcb": 3419.76,
+      "total": 19817.76
+    },
+    {
+      "province": "ON",
+      "afni": 30000,
+      "pcb": 3269.04,
+      "total": 19667.04
+    },
+    {
+      "province": "ON",
+      "afni": 34000,
+      "pcb": 2949.04,
+      "total": 19347.04
+    },
+    {
+      "province": "ON",
+      "afni": 44999,
+      "pcb": 2069.12,
+      "total": 17554.25
+    },
+    {
+      "province": "ON",
+      "afni": 45001,
+      "pcb": 2068.96,
+      "total": 17553.82
+    },
+    {
+      "province": "ON",
+      "afni": 47115,
+      "pcb": 1899.84,
+      "total": 17065.16
+    },
+    {
+      "province": "ON",
+      "afni": 60000,
+      "pcb": 869.04,
+      "total": 13650.64
+    },
+    {
+      "province": "ON",
+      "afni": 79999,
+      "pcb": 0.0,
+      "total": 9402.13
+    },
+    {
+      "province": "ON",
+      "afni": 80001,
+      "pcb": 0.0,
+      "total": 9401.86
+    },
+    {
+      "province": "ON",
+      "afni": 100000,
+      "pcb": 0.0,
+      "total": 8039.93
+    },
+    {
+      "province": "PE",
+      "afni": 15000,
+      "pcb": 819.84,
+      "total": 17217.84
+    },
+    {
+      "province": "PE",
+      "afni": 20397,
+      "pcb": 819.84,
+      "total": 17217.84
+    },
+    {
+      "province": "PE",
+      "afni": 26000,
+      "pcb": 819.84,
+      "total": 17217.84
+    },
+    {
+      "province": "PE",
+      "afni": 26865,
+      "pcb": 819.84,
+      "total": 17217.84
+    },
+    {
+      "province": "PE",
+      "afni": 28116,
+      "pcb": 819.84,
+      "total": 17217.84
+    },
+    {
+      "province": "PE",
+      "afni": 30000,
+      "pcb": 819.84,
+      "total": 17217.84
+    },
+    {
+      "province": "PE",
+      "afni": 34000,
+      "pcb": 819.84,
+      "total": 17217.84
+    },
+    {
+      "province": "PE",
+      "afni": 44999,
+      "pcb": 819.84,
+      "total": 16304.97
+    },
+    {
+      "province": "PE",
+      "afni": 45001,
+      "pcb": 579.84,
+      "total": 16064.7
+    },
+    {
+      "province": "PE",
+      "afni": 47115,
+      "pcb": 579.84,
+      "total": 15745.16
+    },
+    {
+      "province": "PE",
+      "afni": 60000,
+      "pcb": 579.84,
+      "total": 13361.43
+    },
+    {
+      "province": "PE",
+      "afni": 79999,
+      "pcb": 579.84,
+      "total": 9981.97
+    },
+    {
+      "province": "PE",
+      "afni": 80001,
+      "pcb": 0.0,
+      "total": 9401.86
+    },
+    {
+      "province": "PE",
+      "afni": 100000,
+      "pcb": 0.0,
+      "total": 8039.93
+    },
+    {
+      "province": "SK",
+      "afni": 15000,
+      "pcb": 0.0,
+      "total": 16398.0
+    },
+    {
+      "province": "SK",
+      "afni": 20397,
+      "pcb": 0.0,
+      "total": 16398.0
+    },
+    {
+      "province": "SK",
+      "afni": 26000,
+      "pcb": 0.0,
+      "total": 16398.0
+    },
+    {
+      "province": "SK",
+      "afni": 26865,
+      "pcb": 0.0,
+      "total": 16398.0
+    },
+    {
+      "province": "SK",
+      "afni": 28116,
+      "pcb": 0.0,
+      "total": 16398.0
+    },
+    {
+      "province": "SK",
+      "afni": 30000,
+      "pcb": 0.0,
+      "total": 16398.0
+    },
+    {
+      "province": "SK",
+      "afni": 34000,
+      "pcb": 0.0,
+      "total": 16398.0
+    },
+    {
+      "province": "SK",
+      "afni": 44999,
+      "pcb": 0.0,
+      "total": 15485.13
+    },
+    {
+      "province": "SK",
+      "afni": 45001,
+      "pcb": 0.0,
+      "total": 15484.86
+    },
+    {
+      "province": "SK",
+      "afni": 47115,
+      "pcb": 0.0,
+      "total": 15165.32
+    },
+    {
+      "province": "SK",
+      "afni": 60000,
+      "pcb": 0.0,
+      "total": 12781.59
+    },
+    {
+      "province": "SK",
+      "afni": 79999,
+      "pcb": 0.0,
+      "total": 9402.13
+    },
+    {
+      "province": "SK",
+      "afni": 80001,
+      "pcb": 0.0,
+      "total": 9401.86
+    },
+    {
+      "province": "SK",
+      "afni": 100000,
+      "pcb": 0.0,
+      "total": 8039.93
+    }
+  ],
+  "payroll_cases": [
+    {
+      "income": 0,
+      "cpp": 0.0,
+      "cpp2": 0.0,
+      "ei": 0.0,
+      "total": 0.0
+    },
+    {
+      "income": 3500,
+      "cpp": 0.0,
+      "cpp2": 0.0,
+      "ei": 57.05,
+      "total": 57.05
+    },
+    {
+      "income": 30000,
+      "cpp": 1576.75,
+      "cpp2": 0.0,
+      "ei": 489.0,
+      "total": 2065.75
+    },
+    {
+      "income": 68000,
+      "cpp": 3837.75,
+      "cpp2": 0.0,
+      "ei": 1108.4,
+      "total": 4946.15
+    },
+    {
+      "income": 74600,
+      "cpp": 4230.45,
+      "cpp2": 0.0,
+      "ei": 1123.07,
+      "total": 5353.52
+    },
+    {
+      "income": 80000,
+      "cpp": 4230.45,
+      "cpp2": 216.0,
+      "ei": 1123.07,
+      "total": 5569.52
+    },
+    {
+      "income": 85000,
+      "cpp": 4230.45,
+      "cpp2": 416.0,
+      "ei": 1123.07,
+      "total": 5769.52
+    },
+    {
+      "income": 150000,
+      "cpp": 4230.45,
+      "cpp2": 416.0,
+      "ei": 1123.07,
+      "total": 5769.52
+    }
+  ],
+  "depletion_cases": [
+    {
+      "balance": 1000000,
+      "draw": 0,
+      "rate": 0.04,
+      "years": 60
+    },
+    {
+      "balance": 1000000,
+      "draw": 40000,
+      "rate": 0.04,
+      "years": 60
+    },
+    {
+      "balance": 1000000,
+      "draw": 60000,
+      "rate": 0.04,
+      "years": 26
+    },
+    {
+      "balance": 1000000,
+      "draw": 100000,
+      "rate": 0.04,
+      "years": 12
+    },
+    {
+      "balance": 500000,
+      "draw": 45000,
+      "rate": 0.05,
+      "years": 15
+    },
+    {
+      "balance": 250000,
+      "draw": 30000,
+      "rate": 0.03,
+      "years": 9
+    },
+    {
+      "balance": 100000,
+      "draw": 120000,
+      "rate": 0.05,
+      "years": 0
+    }
+  ],
+  "cpp_breakeven_cases": [
+    {
+      "early": 60,
+      "late": 65,
+      "early_annual": 7106.688,
+      "late_annual": 11104.2,
+      "breakeven_age": 73.9
+    },
+    {
+      "early": 60,
+      "late": 70,
+      "early_annual": 7106.688,
+      "late_annual": 15767.964,
+      "breakeven_age": 78.3
+    },
+    {
+      "early": 65,
+      "late": 70,
+      "early_annual": 11104.2,
+      "late_annual": 15767.964,
+      "breakeven_age": 82.0
+    },
+    {
+      "early": 62,
+      "late": 67,
+      "early_annual": 8705.6928,
+      "late_annual": 12969.7056,
+      "breakeven_age": 77.3
+    },
+    {
+      "early": 60,
+      "late": 61,
+      "early_annual": 7106.688,
+      "late_annual": 7906.1904,
+      "breakeven_age": 69.9
+    },
+    {
+      "early": 65,
+      "late": 65,
+      "early_annual": 11104.2,
+      "late_annual": 11104.2,
+      "breakeven_age": 65
+    },
+    {
+      "early": 70,
+      "late": 65,
+      "early_annual": 15767.964,
+      "late_annual": 11104.2,
+      "breakeven_age": 70
+    }
+  ],
+  "oas_recovery_cases": [
+    {
+      "years_in_canada": 40,
+      "net_income": 80000,
+      "oas_gross": 8907.72,
+      "recovery": 0.0,
+      "full_recovery_income": 154707.8
+    },
+    {
+      "years_in_canada": 40,
+      "net_income": 95323,
+      "oas_gross": 8907.72,
+      "recovery": 0.0,
+      "full_recovery_income": 154707.8
+    },
+    {
+      "years_in_canada": 40,
+      "net_income": 95423,
+      "oas_gross": 8907.72,
+      "recovery": 15.0,
+      "full_recovery_income": 154707.8
+    },
+    {
+      "years_in_canada": 40,
+      "net_income": 110000,
+      "oas_gross": 8907.72,
+      "recovery": 2201.55,
+      "full_recovery_income": 154707.8
+    },
+    {
+      "years_in_canada": 40,
+      "net_income": 154707.8,
+      "oas_gross": 8907.72,
+      "recovery": 8907.72,
+      "full_recovery_income": 154707.8
+    },
+    {
+      "years_in_canada": 40,
+      "net_income": 200000,
+      "oas_gross": 8907.72,
+      "recovery": 8907.72,
+      "full_recovery_income": 154707.8
+    },
+    {
+      "years_in_canada": 20,
+      "net_income": 110000,
+      "oas_gross": 4453.86,
+      "recovery": 2201.55,
+      "full_recovery_income": 125015.4
+    },
+    {
+      "years_in_canada": 20,
+      "net_income": 125015.4,
+      "oas_gross": 4453.86,
+      "recovery": 4453.86,
+      "full_recovery_income": 125015.4
+    },
+    {
+      "years_in_canada": 10,
+      "net_income": 100000,
+      "oas_gross": 2226.93,
+      "recovery": 701.55,
+      "full_recovery_income": 110169.2
+    },
+    {
+      "years_in_canada": 40,
+      "net_income": 0,
+      "oas_gross": 8907.72,
+      "recovery": 0.0,
+      "full_recovery_income": 154707.8
+    }
+  ],
+  "pension_cases": [
+    {
+      "age": 60,
+      "cpp": 7106.688,
+      "oas": 8907.72
+    },
+    {
+      "age": 62,
+      "cpp": 8705.6928,
+      "oas": 8907.72
+    },
+    {
+      "age": 65,
+      "cpp": 11104.2,
+      "oas": 8907.72
+    },
+    {
+      "age": 67,
+      "cpp": 12969.7056,
+      "oas": 10190.4317
+    },
+    {
+      "age": 70,
+      "cpp": 15767.964,
+      "oas": 12114.4992
+    }
+  ],
+  "readiness_cases": [
+    {
+      "current_age": 35,
+      "retirement_age": 65,
+      "target": 55000,
+      "savings": 15000,
+      "monthly": 600,
+      "rate": 0.08,
+      "government": 20011.92,
+      "oas_gross": 8907.72,
+      "oas_recovery_tax": 0.0,
+      "nest_egg": 874702.0,
+      "projected_real": 655775.5699,
+      "required_monthly": 829.4642,
+      "coverage": 0.749713,
+      "wait_cost": 194251.636
+    },
+    {
+      "current_age": 25,
+      "retirement_age": 60,
+      "target": 45000,
+      "savings": 0,
+      "monthly": 300,
+      "rate": 0.07,
+      "government": 16014.408,
+      "oas_gross": 8907.72,
+      "oas_recovery_tax": 0.0,
+      "nest_egg": 724639.8,
+      "projected_real": 325722.5363,
+      "required_monthly": 667.4145,
+      "coverage": 0.449496,
+      "wait_cost": 85292.1369
+    },
+    {
+      "current_age": 45,
+      "retirement_age": 65,
+      "target": 70000,
+      "savings": 80000,
+      "monthly": 1200,
+      "rate": 0.08,
+      "government": 20011.92,
+      "oas_gross": 8907.72,
+      "oas_recovery_tax": 0.0,
+      "nest_egg": 1249702.0,
+      "projected_real": 787953.7158,
+      "required_monthly": 2231.8042,
+      "coverage": 0.630513,
+      "wait_cost": 258346.8185
+    },
+    {
+      "current_age": 30,
+      "retirement_age": 65,
+      "target": 40000,
+      "savings": 5000,
+      "monthly": 200,
+      "rate": 0.06,
+      "government": 20011.92,
+      "oas_gross": 8907.72,
+      "oas_recovery_tax": 0.0,
+      "nest_egg": 499702.0,
+      "projected_real": 196329.3828,
+      "required_monthly": 542.575,
+      "coverage": 0.392893,
+      "wait_cost": 45250.1661
+    },
+    {
+      "current_age": 45,
+      "retirement_age": 65,
+      "target": 120000,
+      "savings": 400000,
+      "monthly": 2000,
+      "rate": 0.07,
+      "government": 16310.37,
+      "oas_gross": 8907.72,
+      "oas_recovery_tax": 3701.55,
+      "nest_egg": 2592240.75,
+      "projected_real": 1844578.0844,
+      "required_monthly": 3862.3976,
+      "coverage": 0.711577,
+      "wait_cost": 499046.9121
+    },
+    {
+      "current_age": 50,
+      "retirement_age": 65,
+      "target": 160000,
+      "savings": 600000,
+      "monthly": 3000,
+      "rate": 0.07,
+      "government": 11104.2,
+      "oas_gross": 8907.72,
+      "oas_recovery_tax": 8907.72,
+      "nest_egg": 3722395.0,
+      "projected_real": 2018296.7585,
+      "required_monthly": 9485.2466,
+      "coverage": 0.542204,
+      "wait_cost": 589270.3671
+    },
+    {
+      "current_age": 40,
+      "retirement_age": 70,
+      "target": 100000,
+      "savings": 250000,
+      "monthly": 1500,
+      "rate": 0.06,
+      "government": 27180.9132,
+      "oas_gross": 12114.4992,
+      "oas_recovery_tax": 701.55,
+      "nest_egg": 1820477.17,
+      "projected_real": 1806892.1589,
+      "required_monthly": 1520.0924,
+      "coverage": 0.992538,
+      "wait_cost": 397888.8879
+    }
+  ]
+}

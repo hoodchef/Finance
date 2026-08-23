@@ -11,7 +11,7 @@ import {
   XAxis,
   YAxis,
 } from 'recharts';
-import type { BacktestResult } from '@/lib/backtest';
+import { allSubjects, type SubjectSet } from '@/lib/analytics/subject';
 import { daysBetween } from '@/lib/market-data/dates';
 import { formatPercent } from '@/lib/format';
 import { seriesColor } from '@/lib/utils';
@@ -27,44 +27,50 @@ import {
 } from './chart-chrome';
 
 /**
- * Underwater chart. Drawdown is computed on the time-weighted index rather than
- * the dollar balance, so a contribution cannot make a drawdown look like it
- * recovered when the market had not.
+ * Underwater chart.
+ *
+ * Drawdown is computed on the time-weighted index rather than the dollar
+ * balance, so a contribution cannot make a drawdown look like it recovered when
+ * the market had not.
+ *
+ * Consumes an `AnalyticsSubject` set rather than a backtest, so the same chart
+ * serves a simulation, a live portfolio and a single security unchanged.
  */
-export function DrawdownChart({ result }: { result: BacktestResult }) {
+export function DrawdownChart({ subjects }: { subjects: SubjectSet }) {
   const [hidden, setHidden] = React.useState<Set<string>>(new Set());
+  const all = React.useMemo(() => allSubjects(subjects), [subjects]);
 
   const series = React.useMemo(
-    () => [
-      { key: 'portfolio', label: result.portfolio.name || 'Portfolio', color: 'hsl(var(--negative))' },
-      ...result.benchmarks.map((b, i) => ({
-        key: b.symbol,
-        label: b.symbol,
-        color: seriesColor(b.symbol, i + 1),
+    () =>
+      all.map((s, i) => ({
+        key: s.id,
+        label: s.label,
+        // The primary keeps the loss colour; comparisons take identity colours
+        // so several underwater curves stay separable.
+        color: s.isPrimary ? 'hsl(var(--negative))' : seriesColor(s.id, i),
       })),
-    ],
-    [result],
+    [all],
   );
 
   const rows = React.useMemo(() => {
     const byDate = new Map<string, Record<string, number | string>>();
-    for (const p of result.series) {
-      byDate.set(p.date, { date: p.date, portfolio: p.drawdown });
+    for (const p of subjects.primary.series) {
+      byDate.set(p.date, { date: p.date, [subjects.primary.id]: p.drawdown });
     }
-    for (const b of result.benchmarks) {
-      for (const p of b.series) {
+    for (const c of subjects.comparisons) {
+      for (const p of c.series) {
         const row = byDate.get(p.date);
-        if (row) row[b.symbol] = p.drawdown;
+        if (row) row[c.id] = p.drawdown;
       }
     }
     return [...byDate.values()].sort((a, b) =>
       String(a.date) < String(b.date) ? -1 : 1,
     );
-  }, [result]);
+  }, [subjects]);
 
-  const worst = result.metrics.risk.maxDrawdown;
+  const worst = subjects.primary.metrics.risk.maxDrawdown;
   const tickFormatter = makeDateTickFormatter(
-    daysBetween(result.effectiveStart, result.effectiveEnd),
+    daysBetween(subjects.primary.meta.start, subjects.primary.meta.end),
   );
   const dateTicks = React.useMemo(
     () => makeDateTicks(rows.map((r) => String(r.date))),
@@ -135,9 +141,9 @@ export function DrawdownChart({ result }: { result: BacktestResult }) {
                   dataKey={s.key}
                   name={s.label}
                   stroke={s.color}
-                  strokeWidth={s.key === 'portfolio' ? 1.5 : 1}
-                  fill={s.key === 'portfolio' ? 'url(#dd-fill)' : s.color}
-                  fillOpacity={s.key === 'portfolio' ? 1 : 0.06}
+                  strokeWidth={s.key === subjects.primary.id ? 1.5 : 1}
+                  fill={s.key === subjects.primary.id ? 'url(#dd-fill)' : s.color}
+                  fillOpacity={s.key === subjects.primary.id ? 1 : 0.06}
                   isAnimationActive={false}
                   dot={false}
                   connectNulls

@@ -215,7 +215,7 @@ export function SettingsView() {
             <Button
               variant="destructive"
               onClick={() => {
-                useWorkspace.setState({ portfolios: [], compareIds: [] });
+                useWorkspace.setState({ portfolios: [] });
                 setConfirmClear(false);
               }}
             >

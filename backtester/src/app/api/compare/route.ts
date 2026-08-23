@@ -1,41 +1,56 @@
 import { NextResponse } from 'next/server';
 import { runBacktest, type BacktestResult } from '@/lib/backtest';
 import { getProvider } from '@/lib/market-data';
-import { parseConfig, parsePortfolio, ValidationError } from '@/lib/validate';
 import { errorResponse } from '@/lib/api-errors';
+import { parseConfig, parsePortfolio, ValidationError } from '@/lib/validate';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
 
-const MAX_PORTFOLIOS = 6;
+const MAX_ENTRIES = 6;
 
 /**
- * Runs several portfolios over one shared configuration. They run sequentially
- * so the price cache is warm for every run after the first, which makes the
- * whole comparison roughly as expensive as its slowest single backtest.
+ * Replays several backtests for side-by-side comparison.
+ *
+ * Each entry carries its OWN configuration rather than sharing one, because a
+ * comparison is between saved runs — and a saved run is defined by the config
+ * it executed under. Forcing them onto a single shared config would silently
+ * re-run each one under settings it never used, which is precisely the class of
+ * quiet mismatch immutable snapshots exist to prevent.
+ *
+ * Where that makes the entries non-comparable — different date ranges, different
+ * starting capital — the client surfaces it; the server does not silently
+ * reconcile them.
  */
 export async function POST(request: Request) {
   try {
     const body = await request.json();
-    if (!Array.isArray(body.portfolios) || body.portfolios.length === 0) {
-      throw new ValidationError('Select at least one portfolio to compare.', 'portfolios');
+
+    const rawEntries = Array.isArray(body.entries)
+      ? body.entries
+      : // Older shape: one shared config across N portfolios.
+        Array.isArray(body.portfolios)
+        ? body.portfolios.map((p: unknown) => ({ portfolio: p, config: body.config }))
+        : null;
+
+    if (!rawEntries || rawEntries.length === 0) {
+      throw new ValidationError('Select at least one run to compare.', 'entries');
     }
-    if (body.portfolios.length > MAX_PORTFOLIOS) {
-      throw new ValidationError(
-        `Compare at most ${MAX_PORTFOLIOS} portfolios at once.`,
-        'portfolios',
-      );
+    if (rawEntries.length > MAX_ENTRIES) {
+      throw new ValidationError(`Compare at most ${MAX_ENTRIES} runs at once.`, 'entries');
     }
 
-    const config = parseConfig(body.config);
     const provider = getProvider(body.provider);
     const results: BacktestResult[] = [];
 
-    for (const raw of body.portfolios) {
+    // Sequential on purpose: the price cache is warm for every run after the
+    // first, so the whole comparison costs about as much as its slowest single
+    // backtest, and the data provider is not hit concurrently.
+    for (const entry of rawEntries) {
       results.push(
         await runBacktest({
-          portfolio: parsePortfolio(raw),
-          config,
+          portfolio: parsePortfolio(entry.portfolio),
+          config: parseConfig(entry.config),
           provider,
           includeAssetAnalysis: false,
         }),

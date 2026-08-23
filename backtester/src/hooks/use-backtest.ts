@@ -67,12 +67,20 @@ export function useBacktest() {
   return { result, error, pending, run, reset: () => setResult(null) };
 }
 
+export interface CompareEntry {
+  portfolio: Pick<Portfolio, 'id' | 'name' | 'positions'>;
+  config: BacktestConfig;
+}
+
+/**
+ * Replays saved runs for comparison. Each entry carries its own config, since a
+ * run is defined by the settings it executed under.
+ */
 export async function postBacktestCompare(
-  portfolios: Array<Pick<Portfolio, 'id' | 'name' | 'positions'>>,
-  config: BacktestConfig,
+  entries: CompareEntry[],
   signal: AbortSignal,
 ): Promise<{ results: BacktestResult[] }> {
-  return postJson('/api/compare', { portfolios, config }, signal);
+  return postJson('/api/compare', { entries }, signal);
 }
 
 export async function postRebalanceAnalysis(

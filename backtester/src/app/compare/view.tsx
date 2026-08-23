@@ -11,7 +11,7 @@ import {
   XAxis,
   YAxis,
 } from 'recharts';
-import { AlertCircle, GitCompare, Play } from 'lucide-react';
+import { AlertCircle, AlertTriangle, History, Play, Trash2 } from 'lucide-react';
 import { PageBody, PageHeader } from '@/components/layout/app-shell';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
@@ -37,10 +37,10 @@ import {
   makeDateTicks,
   tooltipDate,
 } from '@/components/charts/chart-chrome';
-import { AllocationBar } from '@/components/builder/allocation-bar';
 import { postBacktestCompare, type ApiError } from '@/hooks/use-backtest';
 import { useHydrated } from '@/hooks/use-hydrated';
 import { useWorkspace } from '@/store/workspace';
+import { runProvenance, type RunProvenance, type SavedRun } from '@/lib/runs';
 import type { BacktestResult } from '@/lib/backtest';
 import { daysBetween } from '@/lib/market-data/dates';
 import {
@@ -53,32 +53,61 @@ import {
 } from '@/lib/format';
 import { cn, seriesColor } from '@/lib/utils';
 
+/**
+ * Comparison operates on saved RUNS, not on live portfolios.
+ *
+ * A run holds an immutable snapshot of the portfolio and configuration it
+ * executed under, so a comparison always shows what was actually measured. When
+ * comparison referenced live portfolios, editing a weight silently rewrote every
+ * saved comparison that mentioned it.
+ */
 export function CompareView() {
   const hydrated = useHydrated();
+  const runs = useWorkspace((s) => s.runs);
   const portfolios = useWorkspace((s) => s.portfolios);
-  const draft = useWorkspace((s) => s.draft);
-  const compareIds = useWorkspace((s) => s.compareIds);
-  const toggleCompare = useWorkspace((s) => s.toggleCompare);
-  const config = useWorkspace((s) => s.config);
+  const compareRunIds = useWorkspace((s) => s.compareRunIds);
+  const toggleCompareRun = useWorkspace((s) => s.toggleCompareRun);
+  const deleteRun = useWorkspace((s) => s.deleteRun);
 
   const [results, setResults] = React.useState<BacktestResult[] | null>(null);
   const [pending, setPending] = React.useState(false);
   const [error, setError] = React.useState<ApiError | null>(null);
   const controller = React.useRef<AbortController | null>(null);
 
-  const candidates = React.useMemo(() => {
-    const list = [...portfolios];
-    // The working draft is comparable too, as long as it is not already saved.
-    if (draft.positions.length && !portfolios.some((p) => p.id === draft.id)) {
-      list.unshift({ ...draft, name: `${draft.name} (unsaved)` });
-    }
-    return list;
-  }, [portfolios, draft]);
+  const selected = React.useMemo(
+    () => runs.filter((r) => compareRunIds.includes(r.runId)),
+    [runs, compareRunIds],
+  );
 
-  const selected = candidates.filter((p) => compareIds.includes(p.id));
+  // Comparing runs measured over different windows or different starting
+  // capital is the most common way to draw a false conclusion here, so it is
+  // stated rather than left for the reader to notice.
+  const mismatches = React.useMemo(() => {
+    if (selected.length < 2) return [] as string[];
+    const out: string[] = [];
+    const windows = new Set(selected.map((r) => `${r.summary.start}|${r.summary.end}`));
+    if (windows.size > 1) {
+      out.push(
+        `These runs cover different periods (${selected
+          .map((r) => `${r.label}: ${formatDate(r.summary.start)}–${formatDate(r.summary.end)}`)
+          .join('; ')}). Returns measured over different windows are not directly comparable.`,
+      );
+    }
+    const capital = new Set(selected.map((r) => r.config.initialInvestment));
+    if (capital.size > 1) {
+      out.push(
+        'These runs started from different amounts of capital, so final values are not comparable. The growth chart is indexed, and remains valid.',
+      );
+    }
+    const dividends = new Set(selected.map((r) => r.config.dividends));
+    if (dividends.size > 1) {
+      out.push('Some runs reinvest dividends and others take them as cash.');
+    }
+    return out;
+  }, [selected]);
 
   async function run() {
-    if (selected.length < 1) return;
+    if (!selected.length) return;
     controller.current?.abort();
     const ac = new AbortController();
     controller.current = ac;
@@ -86,8 +115,14 @@ export function CompareView() {
     setError(null);
     try {
       const data = await postBacktestCompare(
-        selected.map((p) => ({ id: p.id, name: p.name, positions: p.positions })),
-        config,
+        selected.map((r) => ({
+          portfolio: {
+            id: r.runId,
+            name: r.label,
+            positions: r.snapshot.positions,
+          },
+          config: r.config,
+        })),
         ac.signal,
       );
       if (!ac.signal.aborted) setResults(data.results);
@@ -110,13 +145,13 @@ export function CompareView() {
     <>
       <PageHeader
         title="Compare"
-        description="Run several portfolios over one identical window and configuration."
+        description="Saved backtest runs, side by side. Each replays from its own snapshot."
         actions={
-          <Button size="lg" onClick={run} disabled={selected.length === 0 || pending}>
+          <Button size="lg" onClick={run} disabled={!selected.length || pending}>
             {pending ? (
               <>
                 <span className="h-3.5 w-3.5 animate-spin rounded-full border-2 border-current border-t-transparent" />
-                Running {selected.length}…
+                Replaying {selected.length}…
               </>
             ) : (
               <>
@@ -131,14 +166,14 @@ export function CompareView() {
       <PageBody className="space-y-5">
         {!hydrated ? (
           <Skeleton className="h-40 w-full" />
-        ) : candidates.length === 0 ? (
+        ) : runs.length === 0 ? (
           <EmptyState
-            icon={GitCompare}
-            title="Nothing to compare"
-            description="Save at least two portfolios in the backtester, then select them here."
+            icon={History}
+            title="No saved runs yet"
+            description="Every backtest you run is recorded here automatically, with a snapshot of the portfolio and settings behind it. Run one to get started."
             action={
               <Button asChild>
-                <Link href="/backtest">Build a portfolio</Link>
+                <Link href="/backtest">Open the backtester</Link>
               </Button>
             }
             className="py-20"
@@ -146,46 +181,37 @@ export function CompareView() {
         ) : (
           <Card>
             <CardHeader className="pb-3">
-              <CardTitle>Select portfolios</CardTitle>
+              <CardTitle>Select runs</CardTitle>
               <p className="text-xs text-muted-foreground">
-                Up to six at once. All of them use the settings currently set in the backtester:{' '}
-                {formatDate(config.start)} → {formatDate(config.end)},{' '}
-                {formatCurrency(config.initialInvestment)} initial, {config.rebalance} rebalancing.
+                Up to six. Each run replays from the portfolio and settings it originally used, so
+                editing a portfolio afterwards never changes what a saved run reports.
               </p>
             </CardHeader>
             <CardContent className="grid gap-2 sm:grid-cols-2 lg:grid-cols-3">
-              {candidates.map((p) => {
-                const on = compareIds.includes(p.id);
-                const disabled = !on && compareIds.length >= 6;
-                return (
-                  <button
-                    key={p.id}
-                    type="button"
-                    aria-pressed={on}
-                    disabled={disabled}
-                    onClick={() => toggleCompare(p.id)}
-                    className={cn(
-                      'rounded-md border p-3 text-left transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring',
-                      on ? 'border-primary bg-primary/8' : 'border-border hover:bg-accent/40',
-                      disabled && 'cursor-not-allowed opacity-40',
-                    )}
-                  >
-                    <div className="flex items-center justify-between gap-2">
-                      <span className="truncate text-xs font-medium">{p.name}</span>
-                      {on && <Badge variant="primary">Selected</Badge>}
-                    </div>
-                    <p className="mt-0.5 text-2xs text-muted-foreground">
-                      {p.positions.length} holding{p.positions.length === 1 ? '' : 's'}
-                    </p>
-                    <div className="mt-2">
-                      <AllocationBar positions={p.positions} />
-                    </div>
-                  </button>
-                );
-              })}
+              {runs.map((r) => (
+                <RunCard
+                  key={r.runId}
+                  run={r}
+                  selected={compareRunIds.includes(r.runId)}
+                  provenance={runProvenance(r, portfolios)}
+                  disabled={!compareRunIds.includes(r.runId) && compareRunIds.length >= 6}
+                  onToggle={() => toggleCompareRun(r.runId)}
+                  onDelete={() => deleteRun(r.runId)}
+                />
+              ))}
             </CardContent>
           </Card>
         )}
+
+        {mismatches.map((m) => (
+          <div
+            key={m}
+            className="flex items-start gap-2.5 rounded-md border border-[hsl(var(--warning))]/40 bg-[hsl(var(--warning))]/8 p-3 text-xs"
+          >
+            <AlertTriangle className="mt-0.5 h-3.5 w-3.5 shrink-0 text-[hsl(var(--warning))]" />
+            <span className="leading-relaxed">{m}</span>
+          </div>
+        ))}
 
         {error && (
           <div
@@ -215,6 +241,101 @@ export function CompareView() {
   );
 }
 
+function RunCard({
+  run,
+  selected,
+  provenance,
+  disabled,
+  onToggle,
+  onDelete,
+}: {
+  run: SavedRun;
+  selected: boolean;
+  provenance: RunProvenance;
+  disabled: boolean;
+  onToggle: () => void;
+  onDelete: () => void;
+}) {
+  return (
+    <div
+      className={cn(
+        'group relative rounded-md border p-3 transition-colors',
+        selected ? 'border-primary bg-primary/8' : 'border-border hover:bg-accent/40',
+        disabled && 'opacity-40',
+      )}
+    >
+      <button
+        type="button"
+        aria-pressed={selected}
+        disabled={disabled}
+        onClick={onToggle}
+        className="w-full text-left focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+      >
+        <div className="flex items-start justify-between gap-2 pr-6">
+          <span className="truncate text-xs font-medium">{run.label}</span>
+          {selected && <Badge variant="primary">Selected</Badge>}
+        </div>
+
+        <div className="mt-1 flex flex-wrap items-center gap-1.5">
+          {provenance === 'drifted' && (
+            <Badge variant="warning" title="The source portfolio has been edited since this run">
+              Portfolio edited since
+            </Badge>
+          )}
+          {provenance === 'detached' && (
+            <Badge
+              variant="outline"
+              title="This run is not linked to a saved portfolio — it was either run from an unsaved draft, or its portfolio was removed"
+            >
+              Not saved
+            </Badge>
+          )}
+          {run.summary.synthetic && <Badge variant="warning">Synthetic</Badge>}
+        </div>
+
+        <dl className="mt-2 grid grid-cols-3 gap-1 text-2xs">
+          <div>
+            <dt className="text-muted-foreground">CAGR</dt>
+            <dd className="numeric font-medium">{formatPercent(run.summary.cagr, 1)}</dd>
+          </div>
+          <div>
+            <dt className="text-muted-foreground">Max DD</dt>
+            <dd className="numeric font-medium text-negative">
+              {formatPercent(run.summary.maxDrawdown, 1)}
+            </dd>
+          </div>
+          <div>
+            <dt className="text-muted-foreground">Final</dt>
+            <dd className="numeric font-medium">
+              {formatCurrencyCompact(run.summary.finalValue)}
+            </dd>
+          </div>
+        </dl>
+
+        <p className="mt-1.5 truncate text-2xs text-muted-foreground">
+          {run.snapshot.positions
+            .filter((p) => p.weight > 0)
+            .map((p) => `${p.symbol} ${p.weight}%`)
+            .join(' · ')}
+        </p>
+        <p className="text-2xs text-muted-foreground">
+          {formatDate(run.summary.start)} → {formatDate(run.summary.end)}
+        </p>
+      </button>
+
+      <Button
+        variant="ghost"
+        size="icon-sm"
+        aria-label={`Delete run ${run.label}`}
+        onClick={onDelete}
+        className="absolute right-1.5 top-1.5 text-muted-foreground opacity-0 transition-opacity hover:text-negative focus-visible:opacity-100 group-hover:opacity-100"
+      >
+        <Trash2 />
+      </Button>
+    </div>
+  );
+}
+
 function ComparisonChart({ results }: { results: BacktestResult[] }) {
   const [hidden, setHidden] = React.useState<Set<string>>(new Set());
 
@@ -237,7 +358,7 @@ function ComparisonChart({ results }: { results: BacktestResult[] }) {
   return (
     <ChartFrame
       title="Growth of $10,000"
-      description="Time-weighted, so contributions do not distort the comparison."
+      description="Time-weighted and indexed, so runs that started from different capital remain comparable."
       footer={
         <div className="flex flex-wrap gap-x-3 gap-y-1.5">
           {results.map((r, i) => {
@@ -345,18 +466,17 @@ function ComparisonTable({ results }: { results: BacktestResult[] }) {
     { label: 'Best year', get: (r) => r.metrics.annualSummary.best?.return ?? Number.NaN, format: (v) => formatSignedPercent(v, 1), better: null },
     { label: 'Worst year', get: (r) => r.metrics.annualSummary.worst?.return ?? Number.NaN, format: (v) => formatSignedPercent(v, 1), better: null },
     { label: 'Positive years', get: (r) => r.metrics.annualSummary.positiveRate, format: (v) => formatPercent(v, 0), better: 'high' },
+    { label: 'Realised gains', get: (r) => r.totals.totalRealisedGain, format: (v) => formatCurrency(v), better: 'low' },
     { label: 'Total costs', get: (r) => r.totals.totalManagementFees + r.totals.totalExpenseRatioCost + r.totals.totalTradingCosts, format: (v) => formatCurrency(v), better: 'low' },
   ];
-
-  const window = results[0];
 
   return (
     <Card>
       <CardHeader className="pb-2">
         <CardTitle>Side by side</CardTitle>
         <p className="text-xs text-muted-foreground">
-          {formatDate(window.effectiveStart)} → {formatDate(window.effectiveEnd)}. The strongest
-          value in each row is emphasised.
+          The strongest value in each row is emphasised. &ldquo;Better&rdquo; is only meaningful
+          where the runs are otherwise comparable.
         </p>
       </CardHeader>
       <CardContent className="px-0 pb-0">
@@ -379,6 +499,16 @@ function ComparisonTable({ results }: { results: BacktestResult[] }) {
             </TableRow>
           </TableHeader>
           <TableBody>
+            <TableRow>
+              <TableCell className="sticky left-0 whitespace-nowrap bg-card text-xs text-muted-foreground">
+                Period
+              </TableCell>
+              {results.map((r) => (
+                <NumCell key={r.portfolio.id} className="text-2xs text-muted-foreground">
+                  {formatDate(r.effectiveStart)} → {formatDate(r.effectiveEnd)}
+                </NumCell>
+              ))}
+            </TableRow>
             {rows.map((row) => {
               const values = results.map(row.get);
               const valid = values.filter((v) => Number.isFinite(v));
