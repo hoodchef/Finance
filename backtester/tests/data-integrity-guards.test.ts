@@ -454,3 +454,53 @@ describe('a portfolio with an unloadable holding', () => {
   });
 });
 
+
+describe('factor data is never fabricated', () => {
+  /**
+   * The factors carry the same hazard as prices, and one extra: a regression
+   * against invented factors produces a beta and a t-statistic that look
+   * exactly like real ones. There is no visual tell at all.
+   */
+  it('has no synthetic path in the factor module', () => {
+    const body = read('lib/market-data/factors.ts');
+    expect(/Math\.random|synthetic|generateFactors|fallbackFactors/i.test(body)).toBe(false);
+  });
+
+  it('refuses rather than substituting when the Data Library is unreachable', () => {
+    const body = read('lib/market-data/factors.ts');
+    // The message must say nothing is substituted, and the throw must be real.
+    expect(body).toMatch(/nothing is substituted/i);
+    expect(body).toMatch(/throw new MarketDataError/);
+  });
+
+  it('verifies the archive checksum before parsing it', () => {
+    // A truncated download deflates to valid-looking CSV, which would regress
+    // against a silently shortened factor history.
+    const body = read('lib/market-data/factors.ts');
+    expect(body).toMatch(/crc32/);
+    expect(body).toMatch(/checksum/i);
+  });
+
+  it('reports the window it actually covered, not the one requested', () => {
+    // French publishes one to two months behind. A regression that quietly
+    // covered a shorter window than asked for would be a wrong answer.
+    const route = read('app/api/factors/route.ts');
+    expect(route).toMatch(/truncated/);
+    expect(route).toMatch(/aligned\.covered/);
+    const panel = read('components/results/factor-panel.tsx');
+    expect(panel).toMatch(/window\.truncated/);
+  });
+
+  it('never forward-fills a missing factor day', () => {
+    const body = read('lib/market-data/factors.ts');
+    // Carrying a factor return forward invents market movement and biases every
+    // beta toward zero. The join must drop the day instead.
+    expect(body).not.toMatch(/forwardFill|carryForward|ffill/i);
+    expect(body).toMatch(/Inner join/i);
+  });
+
+  it('attributes the data to its source wherever it is shown', () => {
+    expect(read('app/api/factors/route.ts')).toMatch(/Kenneth R\. French Data Library/);
+    expect(read('components/results/factor-panel.tsx')).toMatch(/attribution/);
+  });
+});

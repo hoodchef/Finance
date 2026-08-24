@@ -634,7 +634,13 @@ export async function computeDailyReturns({
   portfolio: Pick<Portfolio, 'id' | 'name' | 'positions'>;
   config: BacktestConfig;
   provider?: MarketDataProvider;
-}): Promise<{ returns: number[]; periodsPerYear: number; tradingDays: number }> {
+}): Promise<{
+  returns: number[];
+  /** Trading day of each return, aligned 1:1 with `returns`. */
+  dates: IsoDate[];
+  periodsPerYear: number;
+  tradingDays: number;
+}> {
   const positions = portfolio.positions.filter(
     (p) => p.symbol.trim() && Number.isFinite(p.weight),
   );
@@ -644,6 +650,7 @@ export async function computeDailyReturns({
   return {
     // Day zero is the entry cost rather than a market move, as everywhere else.
     returns: result.daily.slice(1).map((d) => d.twrReturn),
+    dates: result.daily.slice(1).map((d) => d.date),
     periodsPerYear: result.periodsPerYear,
     tradingDays: result.daily.length,
   };

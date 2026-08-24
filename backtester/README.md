@@ -320,6 +320,51 @@ The portfolio runs with the user's own rebalancing rule and fees but **without
 contributions** — a scheduled deposit landing mid-crash would flatter the
 decline.
 
+### Factor regression
+
+Regresses the portfolio's daily excess return on the Fama–French factors, taken
+from the [Kenneth R. French Data
+Library](https://mba.tuck.dartmouth.edu/pages/faculty/ken.french/data_library.html)
+— the canonical source, published free by the people who defined the factors.
+Three-factor and five-factor models, with Carhart momentum optional on either.
+
+**Standard errors are Newey–West, not classical.** Daily return residuals are
+autocorrelated and heteroskedastic; classical standard errors assume neither and
+come out too small, which makes alpha look significant when it is not. Both are
+computed and the ratio is shown, so the gap is visible rather than hidden behind
+a choice made in the code. The lag length is Newey and West's own rule,
+`floor(4·(n/100)^(2/9))`.
+
+The estimator is checked against **statsmodels**, not against arithmetic written
+here — coefficients, both sets of standard errors, t-statistics, R² and adjusted
+R² all agree to ~1e-9 on a 900-observation design with AR(1) heteroskedastic
+residuals, chosen so the two standard errors genuinely differ (~1.7× on alpha).
+With iid residuals they coincide and the fixture would pass even if the HAC
+sandwich were never implemented.
+
+As a known-answer check, SPY 2015–2024 on the three-factor model returns market
+beta **0.976**, SMB **−0.124** (large-cap), HML **+0.018** (neutral), alpha
+**0.11%/yr at p = 0.73**, R² **0.995** — every sign and magnitude what theory
+predicts of an index fund.
+
+Three things the panel refuses to let slide:
+
+- **Alpha is reported with its p-value beside it**, and in three bands rather
+  than two. A p just over 0.05 is a different statement from a p of 0.9, and
+  collapsing them lets a borderline result read as a null one.
+- **The library lags.** French publishes monthly, one to two months behind. The
+  regression covers only the overlap and says so when that is shorter than the
+  backtest — a factor return cannot be carried forward without inventing market
+  movement that did not happen, so the join is inner and missing days are
+  dropped.
+- **The archive checksum is verified** before parsing. A truncated download
+  inflates into valid-looking CSV and would regress against a silently
+  shortened history.
+
+Factor data is fetched at runtime and cached locally; nothing is redistributed.
+
+---
+
 ## Market data
 
 ### Provider abstraction
@@ -697,7 +742,9 @@ chart omits the row rather than implying no drawdown occurred.
 
 ## Recommended next features
 
-Roughly in order of value per unit of work.
+Monte Carlo, currency translation and factor regression have since been built;
+see [Metric methodology](#metric-methodology) and [Market data](#market-data).
+What remains, roughly in order of value per unit of work:
 
 1. **Tax-aware accounts** — taxable / TFSA / RRSP / FHSA. Lot-level basis,
    realised gains and holding periods are already computed, so what remains is
@@ -706,13 +753,10 @@ Roughly in order of value per unit of work.
    likely to change someone's actual decision.
 2. **Shareable result links** — persist a `BacktestRun` row and rerun
    deterministically from its stored config. The schema is already written.
-3. **Monte Carlo** — with the generator choice stated on screen and simulated
-   results visually separated from historical ones.
-4. **Currency translation** — an FX series in the provider interface and a base
-   currency on the config, unlocking non-USD portfolios properly.
-5. **Factor regression** — Fama–French three- or five-factor attribution against
-   published factor return series.
-6. **Web Worker execution** — the engine is pure and has no I/O, so it can move
+3. **Rolling factor loadings** — the regression is a single window, so a
+   strategy that changed its exposure halfway through reports the average of two
+   things it never was. Rolling betas would show the drift.
+4. **Web Worker execution** — the engine is pure and has no I/O, so it can move
    off the main thread or into a queue unchanged when portfolios get large.
 
 ---

@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { TiingoProvider } from '../src/lib/market-data/tiingo';
+import { getFactorSeries } from '../src/lib/market-data/factors';
 import { YahooFinanceProvider } from '../src/lib/market-data/yahoo';
 import { checkSeries, reconcileDividends } from '../src/lib/market-data/integrity';
 import type { PriceSeries } from '../src/lib/types';
@@ -179,4 +180,79 @@ describe('the contract assertions themselves have teeth', () => {
     // Implied dividend is 0 because adjClose never moved; reported is 4.
     expect(recon[0].relativeError).toBeGreaterThan(0.5);
   });
+});
+
+/**
+ * The Kenneth French Data Library needs no key, so this runs whenever live
+ * verification is asked for. It exists because the library's CSVs carry a prose
+ * preamble of varying length and have been reformatted before: a change there
+ * would not throw, it would parse into a subtly different table.
+ */
+describe.runIf(process.env.VERIFY_DATA)('Fama–French factor contract', () => {
+  it('serves all three sets with the columns each is supposed to have', async () => {
+    const [ff3, ff5, mom] = await Promise.all([
+      getFactorSeries('ff3'),
+      getFactorSeries('ff5'),
+      getFactorSeries('mom'),
+    ]);
+
+    expect(Object.keys(ff3.factors).sort()).toEqual(['HML', 'Mkt-RF', 'SMB']);
+    expect(Object.keys(ff5.factors).sort()).toEqual(['CMA', 'HML', 'Mkt-RF', 'RMW', 'SMB']);
+    expect(Object.keys(mom.factors)).toEqual(['Mom']);
+
+    // Only the research-factor files publish the risk-free rate.
+    expect(ff3.riskFree?.length).toBe(ff3.dates.length);
+    expect(ff5.riskFree?.length).toBe(ff5.dates.length);
+    expect(mom.riskFree ?? []).toHaveLength(0);
+  }, 180_000);
+
+  it('returns decimals, not the percent the file is written in', async () => {
+    const ff3 = await getFactorSeries('ff3');
+    const mkt = ff3.factors['Mkt-RF'];
+    const sd = Math.sqrt(mkt.reduce((s, v) => s + v * v, 0) / mkt.length);
+    // Daily market volatility is around 1%. If the percent conversion were
+    // dropped this would be ~1.0, and every beta would be off by 100x.
+    expect(sd).toBeGreaterThan(0.002);
+    expect(sd).toBeLessThan(0.03);
+    // No day should be beyond -50%/+50%; the missing-value sentinel is -99.99.
+    expect(Math.min(...mkt)).toBeGreaterThan(-0.5);
+    expect(Math.max(...mkt)).toBeLessThan(0.5);
+  }, 180_000);
+
+  it('is dated plausibly and ordered ascending', async () => {
+    const ff3 = await getFactorSeries('ff3');
+    expect(ff3.dates[0]).toBe('1926-07-01');
+    for (let i = 1; i < ff3.dates.length; i++) {
+      expect(ff3.dates[i] > ff3.dates[i - 1]).toBe(true);
+    }
+    // The library publishes monthly and runs one to two months behind. More
+    // than a year behind means it has stopped updating, which the app would
+    // otherwise absorb silently as a shorter regression window.
+    const ageDays =
+      (Date.now() - Date.parse(`${ff3.lastAvailable}T00:00:00Z`)) / 86_400_000;
+    expect(ageDays).toBeGreaterThan(0);
+    expect(ageDays).toBeLessThan(400);
+  }, 180_000);
+
+  it('carries a non-negative risk-free rate', async () => {
+    const ff3 = await getFactorSeries('ff3');
+    // T-bill rates have not gone negative in the US. A sign error here would
+    // shift every excess return and therefore every alpha.
+    expect(Math.min(...ff3.riskFree!)).toBeGreaterThanOrEqual(0);
+    expect(Math.max(...ff3.riskFree!)).toBeLessThan(0.001); // <0.1%/day
+  }, 180_000);
+
+  it('agrees with itself across files on the shared market factor', async () => {
+    const [ff3, ff5] = await Promise.all([getFactorSeries('ff3'), getFactorSeries('ff5')]);
+    const byDate = new Map(ff3.dates.map((d, i) => [d, ff3.factors['Mkt-RF'][i]]));
+    let compared = 0;
+    for (let i = 0; i < ff5.dates.length; i++) {
+      const other = byDate.get(ff5.dates[i]);
+      if (other === undefined) continue;
+      compared++;
+      // Same factor, two files. Disagreement means one was parsed wrong.
+      expect(Math.abs(other - ff5.factors['Mkt-RF'][i])).toBeLessThan(1e-12);
+    }
+    expect(compared).toBeGreaterThan(10_000);
+  }, 180_000);
 });
