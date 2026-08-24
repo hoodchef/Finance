@@ -2,7 +2,7 @@
 
 import * as React from 'react';
 import Link from 'next/link';
-import { AlertCircle, Dices, FlaskConical, LineChart, Play, RefreshCw } from 'lucide-react';
+import { AlertCircle, FlaskConical, LineChart, Play, RefreshCw } from 'lucide-react';
 import { PageBody, PageHeader } from '@/components/layout/app-shell';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
@@ -24,6 +24,7 @@ import { InfoTip } from '@/components/ui/tooltip';
 import { postRebalanceAnalysis, type ApiError } from '@/hooks/use-backtest';
 import { DataFreshness } from '@/components/results/panels';
 import { ScenarioPanel } from '@/components/results/scenario-panel';
+import { MonteCarloPanel } from '@/components/results/montecarlo-panel';
 import { useHydrated } from '@/hooks/use-hydrated';
 import { useWorkspace } from '@/store/workspace';
 import { formatCurrency, formatDate, formatNumber, formatPercent } from '@/lib/format';
@@ -71,16 +72,9 @@ export function AnalyticsView() {
             </TabsContent>
 
             <TabsContent value="montecarlo">
-              <NotBuiltYet
-                icon={Dices}
-                title="Monte Carlo simulation"
-                what="Resample or simulate thousands of alternative return paths and report the distribution of outcomes — median terminal value, the 5th and 95th percentiles, and the probability of falling short of a target."
-                why="Nothing is shown here because nothing has been computed. A plausible-looking fan chart drawn from assumed parameters would be indistinguishable from a real one, and would be the most misleading screen in the product."
-                needs={[
-                  'A choice of generator — bootstrap resampling of the realised daily returns, a block bootstrap that preserves autocorrelation, or a parametric model — each of which implies different assumptions worth stating on screen.',
-                  'A clear visual separation between simulated and historical results, so the two are never read as the same kind of evidence.',
-                ]}
-                ready="The engine already accepts an arbitrary daily return series, so a simulated path can be run through the identical accounting, fees and rebalancing logic that the historical backtest uses."
+              <MonteCarloPanel
+                portfolio={{ id: draft.id, name: draft.name, positions: draft.positions }}
+                config={config}
               />
             </TabsContent>
 
@@ -313,53 +307,5 @@ function RebalancingAnalysis({
         )}
       </Card>
     </div>
-  );
-}
-
-/* ------------------------------------------------------------------ */
-
-/**
- * An honest placeholder. It says what the feature would do, what it needs, and
- * — most importantly — why nothing is displayed rather than showing invented
- * numbers behind a "sample data" label.
- */
-function NotBuiltYet({
-  icon: Icon,
-  title,
-  what,
-  why,
-  needs,
-  ready,
-}: {
-  icon: React.ComponentType<{ className?: string }>;
-  title: string;
-  what: string;
-  why: string;
-  needs: string[];
-  ready: string;
-}) {
-  return (
-    <Card>
-      <CardHeader>
-        <div className="flex items-center gap-2">
-          <Icon className="h-4 w-4 text-muted-foreground" />
-          <CardTitle>{title}</CardTitle>
-          <Badge variant="outline">Not implemented</Badge>
-        </div>
-      </CardHeader>
-      <CardContent className="space-y-3 text-xs leading-relaxed">
-        <p>{what}</p>
-        <p className="text-muted-foreground">{why}</p>
-        <div>
-          <p className="mb-1 font-medium">What it needs first</p>
-          <ul className="list-disc space-y-1 pl-4 text-muted-foreground">
-            {needs.map((n) => (
-              <li key={n}>{n}</li>
-            ))}
-          </ul>
-        </div>
-        <p className="border-t border-border pt-3 text-muted-foreground">{ready}</p>
-      </CardContent>
-    </Card>
   );
 }

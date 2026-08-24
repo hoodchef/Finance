@@ -613,6 +613,42 @@ function dedupeWarnings(warnings: BacktestWarning[]): BacktestWarning[] {
   return out.sort((a, b) => order[a.severity] - order[b.severity]);
 }
 
+/**
+ * The FULL daily time-weighted return series, undownsampled.
+ *
+ * `BacktestResult.series` is thinned to roughly 1,600 points for charting. That
+ * is right for a chart and catastrophic for anything that treats the points as
+ * daily observations: a fifteen-year run yields about 1,338 of them, so each
+ * spans nearly three trading days. Resampling those as if daily compounds three
+ * days of return per step, which turned a 9.3% strategy into a 28% one — a
+ * confident, attractive, entirely wrong number.
+ *
+ * Anything doing statistics on returns must use this rather than the chart
+ * series.
+ */
+export async function computeDailyReturns({
+  portfolio,
+  config,
+  provider = getProvider(),
+}: {
+  portfolio: Pick<Portfolio, 'id' | 'name' | 'positions'>;
+  config: BacktestConfig;
+  provider?: MarketDataProvider;
+}): Promise<{ returns: number[]; periodsPerYear: number; tradingDays: number }> {
+  const positions = portfolio.positions.filter(
+    (p) => p.symbol.trim() && Number.isFinite(p.weight),
+  );
+  const data = await prepareData({ symbols: positions, config, provider });
+  const result = runEngine({ portfolio: { ...portfolio, positions }, config, data });
+
+  return {
+    // Day zero is the entry cost rather than a market move, as everywhere else.
+    returns: result.daily.slice(1).map((d) => d.twrReturn),
+    periodsPerYear: result.periodsPerYear,
+    tradingDays: result.daily.length,
+  };
+}
+
 /* ------------------------------------------------------------------ */
 /* Rebalancing analysis                                               */
 /* ------------------------------------------------------------------ */
