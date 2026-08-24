@@ -6,3 +6,8 @@ out
 *.tsbuildinfo
 next-env.d.ts
 .cache
+
+# Recorded vendor price data. Tiingo's licence is personal-use only, so these
+# are NOT redistributable — regenerate them with your own key:
+#   npm run record:fixtures
+tests/fixtures/tiingo-*.json

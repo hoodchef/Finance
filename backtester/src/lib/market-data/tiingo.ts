@@ -297,3 +297,6 @@ export class TiingoProvider implements MarketDataProvider {
     }
   }
 }
+
+/** Exposed for `tests/parity-tiingo.test.ts`, which replays recorded bars. */
+export const __testing = { parse };

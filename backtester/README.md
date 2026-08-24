@@ -216,6 +216,36 @@ distributions.
 `adjClose` column to ~1e-5. That combination proves the remaining gap is a
 definition, not a defect.
 
+**Vendors do not agree with each other, either.** Yahoo back-adjusts. Tiingo
+does not: it scales every bar before an ex-date by `C_ex / (C_ex + D)`, which
+telescopes to
+
+```
+adjC_t / adjC_{t−1}  =  (C_t + D_t) / C_{t−1}
+```
+
+— the exact convention, the same one the engine implements. So Tiingo is both
+an independent reference and a sharper one: where Yahoo can only bound the
+disagreement at ~1e-5, Tiingo agrees to floating point.
+
+This was derived from the data, not from documentation. Across 74 dividends on
+SPY, AAPL, BND and KO, the implied per-event step matched `1 + D/C_ex` to
+~1e-12 and missed Yahoo's `1/(1 − D/C_{t−1})` by up to `1.2e-4`.
+`tests/parity-tiingo.test.ts` re-derives it on every run, so if Tiingo ever
+changes how it adjusts, the suite fails there first rather than quietly
+re-baselining:
+
+| Reference | Symbol | Span | Events | Agreement |
+| --- | --- | --- | --- | --- |
+| Tiingo `adjClose` | SPY | 2015–2024 | 40 dividends | ~1e-8 |
+| Tiingo `adjClose` | BND | 2015–2024 | 120 distributions | ~1e-8 |
+| Tiingo `adjClose` | AAPL | 2019–2021 | 12 dividends + 4:1 split | ~1e-8 |
+| Yahoo `adjClose` | AAPL | 2020 | 1 dividend + 4:1 split | ~1e-5 (convention gap) |
+
+Both mutants tried against this suite are killed: reinvesting at the prior
+close (the back-adjustment assumption) breaks all three parity tests, and
+ignoring the split factor breaks both AAPL tests.
+
 ---
 
 ### Cost basis and realised gains
@@ -374,10 +404,34 @@ compared to the reported amount.
 TIINGO_API_KEY=your_key_here
 ```
 
-Tiingo uses the **opposite** convention: raw prices with per-bar `divCash` and
-`splitFactor`. The series is declared `adjustment: 'raw'` and the engine applies
-splits to share counts itself — a path it already supports and tests. Absorbing
-that difference is exactly what the provider abstraction is for.
+Tiingo takes the **opposite** approach to delivery: raw, as-traded prices with
+per-bar `divCash` and `splitFactor`, rather than Yahoo's pre-adjusted closes.
+The series is declared `adjustment: 'raw'` and the engine applies splits to
+share counts itself — a path it already supports and tests. Absorbing that
+difference is exactly what the provider abstraction is for.
+
+Tiingo also ships its own adjusted columns, and those use the **exact
+total-return** convention rather than Yahoo's back-adjustment (see
+[the dividend convention](#the-dividend-convention-and-why-it-differs-from-a-vendors-adjusted-close)).
+The engine ignores them at runtime — it works from the raw side — but
+`tests/parity-tiingo.test.ts` checks one against the other, which is the
+strongest parity anchor in the repo.
+
+### Parity fixtures are not redistributable
+
+The Tiingo recordings that back `tests/parity-tiingo.test.ts` are gitignored.
+Tiingo licenses its data for personal use only, so committing ten years of
+SPY/BND/AAPL bars would be redistributing a vendor's dataset — a liability for
+anything that later becomes commercial. Regenerate them with your own key:
+
+```bash
+npm run record:fixtures
+```
+
+Without them the suite **skips**, which is the right default but also how a
+parity anchor rots unnoticed. `npm run test:parity` sets `REQUIRE_FIXTURES=1`,
+which turns a missing fixture into an explicit failure naming the file and the
+command that fixes it. Use that form in CI.
 
 ### Verifying a provider before trusting it
 
