@@ -8,6 +8,7 @@ import type {
 import { CASH_SYMBOL } from '@/lib/types';
 import type { MarketDataProvider } from '@/lib/market-data/provider';
 import { checkSeries } from '@/lib/market-data/integrity';
+import { alignRates, getFxSeries } from '@/lib/market-data/fx';
 import { buildDeflator, getInflationProvider } from '@/lib/market-data/inflation';
 import { maxIso, minIso, yearsBetween } from '@/lib/market-data/dates';
 import type { PreparedAsset, PreparedData } from './types';
@@ -220,29 +221,39 @@ export async function prepareData({
   /* Currency                                                        */
   /* -------------------------------------------------------------- */
 
-  // The engine sums `shares x price` across holdings. If those prices are in
-  // different currencies it is adding incompatible units, and the resulting
-  // total means nothing. There is no FX translation yet, so the only correct
-  // response is to refuse rather than to produce a confident wrong number.
+  // The engine sums `shares x price`, so holdings in different currencies must
+  // be translated into one before they can be added. Where that is impossible
+  // the run is refused rather than producing a confident wrong total.
   const weightedSymbols = usable.filter((s) => (unique.get(s)?.weight ?? 0) !== 0);
-  const currencies = new Map<string, string>();
+  const currencyOf = new Map<string, string>();
   for (const sym of weightedSymbols) {
     const ccy = seriesBySymbol.get(sym)?.meta.currency;
-    if (ccy) currencies.set(sym, ccy.toUpperCase());
+    if (ccy) currencyOf.set(sym, ccy.toUpperCase());
   }
-  const distinct = new Set(currencies.values());
+  const distinct = new Set(currencyOf.values());
 
-  if (distinct.size > 1) {
-    const detail = [...currencies.entries()].map(([s, c]) => `${s} in ${c}`).join(', ');
-    warnings.push({
-      severity: 'error',
-      code: 'mixed-currency',
-      message: `This portfolio mixes currencies (${detail}). Values in different currencies cannot be added together, and no exchange-rate conversion is applied, so no meaningful result can be produced. Build separate portfolios per currency until FX translation is supported.`,
-    });
-  } else if (distinct.size === 0 && weightedSymbols.length > 1) {
-    // Provider does not state currency. Fall back to the one signal available:
-    // an exchange suffix. This warns rather than refuses, because the suffix is
-    // a hint about the listing venue, not a statement about denomination.
+  /**
+   * Default base is whichever currency the largest share of the portfolio is
+   * already in, so a single-currency portfolio is never converted and never
+   * acquires FX movement it did not actually experience.
+   */
+  let baseCurrency = config.baseCurrency?.toUpperCase();
+  if (!baseCurrency && distinct.size > 0) {
+    const byWeight = new Map<string, number>();
+    for (const [sym, ccy] of currencyOf) {
+      byWeight.set(ccy, (byWeight.get(ccy) ?? 0) + Math.abs(unique.get(sym)?.weight ?? 0));
+    }
+    baseCurrency = [...byWeight.entries()].sort((a, b) => b[1] - a[1])[0][0];
+  }
+
+  const needsFx =
+    baseCurrency != null &&
+    [...currencyOf.values()].some((c) => c !== baseCurrency);
+
+  if (distinct.size === 0 && weightedSymbols.length > 1) {
+    // Provider does not report currency. An exchange suffix hints at the venue
+    // but is not a statement about denomination, so this warns rather than
+    // refusing or silently converting.
     const suffixes = new Set(
       weightedSymbols.map((s) => (/\.([A-Z]{1,3})$/.exec(s)?.[1] ?? 'US')),
     );
@@ -250,7 +261,7 @@ export async function prepareData({
       warnings.push({
         severity: 'warning',
         code: 'possible-mixed-currency',
-        message: `These holdings are listed on different exchanges (${weightedSymbols.join(', ')}) and this data provider does not report currency. If they are denominated differently, the totals below add incompatible units. Verify before relying on them.`,
+        message: `These holdings are listed on different exchanges (${weightedSymbols.join(', ')}) and this data provider does not report currency, so no exchange-rate translation could be applied. If they are denominated differently, the totals below add incompatible units.`,
       });
     }
   }
@@ -314,6 +325,58 @@ export async function prepareData({
   /* -------------------------------------------------------------- */
   /* Calendar-aligned asset arrays                                   */
   /* -------------------------------------------------------------- */
+
+  /* -------------------------------------------------------------- */
+  /* Exchange rates                                                   */
+  /* -------------------------------------------------------------- */
+
+  /** Aligned rate per calendar day, by the currency being converted FROM. */
+  const fxByCurrency = new Map<string, number[]>();
+  let fxSourceLabel: string | null = null;
+
+  if (needsFx && baseCurrency) {
+    const foreign = [...new Set([...currencyOf.values()].filter((c) => c !== baseCurrency))];
+
+    for (const from of foreign) {
+      try {
+        const series = await getFxSeries(from, baseCurrency, {
+          start: calendar[0],
+          end: calendar[calendar.length - 1],
+        });
+        const { rates, missingBefore } = alignRates(series, calendar);
+        fxByCurrency.set(from, rates);
+        fxSourceLabel = series.sourceLabel;
+
+        if (missingBefore) {
+          // Rates do not reach the start of the window. Extrapolating one
+          // backwards would be inventing the single number the conversion
+          // depends on, so the affected days are dropped instead.
+          warnings.push({
+            severity: 'warning',
+            code: 'fx-history-short',
+            message: `Exchange rates for ${from}/${baseCurrency} from ${series.sourceLabel} begin ${series.earliest}, after this backtest starts. Days before that cannot be valued and are excluded.`,
+          });
+        }
+      } catch (err) {
+        warnings.push({
+          severity: 'error',
+          code: 'fx-unavailable',
+          message:
+            err instanceof Error
+              ? err.message
+              : `No ${from}/${baseCurrency} exchange rate could be loaded, so this portfolio cannot be valued.`,
+        });
+      }
+    }
+
+    if (fxByCurrency.size > 0) {
+      warnings.push({
+        severity: 'info',
+        code: 'fx-applied',
+        message: `Holdings in ${foreign.join(', ')} are translated into ${baseCurrency} at the ${fxSourceLabel ?? 'published'} daily rate. Returns therefore include currency movement, which is real risk borne by a ${baseCurrency} investor and not an artefact.`,
+      });
+    }
+  }
 
   const assets: PreparedAsset[] = [];
 
@@ -411,6 +474,43 @@ export async function prepareData({
         message: `${symbol} has no price data inside ${calendar[0]} – ${calendar.at(-1)}.`,
       });
       continue;
+    }
+
+    // Translate into the base currency. Prices and dividends both convert at
+    // the rate for their own day: a dividend received in USD is worth whatever
+    // it was worth on the day it was paid, not at some later rate.
+    const assetCurrency = currencyOf.get(symbol);
+    const fx = assetCurrency ? fxByCurrency.get(assetCurrency) : undefined;
+    if (fx) {
+      for (let i = 0; i < calendar.length; i++) {
+        const rate = fx[i];
+        if (!Number.isFinite(rate)) {
+          // No rate for this day means the holding cannot be valued in the
+          // base currency; treat it as absent rather than guessing.
+          prices[i] = Number.NaN;
+          dividends[i] = 0;
+          continue;
+        }
+        if (Number.isFinite(prices[i])) prices[i] *= rate;
+        if (dividends[i]) dividends[i] *= rate;
+      }
+      // Re-derive the tradable span, which the missing rates may have shortened.
+      firstIndex = prices.findIndex((v) => Number.isFinite(v) && v > 0);
+      for (let i = calendar.length - 1; i >= 0; i--) {
+        if (Number.isFinite(prices[i]) && prices[i] > 0) {
+          lastIndex = i;
+          break;
+        }
+      }
+      if (firstIndex < 0) {
+        warnings.push({
+          severity: 'error',
+          code: 'no-data-in-window',
+          symbol,
+          message: `${symbol} could not be converted into ${baseCurrency} for any day in this window.`,
+        });
+        continue;
+      }
     }
 
     assets.push({

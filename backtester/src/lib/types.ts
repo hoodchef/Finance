@@ -265,6 +265,14 @@ export interface BacktestConfig {
   };
   /** Basis method used to split gains into realised and unrealised. */
   costBasisMethod: CostBasisMethod;
+  /**
+   * Currency every holding is translated into before being valued.
+   *
+   * When unset, the currency held by the largest share of the portfolio is
+   * used, so a single-currency portfolio is never converted and gains no FX
+   * noise it did not actually experience.
+   */
+  baseCurrency?: string;
   /** Additional scheduled flows, on top of the simple recurring contribution. */
   cashflows: CashflowLeg[];
   inflation: {

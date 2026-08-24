@@ -350,12 +350,13 @@ export async function runBacktest({
    * Data problems that invalidate the arithmetic itself, as distinct from the
    * many that merely deserve a note beside the result.
    *
-   * Mixed currencies make the totals meaningless — the engine would be adding
-   * incompatible units. An unapplied split manufactures or destroys a large
-   * chunk of return. Neither is something to render with a caveat underneath;
-   * a plausible-looking wrong number is more dangerous than no number.
+   * A missing exchange rate makes a mixed-currency total meaningless — the
+   * engine would be adding incompatible units. An unapplied split manufactures
+   * or destroys a large chunk of return. Neither is something to render with a
+   * caveat underneath; a plausible-looking wrong number is more dangerous than
+   * no number.
    */
-  const BLOCKING_CODES = new Set(['mixed-currency', 'unadjusted-split']);
+  const BLOCKING_CODES = new Set(['fx-unavailable', 'unadjusted-split']);
   const blocking = data.warnings.filter(
     (w) => w.severity === 'error' && BLOCKING_CODES.has(w.code),
   );

@@ -234,6 +234,9 @@ export function parseConfig(raw: unknown): BacktestConfig {
       'Cost basis method',
       d.costBasisMethod,
     ),
+    baseCurrency: record.baseCurrency
+      ? String(record.baseCurrency).trim().toUpperCase().slice(0, 3)
+      : undefined,
     inflation: parseInflation(record.inflation, d),
     cashflows: parseCashflows(record.cashflows),
     benchmarks,

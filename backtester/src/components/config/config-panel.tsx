@@ -407,6 +407,28 @@ export function ConfigPanel() {
 
         {/* ---------------------------------------------------------- */}
         <Section
+          title="Reporting currency"
+          hint="Holdings denominated differently are translated into this before being added together, at the published daily rate. Returns then include currency movement, which is real risk borne by an investor in this currency rather than an artefact. Leave it on automatic and a single-currency portfolio is never converted."
+        >
+          <Select
+            value={config.baseCurrency ?? 'auto'}
+            onValueChange={(v) => setConfig({ baseCurrency: v === 'auto' ? undefined : v })}
+          >
+            <SelectTrigger className="text-xs">
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="auto">Automatic (dominant holding)</SelectItem>
+              <SelectItem value="USD">US dollars</SelectItem>
+              <SelectItem value="CAD">Canadian dollars</SelectItem>
+            </SelectContent>
+          </Select>
+        </Section>
+
+        <Separator />
+
+        {/* ---------------------------------------------------------- */}
+        <Section
           title="Cost basis"
           hint="Determines how a sale is matched against earlier purchases, which splits the portfolio's gain into realised and unrealised. It changes nothing about performance — only which part of the gain has been crystallised. No tax is calculated anywhere in this tool."
         >

@@ -5,7 +5,7 @@ historical market data, and see what actually drove the result.
 
 The engine is a deterministic, event-driven daily simulator that tracks share
 counts and cash through time. It is separate from the UI, has no React
-dependency, and is covered by 481 tests — including a parity check against an
+dependency, and is covered by 527 tests — including a parity check against an
 independently-computed reference.
 
 ```bash
@@ -468,6 +468,33 @@ free — and the cost of using it otherwise is large:
 So every run that uses it measures the dividends it discarded and reports the
 figure, the methodology block states plainly that these are price returns, and
 the configuration panel shows the tradeoff at the point of choice.
+
+### Currency
+
+Holdings denominated differently are translated into one reporting currency
+before being added, at the published daily rate. Returns then include currency
+movement — which is real risk borne by an investor in that currency, not an
+artefact to be smoothed away.
+
+The base currency defaults to whichever currency holds the largest share of the
+portfolio, so a single-currency portfolio is never converted and never acquires
+FX noise it did not experience.
+
+**Direction is the thing that silently breaks.** A rate is always units of quote
+per one unit of base: `USDCAD = 1.38` means a USD price is converted to CAD by
+*multiplying*. Inverting it produces a portfolio that looks entirely plausible
+and is wrong by the square of the rate, so the direction is asserted against a
+live published value rather than trusted to careful reading.
+
+Rates come from the **Bank of Canada Valet API** — the official source, free and
+keyless — with Yahoo behind it for deeper history. The Bank's published series
+begin in **2017**, when it replaced noon rates with indicative rates. Where a
+requested window predates the available rates, those days are excluded and the
+user told; extrapolating a rate backwards would be inventing the single number
+the conversion depends on.
+
+Where no rate can be loaded at all, the run is **refused**. A mixed-currency
+total without a rate is not approximately right, it is meaningless.
 
 ### Provenance shown with every result
 
