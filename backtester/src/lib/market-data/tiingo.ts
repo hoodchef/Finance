@@ -142,7 +142,9 @@ function parse(symbol: string, meta: TiingoMeta, raw: TiingoBar[]): PriceSeries 
       // Tiingo does not classify instrument type on this endpoint; leaving it
       // 'other' is honest, and nothing in the engine branches on it.
       assetClass: 'other',
-      currency: 'USD',
+      // Tiingo's daily metadata carries no currency field, so this stays
+      // undefined rather than asserting USD for a listing it never described.
+      currency: undefined,
       exchange: meta.exchangeCode,
       firstTradeDate: meta.startDate?.slice(0, 10) ?? bars[0].date,
       lastTradeDate: meta.endDate?.slice(0, 10) ?? bars[bars.length - 1].date,
@@ -288,7 +290,7 @@ export class TiingoProvider implements MarketDataProvider {
         symbol: r.ticker.toUpperCase(),
         name: r.name,
         assetClass: r.assetType?.toLowerCase() === 'etf' ? 'etf' : 'equity',
-        currency: 'USD',
+        currency: undefined,
       }));
     } catch {
       return [];

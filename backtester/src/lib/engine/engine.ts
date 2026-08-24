@@ -79,10 +79,25 @@ export function runEngine(input: EngineInput): EngineResult {
     .filter((a) => a.isCash)
     .reduce((s, a) => s + a.targetWeight, 0);
 
+  /**
+   * The denominator is what the USER declared, not what successfully loaded.
+   *
+   * Taking it from loaded assets meant a holding whose data failed had its
+   * weight silently absorbed by the others: ask for 50/50, lose one leg, and
+   * receive a fully-invested 100% position in the survivor — a different
+   * portfolio, reported as though it were the one requested. The weight of a
+   * missing holding now stays in the denominator, so it is simply never funded
+   * and remains in cash, which is the honest outcome.
+   *
+   * `runBacktest` refuses such a run outright by default; this is the
+   * defence-in-depth that keeps the arithmetic right if one ever reaches here.
+   */
   const declaredWeight =
-    assets.reduce((s, a) => s + a.targetWeight, 0) || 1;
+    (portfolio.positions ?? []).reduce((sum, p) => sum + (Number(p.weight) || 0), 0) ||
+    assets.reduce((sum, a) => sum + a.targetWeight, 0) ||
+    1;
 
-  /** Target weights as fractions summing to 1 across everything declared. */
+  /** Target weights as fractions of everything the user asked for. */
   const normWeight = new Map<string, number>();
   for (const a of assets) normWeight.set(a.symbol, a.targetWeight / declaredWeight);
   const normCashSleeve = cashSleeveWeight / declaredWeight;

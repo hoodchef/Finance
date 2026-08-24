@@ -267,6 +267,24 @@ describe('failure messages never steer users toward synthetic data', () => {
    */
   const providerSources = ['lib/market-data/yahoo.ts', 'lib/market-data/tiingo.ts'];
 
+  it('no user-facing error path offers demo mode as a remedy', () => {
+    // The guard originally covered only the provider modules, and a suggestion
+    // survived in the workspace's error banner — the same advice, one layer up.
+    // Anywhere an error is rendered counts.
+    const files = listFiles(path.join(SRC, 'app'), (f) => f.endsWith('.tsx')).concat(
+      listFiles(path.join(SRC, 'components'), (f) => f.endsWith('.tsx')),
+    );
+    const offenders: string[] = [];
+    for (const file of files) {
+      const body = fs.readFileSync(file, 'utf8');
+      if (!/error/i.test(body)) continue;
+      if (/switch to the demo (data )?provider|use demo mode instead/i.test(body)) {
+        offenders.push(path.relative(SRC, file));
+      }
+    }
+    expect(offenders, `these steer users to synthetic data on failure: ${offenders.join(', ')}`).toEqual([]);
+  });
+
   it.each(providerSources)('%s does not suggest demo mode on failure', (rel) => {
     const body = read(rel);
     const thrownMessages = body.match(/new MarketDataError\(\s*[\s\S]{0,600}?\)/g) ?? [];
@@ -342,5 +360,180 @@ describe('staleness is measured against what was asked for', () => {
     });
     expect(typeof result.dataSource.dataAgeDays).toBe('number');
     expect(result.dataSource.dataAgeDays).toBeGreaterThanOrEqual(0);
+  });
+});
+
+describe('a portfolio with an unloadable holding', () => {
+  /**
+   * Refusing is the honest default. Reporting a number for a portfolio the
+   * user did not ask about is worse than reporting nothing, and a warning
+   * beside a plausible-looking result was demonstrably not enough.
+   */
+  const failingProvider = {
+    id: 'partial',
+    label: 'Partial',
+    synthetic: false,
+    description: 'Serves SPY and fails everything else',
+    async getHistoricalPrices(symbol: string, range: { start: string; end: string }) {
+      if (symbol !== 'SPY') throw new Error(`no data for ${symbol}`);
+      return getDemoProvider().getHistoricalPrices(symbol, range);
+    },
+    async getCorporateActions() {
+      return { dividends: [], splits: [] };
+    },
+    async getDividends() {
+      return [];
+    },
+    async getTradingCalendar() {
+      return [];
+    },
+    async search() {
+      return [];
+    },
+  } as unknown as Parameters<typeof runBacktest>[0]['provider'];
+
+  const twoHoldings = {
+    id: 'p',
+    name: 'P',
+    positions: [
+      { id: '1', symbol: 'SPY', weight: 50 },
+      { id: '2', symbol: 'NOPE', weight: 50 },
+    ],
+  };
+
+  it('refuses rather than reporting a different portfolio', async () => {
+    await expect(
+      runBacktest({
+        portfolio: twoHoldings,
+        config: testConfig({ start: '2015-01-05', end: '2020-12-31', benchmarks: [] }),
+        provider: failingProvider,
+        includeAssetAnalysis: false,
+      }),
+    ).rejects.toThrow(/cannot be evaluated/i);
+  });
+
+  it('explains what would otherwise have happened', async () => {
+    await expect(
+      runBacktest({
+        portfolio: twoHoldings,
+        config: testConfig({ start: '2015-01-05', end: '2020-12-31', benchmarks: [] }),
+        provider: failingProvider,
+        includeAssetAnalysis: false,
+      }),
+    ).rejects.toThrow(/redistribute/i);
+  });
+
+  it('proceeds only when the user opts in, holding that weight in cash', async () => {
+    const r = await runBacktest({
+      portfolio: twoHoldings,
+      config: testConfig({
+        start: '2015-01-05',
+        end: '2020-12-31',
+        benchmarks: [],
+        inceptionPolicy: 'cash',
+      }),
+      provider: failingProvider,
+      includeAssetAnalysis: false,
+    });
+
+    // Half the capital is uninvested rather than doubling down on SPY.
+    expect(r.series[0].cash).toBeGreaterThan(4_000);
+    expect(r.warnings.some((w) => w.code === 'symbol-unavailable')).toBe(true);
+  });
+
+  it('does not refuse when only a benchmark is unavailable', async () => {
+    // A benchmark is supplementary; losing it must not block the run.
+    const r = await runBacktest({
+      portfolio: { id: 'p', name: 'P', positions: [{ id: '1', symbol: 'SPY', weight: 100 }] },
+      config: testConfig({ start: '2015-01-05', end: '2020-12-31', benchmarks: ['NOPE'] }),
+      provider: failingProvider,
+      includeAssetAnalysis: false,
+    });
+    expect(r.totals.finalValue).toBeGreaterThan(0);
+    expect(r.benchmarks).toHaveLength(0);
+  });
+});
+
+describe('currency', () => {
+  /**
+   * The engine sums `shares x price` with no notion of currency, so mixing
+   * denominations adds incompatible units. Until FX translation exists, the
+   * only correct answer is to refuse.
+   */
+  function providerWithCurrencies(map: Record<string, string | undefined>) {
+    const demo = getDemoProvider();
+    return {
+      id: 'ccy',
+      label: 'Currency test',
+      synthetic: false,
+      description: 'test',
+      async getHistoricalPrices(symbol: string, range: { start: string; end: string }) {
+        const s = await demo.getHistoricalPrices(symbol, range);
+        return { ...s, synthetic: false, meta: { ...s.meta, currency: map[symbol] } };
+      },
+      async getCorporateActions() {
+        return { dividends: [], splits: [] };
+      },
+      async getDividends() {
+        return [];
+      },
+      async getTradingCalendar() {
+        return [];
+      },
+      async search() {
+        return [];
+      },
+    } as unknown as Parameters<typeof runBacktest>[0]['provider'];
+  }
+
+  const mixed = {
+    id: 'p',
+    name: 'P',
+    positions: [
+      { id: '1', symbol: 'VTI', weight: 50 },
+      { id: '2', symbol: 'XEQT', weight: 50 },
+    ],
+  };
+
+  it('refuses to add USD and CAD holdings together', async () => {
+    await expect(
+      runBacktest({
+        portfolio: mixed,
+        config: testConfig({ start: '2015-01-05', end: '2020-12-31', benchmarks: [] }),
+        provider: providerWithCurrencies({ VTI: 'USD', XEQT: 'CAD' }),
+        includeAssetAnalysis: false,
+      }),
+    ).rejects.toThrow(/mixes currencies/i);
+  });
+
+  it('runs normally when every holding shares one currency', async () => {
+    const r = await runBacktest({
+      portfolio: mixed,
+      config: testConfig({ start: '2015-01-05', end: '2020-12-31', benchmarks: [] }),
+      provider: providerWithCurrencies({ VTI: 'USD', XEQT: 'USD' }),
+      includeAssetAnalysis: false,
+    });
+    expect(r.totals.finalValue).toBeGreaterThan(0);
+    expect(r.warnings.some((w) => w.code === 'mixed-currency')).toBe(false);
+  });
+
+  it('warns rather than refuses when the provider does not state currency', async () => {
+    // An exchange suffix hints at the listing venue; it is not a statement
+    // about denomination, so this informs rather than blocks.
+    const r = await runBacktest({
+      portfolio: {
+        id: 'p',
+        name: 'P',
+        positions: [
+          { id: '1', symbol: 'VTI', weight: 50 },
+          { id: '2', symbol: 'XEQT.TO', weight: 50 },
+        ],
+      },
+      config: testConfig({ start: '2015-01-05', end: '2020-12-31', benchmarks: [] }),
+      provider: providerWithCurrencies({ VTI: undefined, 'XEQT.TO': undefined }),
+      includeAssetAnalysis: false,
+    });
+    expect(r.warnings.some((w) => w.code === 'possible-mixed-currency')).toBe(true);
+    expect(r.totals.finalValue).toBeGreaterThan(0);
   });
 });

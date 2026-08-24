@@ -246,10 +246,14 @@ export function BacktestWorkspace() {
               <div className="min-w-0 space-y-1">
                 <p className="text-sm font-medium text-negative">Backtest failed</p>
                 <p className="text-xs leading-relaxed">{error.error}</p>
-                {error.kind === 'market-data' && (
+                {/* Only add a hint when it is actually true. The message above
+                    is already specific — a bad ticker, a currency mismatch — and
+                    appending "the service is rate-limiting" to it would send
+                    someone off diagnosing the wrong problem. */}
+                {error.kind === 'market-data' && /rate-limit|refused|unreachable/i.test(error.error) && (
                   <p className="text-xs text-muted-foreground">
-                    The market data service is unreachable or rate-limiting. Wait a moment and try
-                    again, or switch to the demo provider in Settings to keep exploring.
+                    This is a connectivity or quota problem rather than a mistake in your portfolio.
+                    A free Tiingo key raises the ceiling considerably — see Settings.
                   </p>
                 )}
               </div>

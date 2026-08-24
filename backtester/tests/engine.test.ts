@@ -588,3 +588,82 @@ describe('price-return mode', () => {
     expect(defaulted.warnings.some((w) => w.code === 'price-return-only')).toBe(false);
   });
 });
+
+describe('a holding whose data cannot be loaded', () => {
+  /**
+   * The bug this covers: asking for A 50% / B 50%, losing B, and receiving a
+   * fully-invested 100% position in A — a different portfolio reported as the
+   * one requested. The warning existed; the number was still wrong.
+   */
+  const cal = makeCalendar('2020-01-02', 200);
+  const onlyA = () =>
+    buildPrepared(cal, [{ symbol: 'A', prices: ramp(100, 200, 200), weight: 50 }]);
+
+  it('leaves the missing weight in cash instead of inflating the survivors', () => {
+    const r = runEngine({
+      portfolio: {
+        id: 'p',
+        name: 'P',
+        positions: [
+          { id: 'a', symbol: 'A', weight: 50 },
+          { id: 'b', symbol: 'B', weight: 50 },
+        ],
+      },
+      config: testConfig({ rebalance: 'never' }),
+      data: onlyA(),
+    });
+
+    const first = r.daily[0];
+    // Half invested, half in cash — not 100% A.
+    expect(first.positionValues.A).toBeCloseTo(5_000, 4);
+    expect(first.cash).toBeCloseTo(5_000, 4);
+    expect(first.positionValues.A / first.totalValue).toBeCloseTo(0.5, 6);
+
+    // A doubles, so the honest answer is 15,000, not 20,000.
+    expect(r.totals.finalValue).toBeCloseTo(15_000, 4);
+  });
+
+  it('is unaffected when every holding loads', () => {
+    const data = buildPrepared(cal, [
+      { symbol: 'A', prices: ramp(100, 200, 200), weight: 50 },
+      { symbol: 'B', prices: flat(100, 200), weight: 50 },
+    ]);
+    const r = runEngine({
+      portfolio: {
+        id: 'p',
+        name: 'P',
+        positions: [
+          { id: 'a', symbol: 'A', weight: 50 },
+          { id: 'b', symbol: 'B', weight: 50 },
+        ],
+      },
+      config: testConfig({ rebalance: 'never' }),
+      data,
+    });
+    expect(r.daily[0].cash).toBeCloseTo(0, 6);
+    expect(r.totals.finalValue).toBeCloseTo(15_000, 4);
+  });
+
+  it('still normalises weights that do not sum to 100', () => {
+    // 30 and 10 of a declared 40 remain 75/25 of the portfolio.
+    const data = buildPrepared(cal, [
+      { symbol: 'A', prices: flat(100, 200), weight: 30 },
+      { symbol: 'B', prices: flat(100, 200), weight: 10 },
+    ]);
+    const r = runEngine({
+      portfolio: {
+        id: 'p',
+        name: 'P',
+        positions: [
+          { id: 'a', symbol: 'A', weight: 30 },
+          { id: 'b', symbol: 'B', weight: 10 },
+        ],
+      },
+      config: testConfig(),
+      data,
+    });
+    expect(r.daily[0].positionValues.A).toBeCloseTo(7_500, 4);
+    expect(r.daily[0].positionValues.B).toBeCloseTo(2_500, 4);
+    expect(r.daily[0].cash).toBeCloseTo(0, 6);
+  });
+});

@@ -102,6 +102,14 @@ export async function prepareData({
   const usable = fetchList.filter((s) => seriesBySymbol.has(s));
   const hasCashSleeve = [...unique.keys()].some(isCashSymbol);
 
+  // Weighted holdings that could not be loaded. A benchmark failing is a
+  // nuisance; a funded holding failing means the requested portfolio cannot be
+  // evaluated at all, and the caller must decide rather than be handed a
+  // silently different one.
+  const unavailableHoldings = fetchList.filter(
+    (sym) => !seriesBySymbol.has(sym) && (unique.get(sym)?.weight ?? 0) !== 0,
+  );
+
   // A portfolio made only of cash is legitimate — it is the baseline every
   // other allocation is measured against — but it has no priceable security to
   // derive a trading calendar from, so ask the provider for one.
@@ -133,6 +141,7 @@ export async function prepareData({
       periodsPerYear: 252,
       sources: [],
       anySynthetic: provider.synthetic,
+      unavailableHoldings,
     };
   }
 
@@ -208,6 +217,45 @@ export async function prepareData({
   void delisted;
 
   /* -------------------------------------------------------------- */
+  /* Currency                                                        */
+  /* -------------------------------------------------------------- */
+
+  // The engine sums `shares x price` across holdings. If those prices are in
+  // different currencies it is adding incompatible units, and the resulting
+  // total means nothing. There is no FX translation yet, so the only correct
+  // response is to refuse rather than to produce a confident wrong number.
+  const weightedSymbols = usable.filter((s) => (unique.get(s)?.weight ?? 0) !== 0);
+  const currencies = new Map<string, string>();
+  for (const sym of weightedSymbols) {
+    const ccy = seriesBySymbol.get(sym)?.meta.currency;
+    if (ccy) currencies.set(sym, ccy.toUpperCase());
+  }
+  const distinct = new Set(currencies.values());
+
+  if (distinct.size > 1) {
+    const detail = [...currencies.entries()].map(([s, c]) => `${s} in ${c}`).join(', ');
+    warnings.push({
+      severity: 'error',
+      code: 'mixed-currency',
+      message: `This portfolio mixes currencies (${detail}). Values in different currencies cannot be added together, and no exchange-rate conversion is applied, so no meaningful result can be produced. Build separate portfolios per currency until FX translation is supported.`,
+    });
+  } else if (distinct.size === 0 && weightedSymbols.length > 1) {
+    // Provider does not state currency. Fall back to the one signal available:
+    // an exchange suffix. This warns rather than refuses, because the suffix is
+    // a hint about the listing venue, not a statement about denomination.
+    const suffixes = new Set(
+      weightedSymbols.map((s) => (/\.([A-Z]{1,3})$/.exec(s)?.[1] ?? 'US')),
+    );
+    if (suffixes.size > 1) {
+      warnings.push({
+        severity: 'warning',
+        code: 'possible-mixed-currency',
+        message: `These holdings are listed on different exchanges (${weightedSymbols.join(', ')}) and this data provider does not report currency. If they are denominated differently, the totals below add incompatible units. Verify before relying on them.`,
+      });
+    }
+  }
+
+  /* -------------------------------------------------------------- */
   /* Master calendar                                                 */
   /* -------------------------------------------------------------- */
 
@@ -244,6 +292,7 @@ export async function prepareData({
       periodsPerYear: 252,
       sources: [],
       anySynthetic: provider.synthetic,
+      unavailableHoldings,
     };
   }
 
@@ -482,5 +531,6 @@ export async function prepareData({
     periodsPerYear,
     sources,
     anySynthetic: provider.synthetic || sources.some((s) => s.synthetic),
+    unavailableHoldings,
   };
 }

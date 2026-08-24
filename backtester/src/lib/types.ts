@@ -23,7 +23,12 @@ export interface SecurityMeta {
   symbol: string;
   name: string;
   assetClass: AssetClass;
-  currency: string;
+  /**
+   * Reporting currency, when the provider states it. Undefined means UNKNOWN —
+   * not USD. Asserting a default here would let a CAD-denominated holding be
+   * summed with USD ones as though the units matched.
+   */
+  currency?: string;
   exchange?: string;
   /** First date for which the provider has price data. */
   firstTradeDate?: IsoDate;

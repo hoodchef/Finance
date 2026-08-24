@@ -318,7 +318,8 @@ function parseChart(symbol: string, json: YahooChartResponse): PriceSeries {
     symbol: result.meta.symbol ?? symbol.toUpperCase(),
     name: result.meta.longName ?? result.meta.shortName ?? symbol.toUpperCase(),
     assetClass: classify(result.meta.instrumentType),
-    currency: result.meta.currency ?? 'USD',
+    // Yahoo does report this; absent means unknown, not USD.
+    currency: result.meta.currency ?? undefined,
     exchange: result.meta.fullExchangeName ?? result.meta.exchangeName,
     firstTradeDate: result.meta.firstTradeDate
       ? toIso(new Date(result.meta.firstTradeDate * 1000))

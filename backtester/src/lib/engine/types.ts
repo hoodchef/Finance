@@ -166,6 +166,8 @@ export interface PreparedData {
     stale?: boolean;
   }>;
   anySynthetic: boolean;
+  /** Weighted holdings whose price history could not be loaded at all. */
+  unavailableHoldings: string[];
 }
 
 export interface EngineInput {

@@ -90,6 +90,7 @@ export function buildPrepared(
     periodsPerYear: 252,
     sources: specs.map((s) => ({ symbol: s.symbol, source: 'test', synthetic: true })),
     anySynthetic: true,
+    unavailableHoldings: [],
   };
 }
 

@@ -7,6 +7,7 @@ import type {
 } from '@/lib/types';
 import { CASH_SYMBOL } from '@/lib/types';
 import { getProvider } from '@/lib/market-data';
+import { MarketDataError } from '@/lib/market-data/provider';
 import { daysBetween, minIso, todayIso } from '@/lib/market-data/dates';
 import type { MarketDataProvider } from '@/lib/market-data/provider';
 import { prepareData } from '@/lib/engine/prepare';
@@ -323,6 +324,44 @@ export async function runBacktest({
     provider,
     extraSymbols: benchmarkSymbols,
   });
+
+  /**
+   * A funded holding whose data could not be loaded makes the requested
+   * portfolio unanswerable. Refusing is the only honest default: the
+   * alternative is reporting a number for a portfolio the user never asked
+   * about, which the warning alone did not make obvious enough.
+   *
+   * `inceptionPolicy: 'cash'` is an explicit opt-in to continue, and the
+   * missing weight then sits in cash rather than inflating the survivors.
+   */
+  if (data.unavailableHoldings.length > 0 && config.inceptionPolicy !== 'cash') {
+    const names = data.unavailableHoldings.join(', ');
+    const plural = data.unavailableHoldings.length > 1;
+    throw new MarketDataError(
+      `No price history could be loaded for ${names}, so this portfolio cannot be evaluated. ` +
+        `Running without ${plural ? 'them' : 'it'} would silently redistribute ${plural ? 'their' : 'its'} weight ` +
+        `across the remaining holdings and report a different portfolio than the one you asked for. ` +
+        `Check the ${plural ? 'tickers' : 'ticker'}, or set the inception policy to "hold that weight in cash" to continue deliberately.`,
+      data.unavailableHoldings[0],
+    );
+  }
+
+  /**
+   * Data problems that invalidate the arithmetic itself, as distinct from the
+   * many that merely deserve a note beside the result.
+   *
+   * Mixed currencies make the totals meaningless — the engine would be adding
+   * incompatible units. An unapplied split manufactures or destroys a large
+   * chunk of return. Neither is something to render with a caveat underneath;
+   * a plausible-looking wrong number is more dangerous than no number.
+   */
+  const BLOCKING_CODES = new Set(['mixed-currency', 'unadjusted-split']);
+  const blocking = data.warnings.filter(
+    (w) => w.severity === 'error' && BLOCKING_CODES.has(w.code),
+  );
+  if (blocking.length > 0) {
+    throw new MarketDataError(blocking.map((w) => w.message).join(' '), blocking[0].symbol);
+  }
 
   const t0 = Date.now();
 
