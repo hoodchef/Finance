@@ -309,3 +309,38 @@ describe('the symbol universe', () => {
     expect(hits).toContain('SCHD');
   });
 });
+
+describe('staleness is measured against what was asked for', () => {
+  /**
+   * A backtest deliberately ending in the past is not stale — it received
+   * exactly the window it requested. Measuring age against today would flag
+   * every historical study as out of date and train users to ignore the
+   * warning that matters.
+   */
+  it('reports no staleness for a historical window that was fully served', async () => {
+    const result = await runBacktest({
+      portfolio: { id: 'p', name: 'P', positions: [{ id: '1', symbol: 'SPY', weight: 100 }] },
+      config: testConfig({ start: '2015-01-05', end: '2020-12-31', benchmarks: [] }),
+      provider: getDemoProvider(),
+      includeAssetAnalysis: false,
+    });
+
+    expect(result.dataSource.latestSessionDate).toBeTruthy();
+    // The window ended in 2020 and the data reaches 2020 — nothing is behind.
+    expect(result.dataSource.dataAgeDays).toBeLessThanOrEqual(5);
+    expect(result.dataSource.servedFromStaleCache).toBe(false);
+  });
+
+  it('still reports age when a run asks for today and the data falls short', async () => {
+    // The demo provider generates through today, so a run to today is current;
+    // the assertion is that the field is computed rather than hard-zeroed.
+    const result = await runBacktest({
+      portfolio: { id: 'p', name: 'P', positions: [{ id: '1', symbol: 'SPY', weight: 100 }] },
+      config: testConfig({ start: '2015-01-05', benchmarks: [] }),
+      provider: getDemoProvider(),
+      includeAssetAnalysis: false,
+    });
+    expect(typeof result.dataSource.dataAgeDays).toBe('number');
+    expect(result.dataSource.dataAgeDays).toBeGreaterThanOrEqual(0);
+  });
+});

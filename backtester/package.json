@@ -11,7 +11,7 @@
     "test:watch": "vitest",
     "typecheck": "tsc --noEmit",
     "dev:demo": "MARKET_DATA_PROVIDER=demo next dev -p 3101",
-    "verify:data": "vitest run tests/provider-contract.test.ts",
+    "verify:data": "VERIFY_DATA=1 vitest run tests/provider-contract.test.ts",
     "build:universe": "node scripts/build-universe.mjs"
   },
   "dependencies": {

@@ -89,6 +89,21 @@ function assertSplitConvention(series: PriceSeries) {
   }
 }
 
+/**
+ * `npm run verify:data` sets VERIFY_DATA=1. Running it deliberately and getting
+ * a green skip would be worse than useless, so a missing key is an explicit
+ * failure there while remaining a quiet skip in the ordinary suite.
+ */
+describe('verification preconditions', () => {
+  it.runIf(process.env.VERIFY_DATA)('has a provider key to verify against', () => {
+    const configured = Boolean(process.env.TIINGO_API_KEY?.trim());
+    expect(
+      configured,
+      'No TIINGO_API_KEY found. Add it to .env.local — nothing was verified.',
+    ).toBe(true);
+  });
+});
+
 describe.runIf(process.env.TIINGO_API_KEY)('Tiingo live contract', () => {
   const provider = new TiingoProvider();
 

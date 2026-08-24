@@ -7,7 +7,7 @@ import type {
 } from '@/lib/types';
 import { CASH_SYMBOL } from '@/lib/types';
 import { getProvider } from '@/lib/market-data';
-import { daysBetween, todayIso } from '@/lib/market-data/dates';
+import { daysBetween, minIso, todayIso } from '@/lib/market-data/dates';
 import type { MarketDataProvider } from '@/lib/market-data/provider';
 import { prepareData } from '@/lib/engine/prepare';
 import { runEngine } from '@/lib/engine/engine';
@@ -513,7 +513,7 @@ export async function runBacktest({
     warnings: dedupeWarnings(result.warnings),
     transactions,
     transactionsTruncated: result.transactions.length > transactions.length,
-    dataSource: buildDataSourceInfo(provider, data),
+    dataSource: buildDataSourceInfo(provider, data, config.end),
     engineVersion: ENGINE_VERSION,
     generatedAt: new Date().toISOString(),
     computeMs,
@@ -527,6 +527,7 @@ export async function runBacktest({
 function buildDataSourceInfo(
   provider: MarketDataProvider,
   data: PreparedData,
+  requestedEnd: IsoDate,
 ): DataSourceInfo {
   const retrievals = data.sources
     .map((s) => s.fetchedAt)
@@ -548,7 +549,13 @@ function buildDataSourceInfo(
     // Oldest retrieval: a result is only as current as its stalest input.
     retrievedAt: retrievals.length ? retrievals[0] : null,
     latestSessionDate,
-    dataAgeDays: latestSessionDate ? daysBetween(latestSessionDate, todayIso()) : null,
+    // Age is measured against the earlier of today and the requested end date.
+    // A backtest deliberately ending in 2024 is not working from stale data —
+    // it got exactly what it asked for — and calling that "601 days behind"
+    // would cry wolf on every historical study.
+    dataAgeDays: latestSessionDate
+      ? Math.max(0, daysBetween(latestSessionDate, minIso(todayIso(), requestedEnd)))
+      : null,
     servedFromStaleCache: data.sources.some((s) => s.stale),
   };
 }
@@ -651,6 +658,6 @@ export async function runRebalanceAnalysis({
   return {
     scenarios,
     warnings: dedupeWarnings(data.warnings),
-    dataSource: buildDataSourceInfo(provider, data),
+    dataSource: buildDataSourceInfo(provider, data, config.end),
   };
 }
