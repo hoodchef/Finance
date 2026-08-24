@@ -11,7 +11,7 @@ import {
   XAxis,
   YAxis,
 } from 'recharts';
-import { AlertCircle, Calculator, Plus, X } from 'lucide-react';
+import { AlertCircle, Calculator, LineChart, Plus, X } from 'lucide-react';
 import { PageBody, PageHeader } from '@/components/layout/app-shell';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
@@ -40,7 +40,10 @@ import {
   TableRow,
 } from '@/components/ui/table';
 import { AXIS_PROPS, ChartFrame, ChartTooltip, GRID_PROPS } from '@/components/charts/chart-chrome';
+import { useRouter } from 'next/navigation';
 import { formatCurrency, formatPercent } from '@/lib/format';
+import { planToBacktestConfig } from '@/lib/plan-bridge';
+import { useWorkspace } from '@/store/workspace';
 import { cn } from '@/lib/utils';
 
 /**
@@ -103,6 +106,9 @@ interface PlannerResponse {
 }
 
 export function PlannerView() {
+  const router = useRouter();
+  const applyPlan = useWorkspace((s) => s.applyPlan);
+  const [includeBoost, setIncludeBoost] = React.useState(false);
   const [province, setProvince] = React.useState('BC');
   const [income, setIncome] = React.useState(95_000);
   const [partnerIncome, setPartnerIncome] = React.useState(0);
@@ -385,7 +391,23 @@ export function PlannerView() {
 
               <MarginalCurve data={data} income={income} />
 
-              {data.allocation && <AllocationPanel allocation={data.allocation} />}
+              {data.allocation && (
+                <AllocationPanel
+                  allocation={data.allocation}
+                  savingsCapacity={savingsCapacity}
+                  includeBoost={includeBoost}
+                  setIncludeBoost={setIncludeBoost}
+                  onBacktest={(boost) => {
+                    const { config, assumptions } = planToBacktestConfig({
+                      savingsCapacity,
+                      firstYearBoost: boost,
+                      includeBoost,
+                    });
+                    applyPlan(config, assumptions);
+                    router.push('/backtest');
+                  }}
+                />
+              )}
 
               <Card>
                 <CardHeader className="pb-2">
@@ -557,8 +579,16 @@ function MarginalCurve({ data, income }: { data: PlannerResponse; income: number
 
 function AllocationPanel({
   allocation,
+  savingsCapacity,
+  includeBoost,
+  setIncludeBoost,
+  onBacktest,
 }: {
   allocation: NonNullable<PlannerResponse['allocation']>;
+  savingsCapacity: number;
+  includeBoost: boolean;
+  setIncludeBoost: (v: boolean) => void;
+  onBacktest: (boost: number) => void;
 }) {
   const entries = allocation.sequence
     .map((k) => [k, allocation.allocation[k] ?? 0] as const)
@@ -598,6 +628,35 @@ function AllocationPanel({
               in the first year — refund, restored benefits, employer match and grant combined.
             </p>
           )}
+
+          {/* The handoff: the plan sizes the contribution, the backtester shows
+              what happens to it. */}
+          <div className="mt-3 rounded-md border border-primary/30 bg-primary/5 p-3">
+            <p className="text-xs font-medium">See what this becomes</p>
+            <p className="mt-0.5 text-xs leading-relaxed text-muted-foreground">
+              Carry {formatCurrency(savingsCapacity)} a year into the backtester and run it against
+              real market history.
+            </p>
+            {boost > 0 && (
+              <label className="mt-2 flex cursor-pointer items-start gap-2 text-xs">
+                <input
+                  type="checkbox"
+                  checked={includeBoost}
+                  onChange={(e) => setIncludeBoost(e.target.checked)}
+                  className="mt-0.5 h-3.5 w-3.5 accent-[hsl(var(--primary))]"
+                />
+                <span>
+                  Also contribute the {formatCurrency(boost)} of refund, benefits and match each
+                  year. This assumes you reinvest it rather than spend it — which is the difference
+                  between a plan and a habit.
+                </span>
+              </label>
+            )}
+            <Button size="sm" className="mt-2.5" onClick={() => onBacktest(boost)}>
+              <LineChart />
+              Backtest this plan
+            </Button>
+          </div>
         </div>
 
         <Table>

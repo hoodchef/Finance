@@ -49,6 +49,8 @@ export function BacktestWorkspace() {
   const config = useWorkspace((s) => s.config);
   const saveDraft = useWorkspace((s) => s.saveDraft);
   const saveRun = useWorkspace((s) => s.saveRun);
+  const planAssumptions = useWorkspace((s) => s.planAssumptions);
+  const clearPlan = useWorkspace((s) => s.clearPlan);
   const { result, error, pending, run } = useBacktest();
 
   // Only affects layouts below `lg`; the desktop grid shows everything at once.
@@ -234,6 +236,30 @@ export function BacktestWorkspace() {
             >
               <AlertCircle className="mt-0.5 h-4 w-4 shrink-0 text-[hsl(var(--warning))]" />
               <p className="text-xs leading-relaxed">{shareError}</p>
+            </div>
+          )}
+
+          {/* Settings carried over from the Planner rest on assumptions the
+              Planner made. Applying them silently would let a projection
+              inherit a premise the user never saw. */}
+          {planAssumptions && planAssumptions.length > 0 && (
+            <div className="rounded-lg border border-primary/30 bg-primary/5 p-4">
+              <div className="flex items-start justify-between gap-3">
+                <p className="text-sm font-medium">Settings came from your plan</p>
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  onClick={clearPlan}
+                  className="text-xs text-muted-foreground"
+                >
+                  Dismiss
+                </Button>
+              </div>
+              <ul className="mt-1.5 list-disc space-y-1 pl-4 text-xs leading-relaxed text-muted-foreground">
+                {planAssumptions.map((a) => (
+                  <li key={a}>{a}</li>
+                ))}
+              </ul>
             </div>
           )}
 

@@ -174,6 +174,11 @@ export interface EngineInput {
   portfolio: Pick<Portfolio, 'id' | 'name' | 'positions'>;
   config: BacktestConfig;
   data: PreparedData;
+  /**
+   * Rule that decides target weights at each rebalance. Defaults to the
+   * declared weights, which is what the engine did before strategies existed.
+   */
+  strategy?: import('./strategy').TargetWeightStrategy;
   /** Benchmarks skip portfolio-level fees; see `runBacktest`. */
   applyPortfolioFees?: boolean;
 }

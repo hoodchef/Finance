@@ -2,6 +2,7 @@ import type { MarketDataProvider } from './provider';
 import { YahooFinanceProvider } from './yahoo';
 import { TiingoProvider } from './tiingo';
 import { DemoDataProvider } from './demo';
+import { FailoverProvider } from './failover';
 
 export type ProviderId = 'yahoo' | 'tiingo' | 'demo';
 
@@ -38,12 +39,20 @@ export function getProvider(): MarketDataProvider {
   if (configured === 'tiingo') return providers.tiingo;
   if (configured === 'yahoo') return providers.yahoo;
 
-  // Unset or unrecognised: prefer a keyed, documented provider when one is
-  // configured, and fall back to Yahoo. Never to synthetic — a typo in an
-  // environment variable must not downgrade a deployment to invented prices.
-  if (process.env.TIINGO_API_KEY?.trim()) return providers.tiingo;
+  // Unset or unrecognised: chain the real providers so a coverage gap in one
+  // is filled by the next. Never synthetic — a typo in an environment variable
+  // must not downgrade a deployment to invented prices.
+  if (process.env.TIINGO_API_KEY?.trim()) {
+    // Tiingo first for its quota and explicit corporate actions; Yahoo behind
+    // it for the listings Tiingo does not carry, Canadian ones especially.
+    chained ??= new FailoverProvider([providers.tiingo, providers.yahoo]);
+    return chained;
+  }
   return providers.yahoo;
 }
+
+/** Built once; the providers behind it hold their own caches. */
+let chained: MarketDataProvider | undefined;
 
 /** True when this deployment is serving generated prices. */
 export function isDemoMode(): boolean {
@@ -62,7 +71,7 @@ export function listProviders(): MarketDataProvider[] {
   return Object.values(providers);
 }
 
-export { YahooFinanceProvider, TiingoProvider, DemoDataProvider };
+export { YahooFinanceProvider, TiingoProvider, DemoDataProvider, FailoverProvider };
 export * from './licence';
 export { REAL_PROVIDER_IDS };
 export * from './provider';

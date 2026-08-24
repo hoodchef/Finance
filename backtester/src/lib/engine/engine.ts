@@ -2,6 +2,7 @@ import type { BacktestWarning } from '@/lib/types';
 import { daysBetween } from '@/lib/market-data/dates';
 import { contributionIndices, monthEndIndices, rebalanceIndices } from './schedule';
 import { LotBook, summariseByYear, type LotSummary, type RealisedGain } from './lots';
+import { fixedWeights, makeContext, type TargetWeightStrategy } from './strategy';
 import { legAmount, resolveCashflows } from './cashflows';
 import type {
   DailyRecord,
@@ -101,6 +102,42 @@ export function runEngine(input: EngineInput): EngineResult {
   const normWeight = new Map<string, number>();
   for (const a of assets) normWeight.set(a.symbol, a.targetWeight / declaredWeight);
   const normCashSleeve = cashSleeveWeight / declaredWeight;
+
+  /**
+   * Weights are resolved through a strategy rather than fixed up front, so a
+   * rule that varies with date or portfolio state — a glidepath, a momentum
+   * tilt — is expressible. The default reproduces the declared weights exactly.
+   */
+  const strategy: TargetWeightStrategy = input.strategy ?? fixedWeights;
+  const declaredForStrategy = new Map(
+    tradeable.map((a) => [a.symbol, normWeight.get(a.symbol) ?? 0]),
+  );
+
+  /** Cached per day: a strategy is asked once, however many times it is read. */
+  const weightCache = new Map<number, Map<string, number>>();
+
+  function weightsAt(i: number): Map<string, number> {
+    const cached = weightCache.get(i);
+    if (cached) return cached;
+
+    let resolved: Map<string, number>;
+    if (strategy === fixedWeights) {
+      resolved = declaredForStrategy;
+    } else {
+      const ctx = makeContext(i, calendar, tradeable, declaredForStrategy, totalValueAt(i));
+      const raw = strategy.targetWeights(ctx);
+      // A strategy may not allocate more than the whole portfolio; anything
+      // over 1 is scaled back rather than silently levering the account.
+      const sum = [...raw.values()].reduce((t, v) => t + Math.max(0, v), 0);
+      resolved = new Map(
+        [...raw.entries()].map(([k, v]) => [k, sum > 1 ? Math.max(0, v) / sum : Math.max(0, v)]),
+      );
+    }
+    weightCache.set(i, resolved);
+    return resolved;
+  }
+
+  const weightFor = (symbol: string, i: number): number => weightsAt(i).get(symbol) ?? 0;
 
   const shares = new Map<string, number>(tradeable.map((a) => [a.symbol, 0]));
   const lots = new Map<string, Lot>(
@@ -270,7 +307,7 @@ export function runEngine(input: EngineInput): EngineResult {
 
     const active = tradeable.filter((a) => isActive(a, i));
     const targets = new Map<string, number>();
-    for (const a of active) targets.set(a.symbol, total * (normWeight.get(a.symbol) ?? 0));
+    for (const a of active) targets.set(a.symbol, total * weightFor(a.symbol, i));
 
     // Sell side first so the proceeds fund the buy side.
     for (const a of active) {
@@ -305,12 +342,12 @@ export function runEngine(input: EngineInput): EngineResult {
   function deployCash(i: number, amount: number): void {
     if (amount <= DUST) return;
     const active = tradeable.filter((a) => isActive(a, i));
-    const investable = active.reduce((s, a) => s + (normWeight.get(a.symbol) ?? 0), 0);
+    const investable = active.reduce((s, a) => s + weightFor(a.symbol, i), 0);
     if (investable <= 0) return; // Everything is in the cash sleeve.
     const deployable = amount * investable; // The cash-sleeve share stays in cash.
     const budget = Math.max(0, (deployable - commission * active.length) / (1 + bps));
     for (const a of active) {
-      const slice = budget * ((normWeight.get(a.symbol) ?? 0) / investable);
+      const slice = budget * (weightFor(a.symbol, i) / investable);
       if (slice > DUST) execute(a, i, slice / priceAt(a, i), 'buy');
     }
   }
@@ -321,7 +358,7 @@ export function runEngine(input: EngineInput): EngineResult {
     const band = config.rebalanceThresholdPct / 100;
     for (const a of tradeable) {
       if (!isActive(a, i)) continue;
-      const target = normWeight.get(a.symbol) ?? 0;
+      const target = weightFor(a.symbol, i);
       const actual = positionValue(a, i) / total;
       if (Math.abs(actual - target) > band) return true;
     }
