@@ -626,6 +626,73 @@ function dedupeWarnings(warnings: BacktestWarning[]): BacktestWarning[] {
  * Anything doing statistics on returns must use this rather than the chart
  * series.
  */
+/**
+ * Per-asset daily total returns on the shared calendar.
+ *
+ * Built for `runCorrelated`, which needs the holdings rather than the
+ * portfolio. Dividends are included so these are total returns — a covariance
+ * fitted to price returns understates the co-movement of anything with a
+ * meaningful yield.
+ *
+ * Days before an asset's inception, and days where its price was carried
+ * forward rather than observed, are dropped from EVERY series together. A
+ * stale price contributes a zero return that is not a real zero, and pairing
+ * it against a live one drags the estimated correlation toward nothing.
+ */
+export async function computeAssetReturns({
+  portfolio,
+  config,
+  provider = getProvider(),
+}: {
+  portfolio: Pick<Portfolio, 'id' | 'name' | 'positions'>;
+  config: BacktestConfig;
+  provider?: MarketDataProvider;
+}): Promise<{
+  symbols: string[];
+  returns: number[][];
+  dates: IsoDate[];
+  periodsPerYear: number;
+}> {
+  const positions = portfolio.positions.filter(
+    (p) => p.symbol.trim() && Number.isFinite(p.weight),
+  );
+  const data = await prepareData({ symbols: positions, config, provider });
+  const assets = data.assets.filter((a) => !a.isCash);
+  if (assets.length === 0) {
+    throw new MarketDataError('No priced holdings to estimate a covariance from.');
+  }
+
+  const usable: number[] = [];
+  for (let i = 1; i < data.calendar.length; i++) {
+    const ok = assets.every(
+      (a) =>
+        i > a.firstIndex &&
+        i <= a.lastIndex &&
+        !a.stale[i] &&
+        Number.isFinite(a.prices[i]) &&
+        Number.isFinite(a.prices[i - 1]) &&
+        a.prices[i - 1] > 0,
+    );
+    if (ok) usable.push(i);
+  }
+
+  const returns = assets.map((a) =>
+    usable.map((i) => {
+      // Splits are applied to the price series, so the ratio needs the factor
+      // put back or a 4:1 reads as a 75% loss.
+      const split = a.splitFactors[i] || 1;
+      return (a.prices[i] * split + a.dividends[i] * split) / a.prices[i - 1] - 1;
+    }),
+  );
+
+  return {
+    symbols: assets.map((a) => a.symbol),
+    returns,
+    dates: usable.map((i) => data.calendar[i]),
+    periodsPerYear: data.periodsPerYear,
+  };
+}
+
 export async function computeDailyReturns({
   portfolio,
   config,
