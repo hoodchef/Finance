@@ -516,9 +516,19 @@ than the figure — XEQT.TO over 2020–2024 shows −27.8% where the true daily
 figure is nearer −34%. Every run touching a weekly holding raises a
 `coarse-interval` warning saying so.
 
-Two things had to change in the engine for this to be honest rather than merely
-possible:
+Three things had to change in the engine for this to be honest rather than
+merely possible:
 
+- **The master calendar is built at the coarsest interval present.** It was a
+  union of every series' bar dates, so a single daily benchmark alongside a
+  weekly holding produced a *daily* calendar on which the holding sat stale four
+  days in five. Its returns landed on one day a week but were annualised as
+  weekly, understating volatility about twofold — live, 7.22% against a true
+  15.73% — and its last weekly bar, a few days short of the final calendar day,
+  tripped the delisting rule and liquidated a live position to cash. Both
+  symptoms are one mismatch. Reverting the fix reproduces all three failures
+  (1040-day calendar, 3.3% volatility, spurious liquidation) and all three are
+  caught.
 - **`periodsPerYear` now tracks the bar interval.** It was floored at 200
   regardless, which is right for a gappy daily calendar and wrong for a weekly
   one: volatility scaled by `√200` instead of `√52` overstates risk about

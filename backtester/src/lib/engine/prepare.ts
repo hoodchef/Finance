@@ -277,14 +277,40 @@ export async function prepareData({
   const nonCrypto = usable.filter((s) => !isCryptoSymbol(seriesBySymbol.get(s)));
   const calendarSymbols = nonCrypto.length ? nonCrypto : usable;
 
+  // The coarsest interval any holding publishes at governs the whole run: a
+  // portfolio is only observed as often as its least-observed leg.
+  const intervalOf = (s: string): BarInterval => seriesBySymbol.get(s)!.interval ?? 'daily';
+  const intervals = calendarSymbols.map(intervalOf);
+  const coarsest: BarInterval = intervals.includes('monthly')
+    ? 'monthly'
+    : intervals.includes('weekly')
+      ? 'weekly'
+      : 'daily';
+
+  // The calendar must be built at that interval, not merely annualised at it.
+  //
+  // The dayset is a UNION, so a single daily benchmark alongside a weekly
+  // holding produced a daily calendar on which the weekly holding was stale
+  // four days in five. Returns then landed on one day a week and were
+  // annualised as if weekly, which understated volatility about twofold — and
+  // the holding's last weekly bar, sitting a few days short of the final
+  // calendar day, tripped the engine's delisting rule and liquidated a
+  // perfectly live position to cash. Both follow from the same mismatch.
+  const coarseSymbols =
+    coarsest === 'daily' ? calendarSymbols : calendarSymbols.filter((s) => intervalOf(s) === coarsest);
+
   const dayset = new Set<IsoDate>();
-  for (const s of calendarSymbols) {
+  for (const s of coarseSymbols) {
     for (const bar of seriesBySymbol.get(s)!.bars) {
       if (bar.date >= effectiveStart && bar.date <= effectiveEnd) dayset.add(bar.date);
     }
   }
-  for (const d of fallbackCalendar) {
-    if (d >= effectiveStart && d <= effectiveEnd) dayset.add(d);
+  // The fallback calendar is a daily exchange calendar; adding it to a weekly
+  // run would reintroduce exactly the mismatch above.
+  if (coarsest === 'daily') {
+    for (const d of fallbackCalendar) {
+      if (d >= effectiveStart && d <= effectiveEnd) dayset.add(d);
+    }
   }
   const calendar = [...dayset].sort();
 
@@ -320,15 +346,6 @@ export async function prepareData({
       message: `This backtest covers ${calendar.length} trading days (${(span * 12).toFixed(1)} months). CAGR, volatility, Sharpe and Sortino are annualised from that short sample and extrapolate heavily — read the total return instead.`,
     });
   }
-  // The coarsest interval any holding publishes at governs the whole run: a
-  // portfolio is only observed as often as its least-observed leg.
-  const intervals = calendarSymbols.map((s) => seriesBySymbol.get(s)!.interval ?? 'daily');
-  const coarsest: BarInterval = intervals.includes('monthly')
-    ? 'monthly'
-    : intervals.includes('weekly')
-      ? 'weekly'
-      : 'daily';
-
   // The floor exists to stop a sparse or gappy DAILY calendar annualising into
   // nonsense. Applied to genuinely weekly data it produces different nonsense:
   // volatility scaled by sqrt(200) instead of sqrt(52) overstates risk about
@@ -350,9 +367,7 @@ export async function prepareData({
     // A drawdown that opens and closes between two bars is not in the data at
     // all, so the reported maximum is a floor. This is the kind of thing that
     // must be said rather than left for someone to infer from a provider name.
-    const which = calendarSymbols
-      .filter((s) => (seriesBySymbol.get(s)!.interval ?? 'daily') !== 'daily')
-      .join(', ');
+    const which = coarseSymbols.join(', ');
     warnings.push({
       severity: 'warning',
       code: 'coarse-interval',

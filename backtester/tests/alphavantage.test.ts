@@ -344,3 +344,126 @@ describe('integrity checks respect the bar interval', () => {
     );
   });
 });
+
+
+describe('a weekly holding alongside a daily benchmark', () => {
+  /**
+   * The case the rest of this file missed.
+   *
+   * The master calendar is a UNION of every series' bar dates, so one daily
+   * series made the whole calendar daily while the weekly holding sat stale
+   * four days in five. Its returns then landed on one day a week but were
+   * annualised as weekly, understating volatility about twofold — and its last
+   * weekly bar, a few days short of the final calendar day, tripped the
+   * engine's delisting rule and liquidated a live position to cash.
+   *
+   * Live numbers before the fix: 7.22% volatility and a spurious liquidation.
+   * After: 15.73%, matching the weekly-only run.
+   */
+  const weekly = weeklySeries('XEQT.TO', '2020-01-06', 209, 0.002, 0.01);
+
+  /** Daily bars over the same span, as a benchmark would supply. */
+  function dailySeries(symbol: string, start: string, days: number): PriceSeries {
+    const bars = [];
+    let price = 100;
+    let t = Date.parse(`${start}T00:00:00Z`);
+    for (let i = 0; i < days; i++) {
+      const d = new Date(t);
+      const dow = d.getUTCDay();
+      if (dow !== 0 && dow !== 6) {
+        const date = d.toISOString().slice(0, 10) as IsoDate;
+        bars.push({ date, open: price, high: price, low: price, close: price, adjClose: price, volume: 0 });
+        price *= 1.0004;
+      }
+      t += 86_400_000;
+    }
+    return {
+      meta: {
+        symbol, name: symbol, assetClass: 'etf', currency: 'USD',
+        firstTradeDate: bars[0].date, lastTradeDate: bars.at(-1)!.date,
+      },
+      bars, dividends: [], splits: [],
+      adjustment: 'split-adjusted', source: 'test', synthetic: false,
+      fetchedAt: new Date().toISOString(),
+    };
+  }
+
+  /** Serves a different series per symbol. */
+  class MixedProvider implements MarketDataProvider {
+    readonly id = 'mixed';
+    readonly label = 'Mixed';
+    readonly synthetic = false;
+    readonly description = 'Weekly holding, daily benchmark';
+    constructor(private readonly bySymbol: Record<string, PriceSeries>) {}
+    private slice(symbol: string, range: DateRange): PriceSeries {
+      const s = this.bySymbol[symbol];
+      if (!s) throw new Error(`no series for ${symbol}`);
+      return { ...s, bars: s.bars.filter((b) => b.date >= range.start && b.date <= range.end) };
+    }
+    async getHistoricalPrices(symbol: string, range: DateRange) {
+      return this.slice(symbol, range);
+    }
+    async getCorporateActions(symbol: string, range: DateRange) {
+      const x = this.slice(symbol, range);
+      return { dividends: x.dividends, splits: x.splits };
+    }
+    async getDividends(symbol: string, range: DateRange) {
+      return this.slice(symbol, range).dividends;
+    }
+    async getTradingCalendar(range: DateRange): Promise<IsoDate[]> {
+      // A DAILY exchange calendar, which is what pulled the run daily before.
+      return this.slice('SPY', range).bars.map((b) => b.date);
+    }
+    async search() {
+      return [];
+    }
+  }
+
+  const provider = new MixedProvider({
+    'XEQT.TO': weekly,
+    SPY: dailySeries('SPY', '2020-01-06', 209 * 7),
+  });
+  const config = testConfig({
+    start: '2020-01-06', end: '2023-12-31', initialInvestment: 10_000,
+    rebalance: 'never', dividends: 'reinvest', inceptionPolicy: 'truncate',
+    benchmarks: ['SPY'],
+  });
+  const load = () =>
+    prepareData({ symbols: [{ symbol: 'XEQT.TO', weight: 100 }], config, provider, extraSymbols: ['SPY'] });
+
+  it('builds a weekly calendar, not a daily one', async () => {
+    const data = await load();
+    // ~209 weeks, not ~1045 weekdays.
+    expect(data.calendar.length).toBeLessThan(250);
+    expect(data.calendar.length).toBeGreaterThan(180);
+  });
+
+  it('keeps periodsPerYear weekly despite the daily benchmark', async () => {
+    const data = await load();
+    expect(data.periodsPerYear).toBeGreaterThan(45);
+    expect(data.periodsPerYear).toBeLessThan(54);
+  });
+
+  it('reports the same volatility as the weekly-only run', async () => {
+    const data = await load();
+    const result = runEngine({
+      portfolio: { id: 'p', name: 'P', positions: [{ id: 'x', symbol: 'XEQT.TO', weight: 100 }] },
+      config, data,
+    });
+    const m = computeMetrics({
+      daily: result.daily, periodsPerYear: result.periodsPerYear, riskFree: data.riskFree,
+    });
+    // The bug produced ~7.2% here against ~15.7% weekly-only.
+    expect(m.risk.volatility).toBeGreaterThan(0.06);
+    expect(m.risk.volatility).toBeLessThan(0.085);
+  });
+
+  it('does not liquidate a live position for ending a few days early', async () => {
+    const data = await load();
+    const result = runEngine({
+      portfolio: { id: 'p', name: 'P', positions: [{ id: 'x', symbol: 'XEQT.TO', weight: 100 }] },
+      config, data,
+    });
+    expect(result.warnings.map((w) => w.code)).not.toContain('position-liquidated');
+  });
+});
