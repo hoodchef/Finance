@@ -38,6 +38,7 @@ interface LabResponse {
     symbols: Array<{ symbol: string; source: string; synthetic: boolean }>;
   };
   universe: { count: number; source: string } | null;
+  queue: { active: number; queued: number; retained: number; maxConcurrent: number };
 }
 
 /** One assertion the Lab checks and reports rather than hiding in a test file. */
@@ -318,6 +319,37 @@ export function LabView() {
                     ))}
                   </tbody>
                 </table>
+              </CardContent>
+            </Card>
+
+            <Card>
+              <CardHeader className="pb-2">
+                <CardTitle className="text-sm">Job queue</CardTitle>
+              </CardHeader>
+              <CardContent className="space-y-2 text-xs">
+                <div className="grid grid-cols-2 gap-px overflow-hidden rounded-md border border-border bg-border sm:grid-cols-4">
+                  {(
+                    [
+                      ['Running', data.queue.active, `of ${data.queue.maxConcurrent} slots`],
+                      ['Waiting', data.queue.queued, 'ahead in line'],
+                      ['Retained', data.queue.retained, 'results still readable'],
+                      ['Concurrency', data.queue.maxConcurrent, 'hard cap'],
+                    ] as const
+                  ).map(([label, value, sub]) => (
+                    <div key={label} className="bg-card px-3 py-2">
+                      <div className="text-2xs uppercase tracking-wide text-muted-foreground">
+                        {label}
+                      </div>
+                      <div className="numeric mt-0.5 text-base font-semibold">{value}</div>
+                      <div className="text-2xs text-muted-foreground">{sub}</div>
+                    </div>
+                  ))}
+                </div>
+                <p className="text-2xs leading-relaxed text-muted-foreground">
+                  Simulations and correlated runs are queued rather than held open on the request.
+                  Jobs live in this process, so a restart loses them and a second server instance
+                  would not see them &mdash; that is the current limit, not a bug.
+                </p>
               </CardContent>
             </Card>
 

@@ -4,6 +4,7 @@ import path from 'node:path';
 import { errorResponse } from '../src/lib/api-errors';
 import { MarketDataError } from '../src/lib/market-data/provider';
 import { ValidationError } from '../src/lib/validate';
+import { OPTIONS_SOURCES_EVALUATED } from '../src/lib/market-data/licence';
 
 const ROOT = path.join(__dirname, '..');
 const SRC = path.join(ROOT, 'src');
@@ -127,5 +128,23 @@ describe('provider requests cannot be steered or unbounded', () => {
     ).value;
     expect(csp).toMatch(/frame-ancestors 'none'/);
     expect(csp).toMatch(/object-src 'none'/);
+  });
+});
+
+describe('the options-data evaluation is recorded, not just remembered', () => {
+  it('names every source checked and why each is blocked', () => {
+    // A search someone repeats in six months is a search that was not written
+    // down. Each entry must carry a blocker, or it reads as an endorsement.
+    expect(OPTIONS_SOURCES_EVALUATED.length).toBeGreaterThanOrEqual(3);
+    for (const entry of OPTIONS_SOURCES_EVALUATED) {
+      expect(entry.blocker.length, `${entry.provider} has no blocker`).toBeGreaterThan(40);
+      expect(['unlicensed', 'personal-only', 'permitted']).toContain(entry.commercial);
+    }
+    // None of them may be shown to a third party. Read through a widened type
+    // so this stays a runtime guard: `as const` makes the comparison vacuous to
+    // the compiler, but the point is to fail when someone ADDS an entry marked
+    // permitted without revisiting what the app is allowed to display.
+    const entries: Array<{ commercial: string }> = [...OPTIONS_SOURCES_EVALUATED];
+    expect(entries.some((e) => e.commercial === 'permitted')).toBe(false);
   });
 });

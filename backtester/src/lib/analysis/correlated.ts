@@ -288,11 +288,34 @@ export interface RegimeMoments {
   stressed: AssetMoments;
   /** Fraction of days classified as stressed. */
   stressFrequency: number;
-  /** Portfolio return at or below which a day counts as stressed. */
+  /** Trailing portfolio volatility at or above which a day counts as stressed. */
   threshold: number;
   /** Average off-diagonal correlation in each regime, for reporting. */
   calmCorrelation: number;
   stressedCorrelation: number;
+  /**
+   * Day-to-day transition probabilities, estimated from the observed regime
+   * sequence. `stayStressed` above the base rate is persistence — stress
+   * clusters rather than arriving independently.
+   */
+  transition: {
+    stayCalm: number;
+    stayStressed: number;
+    /** Mean length of a stressed run, in periods: 1 / (1 - stayStressed). */
+    meanStressRun: number;
+    /** Frequency implied by the chain's stationary distribution. */
+    stationaryStressFrequency: number;
+  };
+}
+
+/**
+ * Trailing window for the volatility classifier, in periods.
+ *
+ * About two trading weeks at daily resolution. Short enough to turn quickly
+ * into a crisis, long enough that a single day does not flip the regime.
+ */
+function periodsHint(_observations: number): number {
+  return 10;
 }
 
 /** Mean off-diagonal correlation of a matrix. */
@@ -347,13 +370,44 @@ export function estimateRegimes(
   const portfolio = Array.from({ length: T }, (_, t) =>
     returns.reduce((sum, series, i) => sum + w[i] * series[t], 0),
   );
-  const sorted = [...portfolio].sort((a, b) => a - b);
-  const cut = Math.max(1, Math.floor(T * quantile));
-  const threshold = sorted[cut - 1];
+  /**
+   * Classify on TRAILING VOLATILITY, not on the day's return.
+   *
+   * Thresholding on return picks out bad days, which is not the same as bad
+   * regimes: a turbulent stretch contains big up days too, and those get
+   * labelled calm, chopping every run into single days. Measured on a series
+   * built from runs of ~14 stressed days, return-thresholding recovered a mean
+   * run length of 1.5 — it destroyed exactly the clustering the chain exists to
+   * capture.
+   *
+   * Volatility is what persists, and a high-volatility regime is where both the
+   * fat losses and the correlation breakdown live. The window is trailing, so
+   * nothing here looks ahead.
+   */
+  const window = Math.max(5, Math.min(40, Math.round(periodsHint(T))));
+  const vol = new Array<number>(T).fill(0);
+  for (let t = 0; t < T; t++) {
+    const from = Math.max(0, t - window + 1);
+    let sum = 0;
+    let sumSq = 0;
+    let count = 0;
+    for (let k = from; k <= t; k++) {
+      sum += portfolio[k];
+      sumSq += portfolio[k] * portfolio[k];
+      count++;
+    }
+    const mean = sum / count;
+    vol[t] = Math.sqrt(Math.max(0, sumSq / count - mean * mean));
+  }
+
+  const sortedVol = [...vol].sort((a, b) => a - b);
+  // Top `quantile` by volatility is stressed.
+  const cut = Math.max(1, Math.floor(T * (1 - quantile)));
+  const threshold = sortedVol[Math.min(T - 1, cut)];
 
   const stressedIdx: number[] = [];
   const calmIdx: number[] = [];
-  for (let t = 0; t < T; t++) (portfolio[t] <= threshold ? stressedIdx : calmIdx).push(t);
+  for (let t = 0; t < T; t++) (vol[t] >= threshold ? stressedIdx : calmIdx).push(t);
 
   // A covariance needs more observations than assets in EVERY regime, not just
   // overall. Failing here beats returning a rank-deficient stressed matrix that
@@ -367,19 +421,56 @@ export function estimateRegimes(
     );
   }
 
+  /**
+   * Transition counts from the day-by-day regime sequence.
+   *
+   * Drawing regimes independently at the base rate — which is what the first
+   * version did — scatters bad days evenly through the horizon. Real stress
+   * arrives in runs, and a run is what turns a drawdown into a deep one. The
+   * chain below is the difference between "12% of days are bad" and "bad
+   * months happen".
+   */
+  const stressed = new Array<boolean>(T);
+  for (let t = 0; t < T; t++) stressed[t] = vol[t] >= threshold;
+
+  let cc = 0;
+  let cs = 0;
+  let sc = 0;
+  let ss = 0;
+  for (let t = 1; t < T; t++) {
+    if (!stressed[t - 1]) stressed[t] ? cs++ : cc++;
+    else stressed[t] ? ss++ : sc++;
+  }
+  // Falling back to the base rate when a regime never repeats keeps the chain
+  // well defined on short or unusually calm windows.
+  const baseRate = stressedIdx.length / T;
+  const stayCalm = cc + cs > 0 ? cc / (cc + cs) : 1 - baseRate;
+  const stayStressed = sc + ss > 0 ? ss / (sc + ss) : baseRate;
+  // Stationary distribution of a two-state chain.
+  const leaveCalm = 1 - stayCalm;
+  const leaveStressed = 1 - stayStressed;
+  const stationary =
+    leaveCalm + leaveStressed > 0 ? leaveCalm / (leaveCalm + leaveStressed) : baseRate;
+
   const slice = (idx: number[]) => returns.map((series) => idx.map((t) => series[t]));
   const calm = estimateMoments(symbols, slice(calmIdx), { shrink: options.shrink !== false });
-  const stressed = estimateMoments(symbols, slice(stressedIdx), {
+  const stressedMoments = estimateMoments(symbols, slice(stressedIdx), {
     shrink: options.shrink !== false,
   });
 
   return {
     calm,
-    stressed,
+    stressed: stressedMoments,
     stressFrequency: stressedIdx.length / T,
     threshold,
     calmCorrelation: averageOffDiagonal(calm.corr),
-    stressedCorrelation: averageOffDiagonal(stressed.corr),
+    stressedCorrelation: averageOffDiagonal(stressedMoments.corr),
+    transition: {
+      stayCalm,
+      stayStressed,
+      meanStressRun: stayStressed < 1 ? 1 / (1 - stayStressed) : Number.POSITIVE_INFINITY,
+      stationaryStressFrequency: stationary,
+    },
   };
 }
 
@@ -431,6 +522,10 @@ export interface CorrelatedResult {
     stressedCorrelation: number;
     /** Fraction of simulated steps that landed in the stressed regime. */
     realisedStressShare: number;
+    /** Probability stress persists to the next period. */
+    stayStressed: number;
+    /** Mean length of a stressed run, in periods. */
+    meanStressRun: number;
   } | null;
   inputCorrelation: number[][];
   /** Mean end-of-horizon weight per asset — how far drift carried them. */
@@ -543,16 +638,26 @@ export function runCorrelated(options: CorrelatedOptions): CorrelatedResult {
 
     let peak = value;
     let worst = 0;
+    // Each path starts in a regime drawn from the chain's stationary
+    // distribution, not always in calm — starting calm every time would give
+    // every path the same benign opening and understate early drawdowns.
+    let inStressNow = regimes
+      ? rng() < regimes.transition.stationaryStressFrequency
+      : false;
     bandSamples[0].push(value);
     let nextYear = 1;
 
     for (let t = 0; t < steps; t++) {
-      // Regime for this step, drawn at the frequency actually observed.
+      // Regime for this step. The chain carries state from the previous step,
+      // so stress arrives in runs the way it actually does rather than being
+      // scattered evenly across the horizon.
       let stepMu = mu;
       let stepL = L;
       if (regimes && calmL && stressL) {
         totalSteps++;
-        const inStress = rng() < regimes.stressFrequency;
+        const stay = inStressNow ? regimes.transition.stayStressed : regimes.transition.stayCalm;
+        const inStress = rng() < stay ? inStressNow : !inStressNow;
+        inStressNow = inStress;
         if (inStress) stressedSteps++;
         // Overrides apply to the unconditional drift only; inside a regime the
         // mean is that regime's own, or the mixture would no longer average
@@ -662,6 +767,8 @@ export function runCorrelated(options: CorrelatedOptions): CorrelatedResult {
           calmCorrelation: regimes.calmCorrelation,
           stressedCorrelation: regimes.stressedCorrelation,
           realisedStressShare: totalSteps > 0 ? stressedSteps / totalSteps : 0,
+          stayStressed: regimes.transition.stayStressed,
+          meanStressRun: regimes.transition.meanStressRun,
         }
       : null,
     inputCorrelation: moments.corr,

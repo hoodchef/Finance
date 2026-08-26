@@ -4,6 +4,7 @@ import { getProvider } from '@/lib/market-data';
 import { errorResponse } from '@/lib/api-errors';
 import { parseConfig, parsePortfolio } from '@/lib/validate';
 import { universeInfo } from '@/lib/market-data/universe';
+import { queueStats } from '@/lib/jobs/queue';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -99,6 +100,7 @@ export async function POST(request: Request) {
       warnings: result.warnings,
       dataSource: result.dataSource,
       universe: universeInfo(),
+      queue: queueStats(),
     });
   } catch (error) {
     return errorResponse(error);

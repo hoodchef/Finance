@@ -519,6 +519,22 @@ The engine ignores them at runtime — it works from the raw side — but
 `tests/parity-tiingo.test.ts` checks one against the other, which is the
 strongest parity anchor in the repo.
 
+### Options data: evaluated, none usable
+
+Surveyed August 2026, and the answer is the price-data finding in sharper
+form. A free options feed good enough to build on exists; none of it may be
+shown to anyone else.
+
+| Source | What it gives | Why it is not used |
+| --- | --- | --- |
+| **Cboe delayed-quotes CDN** | The best free data found: 13,288 SPY contracts, 32 expiries to 2028, bid/ask and sizes, IV, open interest, volume, full greeks and a theoretical price. Current to the session close, no key. | Cboe's content policy requires advance written approval and an executed licence before any website data is used. An open endpoint is not a licence. |
+| **Alpha Vantage options** | Historical and realtime option chains. | Both premium. `REALTIME_OPTIONS` returns a populated, parseable payload on the free tier that is labelled *in the response* as artificial illustrative data — an integration written against it would invent option chains. |
+| **marketdata.app** | 100 credits/day, 24-hour delayed, one year of history. | Free and mid tiers are "Internal Use" only; redistribution is top-plan-only at custom pricing. |
+
+Recorded in `lib/market-data/licence.ts` as `OPTIONS_SOURCES_EVALUATED`, with a
+test asserting every entry carries a blocker — so the search is not repeated,
+and so nothing gets integrated without the terms being read.
+
 ### Parity fixtures are not redistributable
 
 The Tiingo recordings that back `tests/parity-tiingo.test.ts` are gitignored.
@@ -820,6 +836,36 @@ node scripts/record-fixtures.mjs
 ```
 
 ---
+
+## Accounts and server storage
+
+Off by default. With no `DATABASE_URL` the app keeps portfolios in the browser,
+needs no account, and nothing leaves the machine. Setting `DATABASE_URL` enables
+server-side storage under one local owner; accounts additionally require
+`NEXTAUTH_SECRET`. **A database without a secret is not authentication** and the
+app treats it as still off, rather than signing sessions with nothing.
+
+Sessions are database-backed, not JWT: a JWT cannot be revoked before it
+expires, and for a product holding someone's financial planning, ending a
+session server-side is worth the extra query.
+
+```bash
+npm run db:generate      # Prisma clients, Postgres and the SQLite mirror
+npm run db:migrate       # apply prisma/migrations to DATABASE_URL
+npm run db:push:test     # local SQLite, for the repository tests
+```
+
+**The migration has not been run against a live Postgres.** It is generated
+from the schema by `prisma migrate diff` and checked in, and tests assert it
+creates every model, cascades deletes from the owner, carries the uniqueness
+Auth.js depends on, and stores weights as `DECIMAL` rather than a float. That is
+a weaker claim than "it runs", and is the honest one: no Postgres was reachable
+from the machine that wrote it. The repository itself IS exercised against a
+real database — SQLite, from a schema generated off the Postgres one so the
+models cannot drift.
+
+OAuth providers register only when both halves of a credential pair are present.
+No live OAuth flow has been run either.
 
 ## Persistence
 

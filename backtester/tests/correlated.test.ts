@@ -431,19 +431,32 @@ describe('two-regime simulation', () => {
     expect(out.regimeUsed!.realisedStressShare).toBeCloseTo(regimes.stressFrequency, 1);
   });
 
-  it('widens the downside relative to a single blended covariance', () => {
+  it('separates the two regimes by volatility as well as correlation', () => {
+    const r = estimateRegimes(SYMS, data, { quantile: 0.12 });
+    const avgVol = (m: typeof r.calm) =>
+      m.sigma.reduce((a, b) => a + b, 0) / m.sigma.length;
+    // The classifier is a volatility classifier, so this is close to circular
+    // — which is the point of asserting it. If the stressed regime were NOT
+    // more volatile, the split has found nothing and every downstream claim
+    // about it is empty.
+    expect(avgVol(r.stressed)).toBeGreaterThan(avgVol(r.calm) * 1.5);
+  });
+
+  it('does not narrow the downside relative to a blended covariance', () => {
+    // This series has INDEPENDENT regimes, so a chain fitted to it correctly
+    // finds little persistence and the two models nearly agree. The claim that
+    // regimes deepen a drawdown belongs with clustered data, and is tested
+    // there. What must hold here is that modelling them never flatters the
+    // tail.
     const moments = estimateMoments(SYMS, data);
     const regimes = estimateRegimes(SYMS, data, { quantile: 0.12 });
     const common = {
       moments, weights: [0.25, 0.25, 0.25, 0.25], periodsPerYear: 252,
-      years: 25, paths: 600, initialInvestment: 10_000, rebalanceEvery: 21, seed: 8,
+      years: 25, paths: 800, initialInvestment: 10_000, rebalanceEvery: 21, seed: 8,
     };
     const blended = runCorrelated(common);
     const regimeAware = runCorrelated({ ...common, regimes });
-
-    // Correlation breaking down in falls is exactly what a single averaged
-    // covariance cannot express, and it shows up as a deeper drawdown.
-    expect(regimeAware.worstDrawdown.median).toBeLessThan(blended.worstDrawdown.median);
+    expect(regimeAware.worstDrawdown.p95).toBeLessThan(blended.worstDrawdown.p95 * 0.97);
   });
 
   it('keeps the mixture centred on the same long-run outcome', () => {
@@ -523,5 +536,92 @@ describe('shrinkage and regime reporting do not interfere', () => {
     // shrinkage doing its job on the matrix actually fed to Cholesky.
     expect(on.stressed.shrinkage).toBeGreaterThan(0);
     expect(off.stressed.shrinkage).toBe(0);
+  });
+});
+
+describe('regime persistence', () => {
+  /** Stress arrives in runs of ~15 days, the way it actually does. */
+  function drawClustered(n: number, T: number, seed: number): number[][] {
+    let a = seed >>> 0;
+    const rand = () => {
+      a = (a + 0x6d2b79f5) >>> 0;
+      let t = Math.imul(a ^ (a >>> 15), 1 | a);
+      t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t;
+      return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+    };
+    const norm = () => {
+      let u = 0;
+      while (u <= 0) u = rand();
+      return Math.sqrt(-2 * Math.log(u)) * Math.cos(2 * Math.PI * rand());
+    };
+    const out: number[][] = Array.from({ length: n }, () => []);
+    let stressed = false;
+    for (let t = 0; t < T; t++) {
+      // stay-stressed 0.93 -> runs of ~14; stay-calm 0.99 -> ~12% of days.
+      stressed = stressed ? rand() < 0.93 : rand() < 0.01;
+      const b = stressed ? 0.95 : 0.25;
+      const vol = stressed ? 0.03 : 0.008;
+      const drift = stressed ? -0.012 : 0.0013;
+      const common = norm();
+      for (let i = 0; i < n; i++) {
+        out[i].push(Math.expm1(drift + vol * (b * common + Math.sqrt(1 - b * b) * norm())));
+      }
+    }
+    return out;
+  }
+
+  const SYMS = ['A', 'B', 'C', 'D'];
+  const clustered = drawClustered(4, 4000, 31);
+
+  it('detects that stress persists rather than arriving independently', () => {
+    const r = estimateRegimes(SYMS, clustered, { quantile: 0.12 });
+    // The point of the chain: yesterday being bad makes today more likely to
+    // be bad than the base rate does.
+    expect(r.transition.stayStressed).toBeGreaterThan(r.stressFrequency * 2);
+    expect(r.transition.meanStressRun).toBeGreaterThan(3);
+  });
+
+  it('has a stationary frequency close to the observed one', () => {
+    const r = estimateRegimes(SYMS, clustered, { quantile: 0.12 });
+    // A chain whose stationary distribution drifted from the sample would
+    // simulate a different world from the one that was measured.
+    expect(r.transition.stationaryStressFrequency).toBeCloseTo(r.stressFrequency, 1);
+  });
+
+  it('reproduces the run length when simulating', () => {
+    const r = estimateRegimes(SYMS, clustered, { quantile: 0.12 });
+    const moments = estimateMoments(SYMS, clustered);
+    const out = runCorrelated({
+      moments, regimes: r, weights: [0.25, 0.25, 0.25, 0.25],
+      periodsPerYear: 252, years: 20, paths: 40, initialInvestment: 10_000, seed: 6,
+    });
+    expect(out.regimeUsed!.realisedStressShare).toBeCloseTo(r.stressFrequency, 1);
+    expect(out.regimeUsed!.meanStressRun).toBeGreaterThan(3);
+  });
+
+  it('deepens drawdowns relative to scattering the same bad days', () => {
+    // Same proportion of stressed days either way. Clustering them is what
+    // turns a drawdown into a deep one, and it is the whole reason the chain
+    // exists rather than an independent draw at the base rate.
+    const r = estimateRegimes(SYMS, clustered, { quantile: 0.12 });
+    const scattered = {
+      ...r,
+      transition: {
+        // A chain with no memory: P(stress | anything) = base rate.
+        stayCalm: 1 - r.stressFrequency,
+        stayStressed: r.stressFrequency,
+        meanStressRun: 1 / (1 - r.stressFrequency),
+        stationaryStressFrequency: r.stressFrequency,
+      },
+    };
+    const moments = estimateMoments(SYMS, clustered);
+    const common = {
+      moments, weights: [0.25, 0.25, 0.25, 0.25], periodsPerYear: 252,
+      years: 25, paths: 500, initialInvestment: 10_000, rebalanceEvery: 21, seed: 14,
+    };
+    const persistent = runCorrelated({ ...common, regimes: r });
+    const independent = runCorrelated({ ...common, regimes: scattered });
+
+    expect(persistent.worstDrawdown.median).toBeLessThan(independent.worstDrawdown.median);
   });
 });
