@@ -61,6 +61,12 @@ interface CorrelatedResponse {
     realisedCorrelation: number[][];
     inputCorrelation: number[][];
     endingWeights: number[];
+    regimeUsed: {
+      stressFrequency: number;
+      calmCorrelation: number;
+      stressedCorrelation: number;
+      realisedStressShare: number;
+    } | null;
     bands: Array<{ year: number; p5: number; median: number; p95: number }>;
   };
   estimate: {
@@ -74,6 +80,8 @@ interface CorrelatedResponse {
     to: string;
   };
   targetWeights: number[];
+  regimeNote: string | null;
+  glidepath: { to: number[] } | null;
 }
 
 const METHOD_LABEL: Record<SimMethod, string> = {
@@ -101,6 +109,7 @@ function NumField({
   suffix,
   placeholder,
   hint,
+  vector = false,
 }: {
   label: string;
   value: string;
@@ -108,6 +117,8 @@ function NumField({
   suffix?: string;
   placeholder?: string;
   hint?: string;
+  /** Accepts a separated list ("20/70/10") rather than a single number. */
+  vector?: boolean;
 }) {
   return (
     <div className="space-y-1">
@@ -120,7 +131,10 @@ function NumField({
           placeholder={placeholder}
           onChange={(e) => {
             const raw = e.target.value;
-            if (raw !== '' && !/^-?\d*\.?\d*$/.test(raw)) return;
+            // Separators are admitted only for a vector field; letting every
+            // numeric input take "20/70" would make Horizon accept nonsense.
+            const ok = vector ? /^[\d./,\s]*$/ : /^-?\d*\.?\d*$/;
+            if (raw !== '' && !ok.test(raw)) return;
             onChange(raw);
           }}
           className={cn('h-8 text-xs', suffix && 'pr-6')}
@@ -150,6 +164,8 @@ export function SimulatorView() {
   const [mode, setMode] = React.useState<'portfolio' | 'assets'>('portfolio');
   const [rebalance, setRebalance] = React.useState('annual');
   const [shrink, setShrink] = React.useState(true);
+  const [regimeAware, setRegimeAware] = React.useState(true);
+  const [glideTo, setGlideTo] = React.useState('');
   const correlated = useJob<CorrelatedResponse>();
 
   const [method, setMethod] = React.useState<SimMethod>('block');
@@ -183,6 +199,11 @@ export function SimulatorView() {
       contributionFrequency,
       rebalance,
       shrink,
+      regimeAware,
+      // "60/40" or "60,40" — a weight per holding, in the order they are listed.
+      glidepathTo: glideTo.trim()
+        ? glideTo.split(/[\/,\s]+/).map(Number).filter((v) => Number.isFinite(v))
+        : undefined,
     });
   }
 
@@ -326,6 +347,28 @@ export function SimulatorView() {
                       unless you have decades of history for every holding.
                     </span>
                   </label>
+                  <label className="flex items-start gap-2 text-2xs leading-relaxed text-muted-foreground">
+                    <input
+                      type="checkbox"
+                      checked={regimeAware}
+                      onChange={(e) => setRegimeAware(e.target.checked)}
+                      className="mt-0.5"
+                    />
+                    <span>
+                      Model calm and stressed regimes separately. Correlations rise in falls, so
+                      one blended covariance reports a downside that is too narrow for the reason
+                      that matters most. Both regimes are measured from your own history, not
+                      assumed.
+                    </span>
+                  </label>
+                  <NumField
+                    label="Glide to"
+                    vector
+                    value={glideTo}
+                    onChange={setGlideTo}
+                    placeholder="e.g. 20/70/10"
+                    hint="Optional. Ending weights to drift toward across the horizon, one per holding in the order listed. Blank holds the target mix."
+                  />
                 </>
               )}
             </CardContent>
@@ -812,6 +855,52 @@ export function SimulatorView() {
                       close to collinear.</>
                     )}
                   </p>
+
+                  {corr.simulation.regimeUsed && (
+                    <div className="rounded-md border border-border bg-muted/40 p-2.5 text-2xs leading-relaxed">
+                      <p className="font-medium text-foreground">
+                        Correlation in calm and stressed markets
+                      </p>
+                      <p className="mt-1 text-muted-foreground">
+                        On the calmest {formatPercent(1 - corr.simulation.regimeUsed.stressFrequency, 0)}{' '}
+                        of days these holdings correlated{' '}
+                        <span className="numeric text-foreground">
+                          {corr.simulation.regimeUsed.calmCorrelation.toFixed(2)}
+                        </span>{' '}
+                        on average. On the worst{' '}
+                        {formatPercent(corr.simulation.regimeUsed.stressFrequency, 0)} they
+                        correlated{' '}
+                        <span className="numeric text-foreground">
+                          {corr.simulation.regimeUsed.stressedCorrelation.toFixed(2)}
+                        </span>
+                        {corr.simulation.regimeUsed.stressedCorrelation >
+                        corr.simulation.regimeUsed.calmCorrelation
+                          ? ' — diversification was weakest exactly when it was needed, and the simulation reproduces that rather than averaging it away.'
+                          : ' — unusually, these held their independence through the falls in this window.'}
+                      </p>
+                      <p className="mt-1 text-muted-foreground">
+                        Both regimes are measured from your own history and drawn at the frequency
+                        they occurred, so the mixture still averages back to the same long-run
+                        return. What changes is the shape of the downside.
+                      </p>
+                    </div>
+                  )}
+
+                  {corr.regimeNote && (
+                    <div className="rounded-md border border-[hsl(var(--warning))]/40 bg-[hsl(var(--warning))]/8 p-2.5 text-2xs leading-relaxed">
+                      <span className="font-medium">Regimes not modelled.</span>{' '}
+                      <span className="text-muted-foreground">{corr.regimeNote}</span>
+                    </div>
+                  )}
+
+                  {corr.glidepath && (
+                    <p className="text-2xs leading-relaxed text-muted-foreground">
+                      Gliding from{' '}
+                      {corr.targetWeights.map((w) => formatPercent(w, 0)).join(' / ')} to{' '}
+                      {corr.glidepath.to.map((w) => formatPercent(w, 0)).join(' / ')} across{' '}
+                      {corr.simulation.years} years, applied at each rebalance.
+                    </p>
+                  )}
                 </CardContent>
               </Card>
 
@@ -861,10 +950,10 @@ export function SimulatorView() {
                 <p className="font-medium">Reading this honestly</p>
                 <p className="mt-1 text-muted-foreground">
                   {corr.simulation.paths.toLocaleString()} paths over {corr.simulation.years} years,
-                  drawn from a multivariate normal fitted to the joint history. Correlations are held
-                  fixed for the whole horizon &mdash; real ones move, and they tend to rise toward one
-                  in exactly the falls where diversification was supposed to help. Treat the downside
-                  band as optimistic for that reason.
+                  drawn from a multivariate normal fitted to the joint history.{' '}
+                  {corr.simulation.regimeUsed
+                    ? 'Two regimes are modelled, so correlation breakdown in falls is reproduced rather than averaged away. What is still assumed is that regimes arrive independently — real stress clusters, and a run of bad months is more likely than this makes it look.'
+                    : 'Correlations are held fixed for the whole horizon — real ones move, and they rise toward one in exactly the falls where diversification was supposed to help. Turn on regimes above, or treat the downside band as optimistic.'}
                 </p>
               </div>
             </>

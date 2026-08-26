@@ -280,6 +280,110 @@ export function cholesky(cov: number[][]): CholeskyResult {
 }
 
 /* ------------------------------------------------------------------ */
+/* Regimes                                                             */
+/* ------------------------------------------------------------------ */
+
+export interface RegimeMoments {
+  calm: AssetMoments;
+  stressed: AssetMoments;
+  /** Fraction of days classified as stressed. */
+  stressFrequency: number;
+  /** Portfolio return at or below which a day counts as stressed. */
+  threshold: number;
+  /** Average off-diagonal correlation in each regime, for reporting. */
+  calmCorrelation: number;
+  stressedCorrelation: number;
+}
+
+/** Mean off-diagonal correlation of a matrix. */
+function averageOffDiagonal(corr: number[][]): number {
+  const n = corr.length;
+  if (n < 2) return 0;
+  let sum = 0;
+  let count = 0;
+  for (let i = 0; i < n; i++) {
+    for (let j = i + 1; j < n; j++) {
+      sum += corr[i][j];
+      count++;
+    }
+  }
+  return sum / count;
+}
+
+/**
+ * Splits history into a calm and a stressed regime and fits each separately.
+ *
+ * The single-covariance model asserts that assets move together the same way
+ * always. They do not. Correlations rise in falls — in precisely the episodes
+ * diversification was bought for — and a simulation that holds them fixed
+ * reports a downside band that is too narrow for the reason that matters most.
+ *
+ * The usual fix is to assume a stress multiplier. This measures it instead: the
+ * worst `quantile` of days by portfolio return become the stressed regime, and
+ * both regimes are fitted from the actual data in them.
+ *
+ * Crucially BOTH the mean and the covariance are estimated per regime, and the
+ * simulation draws a regime with the empirical frequency. That keeps the
+ * mixture's unconditional mean equal to the full-sample mean by construction.
+ * Taking the stressed covariance while keeping the overall mean — the obvious
+ * shortcut — would understate risk; taking the stressed MEAN as a permanent
+ * drift would make every path a catastrophe. Neither is what the data says.
+ */
+export function estimateRegimes(
+  symbols: string[],
+  returns: number[][],
+  options: { quantile?: number; weights?: number[]; shrink?: boolean } = {},
+): RegimeMoments {
+  const quantile = Math.min(0.4, Math.max(0.05, options.quantile ?? 0.1));
+  const n = symbols.length;
+  const T = returns[0]?.length ?? 0;
+
+  const w = options.weights && options.weights.length === n
+    ? options.weights
+    : new Array<number>(n).fill(1 / n);
+
+  // Classify on the portfolio's own return, not one asset's: the question is
+  // what happened to THIS mix on its bad days.
+  const portfolio = Array.from({ length: T }, (_, t) =>
+    returns.reduce((sum, series, i) => sum + w[i] * series[t], 0),
+  );
+  const sorted = [...portfolio].sort((a, b) => a - b);
+  const cut = Math.max(1, Math.floor(T * quantile));
+  const threshold = sorted[cut - 1];
+
+  const stressedIdx: number[] = [];
+  const calmIdx: number[] = [];
+  for (let t = 0; t < T; t++) (portfolio[t] <= threshold ? stressedIdx : calmIdx).push(t);
+
+  // A covariance needs more observations than assets in EVERY regime, not just
+  // overall. Failing here beats returning a rank-deficient stressed matrix that
+  // the ridge would then quietly paper over.
+  const minimum = Math.max(20, n + 1);
+  if (stressedIdx.length < minimum || calmIdx.length < minimum) {
+    throw new CorrelatedError(
+      `Splitting this history at the worst ${Math.round(quantile * 100)}% leaves ` +
+        `${stressedIdx.length} stressed and ${calmIdx.length} calm days; each regime needs at ` +
+        `least ${minimum} to fit ${n} assets. Widen the window or raise the quantile.`,
+    );
+  }
+
+  const slice = (idx: number[]) => returns.map((series) => idx.map((t) => series[t]));
+  const calm = estimateMoments(symbols, slice(calmIdx), { shrink: options.shrink !== false });
+  const stressed = estimateMoments(symbols, slice(stressedIdx), {
+    shrink: options.shrink !== false,
+  });
+
+  return {
+    calm,
+    stressed,
+    stressFrequency: stressedIdx.length / T,
+    threshold,
+    calmCorrelation: averageOffDiagonal(calm.corr),
+    stressedCorrelation: averageOffDiagonal(stressed.corr),
+  };
+}
+
+/* ------------------------------------------------------------------ */
 /* Simulation                                                          */
 /* ------------------------------------------------------------------ */
 
@@ -300,6 +404,12 @@ export interface CorrelatedOptions {
   seed?: number;
   /** Annual expected-return overrides per asset, arithmetic. Null keeps history. */
   expectedReturns?: (number | null)[];
+  /**
+   * Two-regime mixture. When given, each step draws a regime at the empirical
+   * frequency and then draws from that regime's own fitted distribution, so
+   * correlation breakdown is simulated rather than assumed away.
+   */
+  regimes?: RegimeMoments;
 }
 
 export interface CorrelatedResult {
@@ -314,6 +424,14 @@ export interface CorrelatedResult {
   worstDrawdown: { median: number; p95: number };
   /** Correlation the SIMULATION produced, for checking against the input. */
   realisedCorrelation: number[][];
+  /** Regime detail when a mixture was used. */
+  regimeUsed: {
+    stressFrequency: number;
+    calmCorrelation: number;
+    stressedCorrelation: number;
+    /** Fraction of simulated steps that landed in the stressed regime. */
+    realisedStressShare: number;
+  } | null;
   inputCorrelation: number[][];
   /** Mean end-of-horizon weight per asset — how far drift carried them. */
   endingWeights: number[];
@@ -369,9 +487,17 @@ export function runCorrelated(options: CorrelatedOptions): CorrelatedResult {
     seed = 12345,
   } = options;
 
+  const regimes = options.regimes;
   const n = moments.symbols.length;
   const steps = Math.max(1, Math.round(years * periodsPerYear));
   const { L, ridge } = cholesky(moments.cov);
+
+  // Each regime gets its own factor. Both are built up front: factorising
+  // inside the step loop would dominate the runtime.
+  const calmL = regimes ? cholesky(regimes.calm.cov).L : null;
+  const stressL = regimes ? cholesky(regimes.stressed.cov).L : null;
+  let stressedSteps = 0;
+  let totalSteps = 0;
 
   // An override replaces the drift only. Covariance — and therefore every
   // correlation — stays as measured, because a view on returns is not a view
@@ -421,11 +547,25 @@ export function runCorrelated(options: CorrelatedOptions): CorrelatedResult {
     let nextYear = 1;
 
     for (let t = 0; t < steps; t++) {
+      // Regime for this step, drawn at the frequency actually observed.
+      let stepMu = mu;
+      let stepL = L;
+      if (regimes && calmL && stressL) {
+        totalSteps++;
+        const inStress = rng() < regimes.stressFrequency;
+        if (inStress) stressedSteps++;
+        // Overrides apply to the unconditional drift only; inside a regime the
+        // mean is that regime's own, or the mixture would no longer average
+        // back to the sample.
+        stepMu = inStress ? regimes.stressed.mu : regimes.calm.mu;
+        stepL = inStress ? stressL : calmL;
+      }
+
       for (let i = 0; i < n; i++) z[i] = normal();
       for (let i = 0; i < n; i++) {
-        let acc = mu[i];
+        let acc = stepMu[i];
         // Row i of L times z: only the first i+1 terms, L being lower-triangular.
-        for (let k = 0; k <= i; k++) acc += L[i][k] * z[k];
+        for (let k = 0; k <= i; k++) acc += stepL[i][k] * z[k];
         r[i] = acc; // log return this period
       }
 
@@ -516,6 +656,14 @@ export function runCorrelated(options: CorrelatedOptions): CorrelatedResult {
       p95: percentile(drawdowns, 0.05),
     },
     realisedCorrelation,
+    regimeUsed: regimes
+      ? {
+          stressFrequency: regimes.stressFrequency,
+          calmCorrelation: regimes.calmCorrelation,
+          stressedCorrelation: regimes.stressedCorrelation,
+          realisedStressShare: totalSteps > 0 ? stressedSteps / totalSteps : 0,
+        }
+      : null,
     inputCorrelation: moments.corr,
     endingWeights: endingWeightAcc.map((v) => v / paths),
     bands: bandSamples.map((values, year) => ({

@@ -3,6 +3,7 @@ import {
   CorrelatedError,
   cholesky,
   estimateMoments,
+  estimateRegimes,
   linearGlidepath,
   runCorrelated,
 } from '../src/lib/analysis/correlated';
@@ -368,5 +369,159 @@ describe('covariance shrinkage', () => {
     // Shrinkage toward a well-conditioned target should IMPROVE conditioning,
     // never break it — that is half the reason to do it.
     expect(() => cholesky(m.cov)).not.toThrow();
+  });
+});
+
+describe('two-regime simulation', () => {
+  /**
+   * A universe where correlation genuinely differs by regime: on stressed days
+   * everything moves with the common factor, on calm days much less. This is
+   * the pattern the single-covariance model averages away.
+   */
+  function drawRegimeSwitching(n: number, T: number, seed: number): number[][] {
+    let a = seed >>> 0;
+    const rand = () => {
+      a = (a + 0x6d2b79f5) >>> 0;
+      let t = Math.imul(a ^ (a >>> 15), 1 | a);
+      t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t;
+      return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+    };
+    const norm = () => {
+      let u = 0;
+      while (u <= 0) u = rand();
+      return Math.sqrt(-2 * Math.log(u)) * Math.cos(2 * Math.PI * rand());
+    };
+    const out: number[][] = Array.from({ length: n }, () => []);
+    for (let t = 0; t < T; t++) {
+      const stressed = rand() < 0.12;
+      const b = stressed ? 0.95 : 0.25;
+      const vol = stressed ? 0.03 : 0.008;
+      const drift = stressed ? -0.01 : 0.0012;
+      const common = norm();
+      for (let i = 0; i < n; i++) {
+        out[i].push(Math.expm1(drift + vol * (b * common + Math.sqrt(1 - b * b) * norm())));
+      }
+    }
+    return out;
+  }
+
+  const SYMS = ['A', 'B', 'C', 'D'];
+  const data = drawRegimeSwitching(4, 3000, 42);
+
+  it('finds a higher correlation in the stressed regime', () => {
+    const r = estimateRegimes(SYMS, data, { quantile: 0.12 });
+    // The whole premise: diversification is weakest exactly when it is needed.
+    expect(r.stressedCorrelation).toBeGreaterThan(r.calmCorrelation);
+    expect(r.stressFrequency).toBeCloseTo(0.12, 1);
+  });
+
+  it('refuses to split a window too short to fit both regimes', () => {
+    const short = drawRegimeSwitching(4, 60, 1);
+    expect(() => estimateRegimes(SYMS, short, { quantile: 0.1 })).toThrow(CorrelatedError);
+  });
+
+  it('draws stressed steps at the frequency it measured', () => {
+    const regimes = estimateRegimes(SYMS, data, { quantile: 0.12 });
+    const moments = estimateMoments(SYMS, data);
+    const out = runCorrelated({
+      moments, regimes, weights: [0.25, 0.25, 0.25, 0.25],
+      periodsPerYear: 252, years: 20, paths: 30, initialInvestment: 10_000, seed: 4,
+    });
+    expect(out.regimeUsed).not.toBeNull();
+    expect(out.regimeUsed!.realisedStressShare).toBeCloseTo(regimes.stressFrequency, 1);
+  });
+
+  it('widens the downside relative to a single blended covariance', () => {
+    const moments = estimateMoments(SYMS, data);
+    const regimes = estimateRegimes(SYMS, data, { quantile: 0.12 });
+    const common = {
+      moments, weights: [0.25, 0.25, 0.25, 0.25], periodsPerYear: 252,
+      years: 25, paths: 600, initialInvestment: 10_000, rebalanceEvery: 21, seed: 8,
+    };
+    const blended = runCorrelated(common);
+    const regimeAware = runCorrelated({ ...common, regimes });
+
+    // Correlation breaking down in falls is exactly what a single averaged
+    // covariance cannot express, and it shows up as a deeper drawdown.
+    expect(regimeAware.worstDrawdown.median).toBeLessThan(blended.worstDrawdown.median);
+  });
+
+  it('keeps the mixture centred on the same long-run outcome', () => {
+    // The mixture's unconditional mean equals the sample mean by construction,
+    // because both regimes are fitted from a partition of one sample and drawn
+    // at the observed frequency. Taking the stressed MEAN as a permanent drift
+    // — the tempting shortcut — would make every path a catastrophe instead.
+    const moments = estimateMoments(SYMS, data);
+    const regimes = estimateRegimes(SYMS, data, { quantile: 0.12 });
+    const common = {
+      moments, weights: [0.25, 0.25, 0.25, 0.25], periodsPerYear: 252,
+      years: 25, paths: 800, initialInvestment: 10_000, rebalanceEvery: 21, seed: 12,
+    };
+    const blended = runCorrelated(common);
+    const regimeAware = runCorrelated({ ...common, regimes });
+
+    const ratio = regimeAware.terminal.median / blended.terminal.median;
+    expect(ratio).toBeGreaterThan(0.75);
+    expect(ratio).toBeLessThan(1.25);
+  });
+
+  it('reports no regime detail when none was supplied', () => {
+    const moments = estimateMoments(SYMS, data);
+    const out = runCorrelated({
+      moments, weights: [0.25, 0.25, 0.25, 0.25], periodsPerYear: 252,
+      years: 5, paths: 40, initialInvestment: 1000, seed: 2,
+    });
+    expect(out.regimeUsed).toBeNull();
+  });
+});
+
+describe('shrinkage and regime reporting do not interfere', () => {
+  function drawPair(T: number, rho: number, seed: number): number[][] {
+    let a = seed >>> 0;
+    const rand = () => {
+      a = (a + 0x6d2b79f5) >>> 0;
+      let t = Math.imul(a ^ (a >>> 15), 1 | a);
+      t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t;
+      return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+    };
+    const norm = () => {
+      let u = 0;
+      while (u <= 0) u = rand();
+      return Math.sqrt(-2 * Math.log(u)) * Math.cos(2 * Math.PI * rand());
+    };
+    const out: number[][] = [[], [], []];
+    for (let t = 0; t < T; t++) {
+      const c = norm();
+      for (let i = 0; i < 3; i++) {
+        out[i].push(Math.expm1(0.0004 + 0.01 * (Math.sqrt(rho) * c + Math.sqrt(1 - rho) * norm())));
+      }
+    }
+    return out;
+  }
+
+  it('reports the same regime correlations with shrinkage on or off', () => {
+    // Shrinkage pulls correlations TOWARD their average, so it leaves that
+    // average unchanged. The calm/stressed comparison the panel shows is
+    // therefore a property of the data, not of the estimator — worth pinning,
+    // because a shrinkage target that moved the mean would silently flatten
+    // exactly the difference the feature exists to surface.
+    const data = drawPair(3000, 0.3, 77);
+    const syms = ['A', 'B', 'C'];
+    const on = estimateRegimes(syms, data, { quantile: 0.1, shrink: true });
+    const off = estimateRegimes(syms, data, { quantile: 0.1, shrink: false });
+
+    expect(on.calmCorrelation).toBeCloseTo(off.calmCorrelation, 9);
+    expect(on.stressedCorrelation).toBeCloseTo(off.stressedCorrelation, 9);
+  });
+
+  it('still shrinks the matrix it simulates from', () => {
+    const data = drawPair(400, 0.3, 5);
+    const syms = ['A', 'B', 'C'];
+    const on = estimateRegimes(syms, data, { quantile: 0.15, shrink: true });
+    const off = estimateRegimes(syms, data, { quantile: 0.15, shrink: false });
+    // The average is preserved, but dispersion around it is not — that is the
+    // shrinkage doing its job on the matrix actually fed to Cholesky.
+    expect(on.stressed.shrinkage).toBeGreaterThan(0);
+    expect(off.stressed.shrinkage).toBe(0);
   });
 });
