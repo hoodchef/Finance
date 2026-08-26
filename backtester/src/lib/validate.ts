@@ -15,6 +15,7 @@ import type {
 } from '@/lib/types';
 import { defaultConfig, MAX_HISTORY_START } from '@/lib/defaults';
 import { isValidIso, todayIso } from '@/lib/market-data/dates';
+import { normaliseSymbol } from '@/lib/market-data/universe';
 
 /**
  * Request validation for the API routes.
@@ -60,7 +61,7 @@ const REBALANCE: readonly RebalanceFrequency[] = [
   'never', 'monthly', 'quarterly', 'semiannual', 'annual', 'threshold',
 ];
 const CONTRIBUTION: readonly ContributionFrequency[] = ['none', 'monthly', 'quarterly', 'annual'];
-const DIVIDENDS: readonly DividendPolicy[] = ['reinvest', 'cash'];
+const DIVIDENDS: readonly DividendPolicy[] = ['reinvest', 'cash', 'ignore'];
 const INCEPTION: readonly InceptionPolicy[] = ['truncate', 'error', 'cash'];
 const RISK_FREE: readonly RiskFreeSource[] = ['zero', 'constant', 'tbill'];
 const COST_BASIS: readonly CostBasisMethod[] = ['fifo', 'average', 'hifo'];
@@ -75,15 +76,18 @@ const MAX_CASHFLOW_LEGS = 8;
 const SYMBOL_RE = /^[A-Za-z0-9.^=:-]{1,20}$/;
 
 export function parseSymbol(raw: unknown, field = 'symbol'): string {
-  const s = String(raw ?? '').trim().toUpperCase();
-  if (!s) throw new ValidationError(`${field} is required.`, field);
-  if (!SYMBOL_RE.test(s)) {
+  const input = String(raw ?? '').trim().toUpperCase();
+  if (!input) throw new ValidationError(`${field} is required.`, field);
+  if (!SYMBOL_RE.test(input)) {
     throw new ValidationError(
-      `"${s}" is not a valid ticker. Use letters, digits and . ^ - = : only.`,
+      `"${input}" is not a valid ticker. Use letters, digits and . ^ - = : only.`,
       field,
     );
   }
-  return s;
+  // Reconciles share-class notation against the listing directory, so someone
+  // who types BRK.B from a statement gets the BRK-B the provider expects,
+  // while an exchange suffix such as XEQT.TO is left intact.
+  return normaliseSymbol(input);
 }
 
 export function parsePositions(raw: unknown): Position[] {
@@ -230,6 +234,9 @@ export function parseConfig(raw: unknown): BacktestConfig {
       'Cost basis method',
       d.costBasisMethod,
     ),
+    baseCurrency: record.baseCurrency
+      ? String(record.baseCurrency).trim().toUpperCase().slice(0, 3)
+      : undefined,
     inflation: parseInflation(record.inflation, d),
     cashflows: parseCashflows(record.cashflows),
     benchmarks,

@@ -1,12 +1,24 @@
 # Backtester
 
-A portfolio backtesting platform. Build an allocation, run it against real
-historical market data, and see what actually drove the result.
+Two halves of one question, in one app.
+
+**The Planner** answers *what is your next dollar actually worth?* — a Canadian
+marginal-rate and account-allocation engine that counts benefit clawback, not
+just the posted bracket, and then decides which account this year's savings
+belong in.
+
+**The Backtester** answers *what would that have become?* — build an allocation,
+run it against real historical market data, and see what actually drove the
+result.
+
+They are joined: the Planner sizes one year of contributions and hands them to
+the Backtester with its assumptions attached, so the projection states what it
+excludes rather than quietly absorbing it.
 
 The engine is a deterministic, event-driven daily simulator that tracks share
 counts and cash through time. It is separate from the UI, has no React
-dependency, and is covered by 137 tests — including a parity check against an
-independently-computed reference.
+dependency, and is covered by 621 tests across 29 files — including parity
+checks against two independently-computed references.
 
 ```bash
 cd backtester
@@ -24,6 +36,7 @@ No API key and no database are required.
 - [Architecture](#architecture)
 - [The backtesting engine](#the-backtesting-engine)
 - [Metric methodology](#metric-methodology)
+- [The Planner](#the-planner-and-what-it-will-not-guess)
 - [Market data](#market-data)
 - [Running it](#running-it)
 - [Testing](#testing)
@@ -48,6 +61,8 @@ No API key and no database are required.
 | **Realised gains** | Lot-level cost basis (FIFO, average cost, HIFO), realised vs unrealised split, short/long-term classification, taxable events by year |
 | **Export** | Eight CSV files: summary, annual, monthly, holdings, transactions, daily series, realised gains, configuration |
 | **Transparency** | A methodology panel under every result, a data-source badge, and warnings for every data problem the engine detects |
+| **Planner (Canada)** | Effective marginal rate including benefit withdrawal, the full rate curve across the income range, and a solver that funds employer match / FHSA / RESP / RRSP / TFSA in order, re-scoring after each step |
+| **Planner → Backtester** | Carries the plan's contribution schedule into a backtest with its assumptions listed on screen |
 
 ---
 
@@ -216,6 +231,36 @@ distributions.
 `adjClose` column to ~1e-5. That combination proves the remaining gap is a
 definition, not a defect.
 
+**Vendors do not agree with each other, either.** Yahoo back-adjusts. Tiingo
+does not: it scales every bar before an ex-date by `C_ex / (C_ex + D)`, which
+telescopes to
+
+```
+adjC_t / adjC_{t−1}  =  (C_t + D_t) / C_{t−1}
+```
+
+— the exact convention, the same one the engine implements. So Tiingo is both
+an independent reference and a sharper one: where Yahoo can only bound the
+disagreement at ~1e-5, Tiingo agrees to floating point.
+
+This was derived from the data, not from documentation. Across 74 dividends on
+SPY, AAPL, BND and KO, the implied per-event step matched `1 + D/C_ex` to
+~1e-12 and missed Yahoo's `1/(1 − D/C_{t−1})` by up to `1.2e-4`.
+`tests/parity-tiingo.test.ts` re-derives it on every run, so if Tiingo ever
+changes how it adjusts, the suite fails there first rather than quietly
+re-baselining:
+
+| Reference | Symbol | Span | Events | Agreement |
+| --- | --- | --- | --- | --- |
+| Tiingo `adjClose` | SPY | 2015–2024 | 40 dividends | ~1e-8 |
+| Tiingo `adjClose` | BND | 2015–2024 | 120 distributions | ~1e-8 |
+| Tiingo `adjClose` | AAPL | 2019–2021 | 12 dividends + 4:1 split | ~1e-8 |
+| Yahoo `adjClose` | AAPL | 2020 | 1 dividend + 4:1 split | ~1e-5 (convention gap) |
+
+Both mutants tried against this suite are killed: reinvesting at the prior
+close (the back-adjustment assumption) breaks all three parity tests, and
+ignoring the split factor breaks both AAPL tests.
+
 ---
 
 ### Cost basis and realised gains
@@ -290,6 +335,86 @@ The portfolio runs with the user's own rebalancing rule and fees but **without
 contributions** — a scheduled deposit landing mid-crash would flatter the
 decline.
 
+### Factor regression
+
+Regresses the portfolio's daily excess return on the Fama–French factors, taken
+from the [Kenneth R. French Data
+Library](https://mba.tuck.dartmouth.edu/pages/faculty/ken.french/data_library.html)
+— the canonical source, published free by the people who defined the factors.
+Three-factor and five-factor models, with Carhart momentum optional on either.
+
+**Standard errors are Newey–West, not classical.** Daily return residuals are
+autocorrelated and heteroskedastic; classical standard errors assume neither and
+come out too small, which makes alpha look significant when it is not. Both are
+computed and the ratio is shown, so the gap is visible rather than hidden behind
+a choice made in the code. The lag length is Newey and West's own rule,
+`floor(4·(n/100)^(2/9))`.
+
+The estimator is checked against **statsmodels**, not against arithmetic written
+here — coefficients, both sets of standard errors, t-statistics, R² and adjusted
+R² all agree to ~1e-9 on a 900-observation design with AR(1) heteroskedastic
+residuals, chosen so the two standard errors genuinely differ (~1.7× on alpha).
+With iid residuals they coincide and the fixture would pass even if the HAC
+sandwich were never implemented.
+
+As a known-answer check, SPY 2015–2024 on the three-factor model returns market
+beta **0.976**, SMB **−0.124** (large-cap), HML **+0.018** (neutral), alpha
+**0.11%/yr at p = 0.73**, R² **0.995** — every sign and magnitude what theory
+predicts of an index fund.
+
+Three things the panel refuses to let slide:
+
+- **Alpha is reported with its p-value beside it**, and in three bands rather
+  than two. A p just over 0.05 is a different statement from a p of 0.9, and
+  collapsing them lets a borderline result read as a null one.
+- **The library lags.** French publishes monthly, one to two months behind. The
+  regression covers only the overlap and says so when that is shorter than the
+  backtest — a factor return cannot be carried forward without inventing market
+  movement that did not happen, so the join is inner and missing days are
+  dropped.
+- **The archive checksum is verified** before parsing. A truncated download
+  inflates into valid-looking CSV and would regress against a silently
+  shortened history.
+
+Factor data is fetched at runtime and cached locally; nothing is redistributed.
+
+---
+
+### The Planner, and what it will not guess
+
+The Canadian engine is ported from
+[CanPath](https://github.com/hoodchef/CanPath)'s Python reference, which remains
+the source of truth. `tests/canpath-parity.test.ts` replays **235 fixtures**
+generated by that reference against this port on every run.
+
+What it does that a tax table does not: a posted bracket is not what the next
+dollar costs. Once income-tested benefits begin withdrawing, the effective rate
+can be far above the bracket, and that gap appears nowhere on a return. The
+Planner surfaces it, charts it across the whole income range — the spikes are
+real, and they are where a benefit phases out — then answers the question it
+raises: given *that* rate, where should this year's savings go?
+
+**The one rule: never invent a Canadian tax parameter.** Every figure comes from
+`lib/canpath/data/taxyear_2026.json`, which records provenance per value in
+`source_notes`. A fabricated rate would pass every test in this repo and be
+invisible in the output, so anything unsourced is marked blocked rather than
+estimated. Currently blocked on published data, in descending order of value:
+**GIS**, the **territories**, and **Quebec** (which administers its own tax and
+benefit system). Those provinces are absent, not approximated.
+
+The Planner is a calculation, not tax advice.
+
+### The Planner bridge
+
+The Planner sizes **one year**. The Backtester projects **many**. Carrying one
+into the other means asserting that the year repeats, which is an assumption and
+is stated as one: the bridge hands over three caveats — that income and
+contribution room are held flat, whether the refund and benefits it generates
+are reinvested, and that account-level tax treatment is not modelled — and the
+Backtester renders them above the result rather than storing them silently.
+
+---
+
 ## Market data
 
 ### Provider abstraction
@@ -310,6 +435,54 @@ interface MarketDataProvider {
 Swapping Yahoo for Polygon, Tiingo or EODHD means writing one class. The engine,
 metrics and UI never change.
 
+### Provider evaluation (August 2026)
+
+Providers were assessed on the criterion that actually decides whether a
+backtest is correct — corporate actions first, because a total return computed
+without dividends and splits is not approximately right, it is wrong.
+
+| Provider | Adjusted close, dividends, splits on the free tier | Free limit | Non-US | Commercial use | Verdict |
+|---|---|---|---|---|---|
+| **Yahoo Finance** | Yes | Unstated, throttles hard | Yes (`.TO`) | **No licence at all** | Default. Research only |
+| **Tiingo** | **Yes** — `adjClose`, `divCash`, `splitFactor` | 1,000/day, 500 symbols/mo | Limited | **Personal only, even at $30/mo** | Recommended free upgrade |
+| **Alpha Vantage** | **Weekly only** — `adjClose` + dividends free; daily adjusted is premium | 25/day | **Yes — TSX, with currency** | **Personal only** | Used for Canadian listings |
+| Financial Modeling Prep | Partial | 250/day | **US only** on free | — | Rejected |
+| Nasdaq Data Link | **Discontinued** (WIKI, March 2018) | — | — | — | Rejected for prices |
+| EODHD | No on free; yes at $19.99/mo | 20/day | Yes, global | Enterprise plan | Best paid path |
+| Stooq | — | — | — | — | Behind a bot check |
+
+**Alpha Vantage's DAILY endpoints were rejected on evidence, not preference.**
+`TIME_SERIES_DAILY_ADJUSTED` is a premium function, and plain
+`TIME_SERIES_DAILY` returns raw OHLCV with no adjusted close, no dividends and
+no splits — capped at 100 bars, since `outputsize=full` is premium too. A
+backtest on that would understate equity returns by roughly the dividend yield
+every year and produce nonsense at every split.
+
+That was the whole finding at first, and it was incomplete. The **weekly**
+adjusted endpoint is free, returns full history, and carries both an adjusted
+close and per-bar dividends — which makes Alpha Vantage the only free source
+here that covers TSX listings correctly. It is used for exactly that, at weekly
+resolution, with the trade stated on screen: see
+[Alpha Vantage (Canadian listings, weekly)](#alpha-vantage-canadian-listings-weekly).
+
+### The licensing finding
+
+**No free provider is both corporate-action-complete and commercially
+licensable.** That is the structure of the market, not a gap in the search:
+market data is licensed, and redistribution costs money.
+
+- Yahoo is an undocumented endpoint with **no API agreement**. Fine for personal
+  research; not something to build a business on.
+- Tiingo's free *and* $30/month tiers are internal use only — "you may not
+  display or share the data with another person or organization."
+- EODHD's $19.99/month tier is likewise personal use; commercial needs their
+  enterprise plan.
+
+The application states this itself. `src/lib/market-data/licence.ts` records the
+terms per provider, Settings shows the active provider's licence and what
+commercialising would require, and `EVALUATED_AND_REJECTED` keeps the reasoning
+where it will be found rather than re-litigated.
+
 ### Yahoo Finance (default, no key)
 
 The verified data contract, asserted in `tests/market-data.test.ts` against a
@@ -326,23 +499,229 @@ recorded live response:
 free integrity check: every dividend is rederived from the adjusted close and
 compared to the reported amount.
 
-If the provider ever changes its convention, the suite fails at that assertion
-rather than producing quietly wrong backtests everywhere else.
+### Tiingo (recommended, needs a free key)
 
-### Demo provider (synthetic)
+```bash
+# .env.local
+TIINGO_API_KEY=your_key_here
+```
+
+Tiingo takes the **opposite** approach to delivery: raw, as-traded prices with
+per-bar `divCash` and `splitFactor`, rather than Yahoo's pre-adjusted closes.
+The series is declared `adjustment: 'raw'` and the engine applies splits to
+share counts itself — a path it already supports and tests. Absorbing that
+difference is exactly what the provider abstraction is for.
+
+Tiingo also ships its own adjusted columns, and those use the **exact
+total-return** convention rather than Yahoo's back-adjustment (see
+[the dividend convention](#the-dividend-convention-and-why-it-differs-from-a-vendors-adjusted-close)).
+The engine ignores them at runtime — it works from the raw side — but
+`tests/parity-tiingo.test.ts` checks one against the other, which is the
+strongest parity anchor in the repo.
+
+### Parity fixtures are not redistributable
+
+The Tiingo recordings that back `tests/parity-tiingo.test.ts` are gitignored.
+Tiingo licenses its data for personal use only, so committing ten years of
+SPY/BND/AAPL bars would be redistributing a vendor's dataset — a liability for
+anything that later becomes commercial. Regenerate them with your own key:
+
+```bash
+npm run record:fixtures
+```
+
+Without them the suite **skips**, which is the right default but also how a
+parity anchor rots unnoticed. `npm run test:parity` sets `REQUIRE_FIXTURES=1`,
+which turns a missing fixture into an explicit failure naming the file and the
+command that fixes it. Use that form in CI.
+
+### Alpha Vantage (Canadian listings, weekly)
+
+```bash
+# .env.local
+ALPHA_VANTAGE_API_KEY=your_key_here
+```
+
+Tiingo does not carry TSX listings and Yahoo is unreliable, which left Canadian
+portfolios unbacktestable. Alpha Vantage fills that gap — **at weekly
+resolution**, which is a real trade and is treated as one.
+
+**Why weekly.** On the free tier `TIME_SERIES_DAILY_ADJUSTED` is premium, and
+plain `TIME_SERIES_DAILY` is capped at 100 bars with `outputsize=full` also
+premium: five months of raw OHLCV, no dividends, no splits. Neither can produce
+a correct total return. `TIME_SERIES_WEEKLY_ADJUSTED` is free, returns full
+history (RY.TRT goes back to 2005, AAPL to 1999), and carries an adjusted close
+plus per-bar dividends.
+
+**Verified against Tiingo, not assumed.** AAPL over 2019–2021, a window
+containing the 4:1 split: total return **393.5267%** from Alpha Vantage weekly
+against **393.5270%** from Tiingo daily, agreeing to `6.9e-7`, with adjusted
+closes identical on shared dates. Splits are already folded into both columns,
+so the series is declared `split-adjusted` with an empty split list and the
+engine does not apply one again.
+
+**What weekly costs, said out loud.** A drawdown that opens and closes inside
+one week is not in the data, so the maximum drawdown reported is a floor rather
+than the figure — XEQT.TO over 2020–2024 shows −27.8% where the true daily
+figure is nearer −34%. Every run touching a weekly holding raises a
+`coarse-interval` warning saying so.
+
+Three things had to change in the engine for this to be honest rather than
+merely possible:
+
+- **The master calendar is built at the coarsest interval present.** It was a
+  union of every series' bar dates, so a single daily benchmark alongside a
+  weekly holding produced a *daily* calendar on which the holding sat stale four
+  days in five. Its returns landed on one day a week but were annualised as
+  weekly, understating volatility about twofold — live, 7.22% against a true
+  15.73% — and its last weekly bar, a few days short of the final calendar day,
+  tripped the delisting rule and liquidated a live position to cash. Both
+  symptoms are one mismatch. Reverting the fix reproduces all three failures
+  (1040-day calendar, 3.3% volatility, spurious liquidation) and all three are
+  caught.
+- **`periodsPerYear` now tracks the bar interval.** It was floored at 200
+  regardless, which is right for a gappy daily calendar and wrong for a weekly
+  one: volatility scaled by `√200` instead of `√52` overstates risk about
+  twofold. A test pins ~52, and a second pins annualised volatility at 7.2%
+  rather than 14.2% on a known series.
+- **The dividend reconciliation is skipped for non-daily series.** It derives
+  the implied dividend from the previous bar's close, which on weekly bars is a
+  week before the ex-date — so it fired on every Canadian backtest. A warning
+  that always fires teaches people to ignore the one that matters on daily data.
+
+Alpha Vantage sits **last** in the failover chain and refuses non-Canadian
+symbols, so a symbol another provider can serve daily never reaches it and a
+transient Tiingo outage cannot quietly coarsen a daily backtest. Its free tier
+is 25 requests/day and throttles bursts well before that, so everything is
+cached hard and fetched one symbol at a time.
+
+Symbol suffixes are mapped for you: `.TO` → `.TRT`, `.V` → `.TRV`, `.NE` →
+`.NEO`, `.CN` → `.CNQ`. A bare ticker is never treated as Canadian — `SHOP` is
+the US listing and `SHOP.TO` is the Toronto one, in a different currency.
+
+### Verifying a provider before trusting it
+
+A provider that has not been checked against live data is not verified, however
+plausible its documentation. Every provider must clear the bar Yahoo did:
+
+```bash
+npm run verify:data
+```
+
+This fetches real data and asserts the contract — dividends reconcile with the
+adjusted close, the split convention matches what the provider declares, no
+unapplied splits, history deep enough for long-horizon work. It self-skips
+without a key, so the suite stays green offline.
+
+**Status: Yahoo is verified against recorded live data. Tiingo is implemented
+against its documented contract but has not been run against a live key here —
+run `npm run verify:data` after adding yours.**
+
+### When a provider is unreachable
+
+Yahoo throttles without warning, so this is routine rather than exceptional.
+
+- Requests retry with exponential backoff across both hosts.
+- If that fails and a cached copy exists, **real prices from an expired cache are
+  served** rather than failing the backtest — flagged `stale`, surfaced as a
+  warning, and shown in the provenance line under every result.
+- If no cache exists, the backtest **fails**. It never falls back to synthetic
+  data.
+
+### Demo mode (synthetic)
 
 ```bash
 npm run dev:demo     # http://localhost:3101
 ```
 
-A seeded geometric random walk with quarterly dividends and a realistic US
-trading calendar. Deterministic: the same ticker always produces the same
-series.
+A seeded random walk for offline exploration. **It is not market data**, and
+four separate mechanisms stop it being mistaken for it:
 
-**It is not market data**, and the product says so at every level — the provider
-declares `synthetic: true`, results carry a non-dismissible banner, and the CSV
-config export writes `Synthetic data,YES — NOT REAL MARKET DATA`. A backtest on
-invented prices that *looks* real is worse than no backtest.
+1. The provider is selected **server-side only**. `getProvider()` takes no
+   argument, so no request can ask for synthetic data. An unrecognised
+   `MARKET_DATA_PROVIDER` falls back to *real* data, never generated.
+2. Every synthetic series is stamped `synthetic: true`, propagating to
+   `dataSource.synthetic` on every result.
+3. Every surface that renders results shows a non-dismissible banner, and the
+   CSV config export writes `Synthetic data,YES — NOT REAL MARKET DATA`.
+4. `tests/data-integrity-guards.test.ts` enforces all of the above at source
+   level, including that a newly added results page cannot omit the banner.
+   Each guard was mutation-tested: reintroducing the hole fails a test.
+
+### Symbol universe
+
+13,000+ US-listed securities — 5,637 ETFs and 7,499 equities — from the
+exchanges' own **Nasdaq Trader Symbol Directory**, which needs no API key,
+refreshes every trading day, and carries an explicit ETF flag so funds are known
+to be funds rather than inferred from their names.
+
+```bash
+npm run build:universe
+```
+
+It is a **server-side** index; at ~775 KB it has no business in a client bundle,
+so search runs behind `/api/search` and the browser receives only its matches.
+Beyond autocomplete, this means a mistyped ticker is caught before any request
+is made, and **search keeps working while the price provider is rate-limited** —
+exactly when someone is most likely to be retyping a symbol.
+
+Share-class notation is reconciled against the directory rather than guessed:
+`BRK.B` resolves to `BRK-B` because that symbol exists in the listing, while
+`XEQT.TO` is left alone because its dot is an exchange qualifier. A regex cannot
+tell those apart — `.B` is a share class and `.V` is the TSX Venture exchange.
+
+### Price return vs total return
+
+`dividends: 'ignore'` produces a **price return**. It exists for one honest
+purpose: comparing against a price index such as `^GSPC`, which itself excludes
+dividends.
+
+It is **not** a data-availability workaround — both providers supply dividends
+free — and the cost of using it otherwise is large:
+
+| | 30-year multiple with dividends | price only | result missing |
+|---|---|---|---|
+| Equity fund (1.8% yield) | 7.61× | 4.58× | 40% |
+| Dividend fund (3.5%) | 7.61× | 2.81× | 63% |
+| Bond fund (4.2%) | 7.61× | 2.29× | 70% |
+
+So every run that uses it measures the dividends it discarded and reports the
+figure, the methodology block states plainly that these are price returns, and
+the configuration panel shows the tradeoff at the point of choice.
+
+### Currency
+
+Holdings denominated differently are translated into one reporting currency
+before being added, at the published daily rate. Returns then include currency
+movement — which is real risk borne by an investor in that currency, not an
+artefact to be smoothed away.
+
+The base currency defaults to whichever currency holds the largest share of the
+portfolio, so a single-currency portfolio is never converted and never acquires
+FX noise it did not experience.
+
+**Direction is the thing that silently breaks.** A rate is always units of quote
+per one unit of base: `USDCAD = 1.38` means a USD price is converted to CAD by
+*multiplying*. Inverting it produces a portfolio that looks entirely plausible
+and is wrong by the square of the rate, so the direction is asserted against a
+live published value rather than trusted to careful reading.
+
+Rates come from the **Bank of Canada Valet API** — the official source, free and
+keyless — with Yahoo behind it for deeper history. The Bank's published series
+begin in **2017**, when it replaced noon rates with indicative rates. Where a
+requested window predates the available rates, those days are excluded and the
+user told; extrapolating a rate backwards would be inventing the single number
+the conversion depends on.
+
+Where no rate can be loaded at all, the run is **refused**. A mixed-currency
+total without a rate is not approximately right, it is meaningless.
+
+### Provenance shown with every result
+
+Each result carries where its prices came from, when they were retrieved, and
+the last session they cover — the *oldest* retrieval across all series, since a
+result is only as current as its stalest input. More than five days behind is
+called out explicitly.
 
 ### Caching
 
@@ -371,7 +750,7 @@ npm install
 npm run dev          # port 3100, live Yahoo data
 npm run dev:demo     # port 3101, synthetic data
 npm run build && npm start
-npm test             # 104 tests
+npm test             # 621 tests across 29 files
 npm run typecheck
 ```
 
@@ -382,17 +761,36 @@ npm run typecheck
 ## Testing
 
 ```
-tests/engine.test.ts       28  share accounting, dividends, splits, rebalancing,
-                               fees, cash, delisting, look-ahead, attribution
-tests/validate.test.ts     24  input validation and the repository contract
-tests/metrics.test.ts      18  hand-verifiable statistics, drawdown episodes, XIRR
-tests/schedule.test.ts     12  date arithmetic and period boundaries
-tests/market-data.test.ts  12  the provider data contract, against recorded live data
-tests/export.test.ts       13  CSV correctness, escaping, chart-series alignment
-tests/lots.test.ts         13  FIFO/average/HIFO, splits, fee drag, reconciliation
-tests/rolling.test.ts       7  calendar-time windows and outcome distributions
-tests/scenarios.test.ts     7  episodes derived from data, coverage handling
-tests/parity.test.ts        5  engine vs an independently-computed reference
+canpath-parity          235  every fixture the Python reference generates
+data-integrity-guards    46  synthetic data can never render as a real result
+engine                   35  share accounting, dividends, splits, rebalancing,
+                              fees, cash, delisting, look-ahead, attribution
+validate                 27  input validation and the repository contract
+alphavantage             25  weekly bars, coarse-interval honesty, mixed frequency
+canpath-shapes           19  monotonicity and shape properties of the tax curves
+metrics                  18  hand-verifiable statistics, drawdown episodes, XIRR
+factors                  16  Data Library parsing, alignment, missing sentinels
+cashflows                16  contributions, withdrawals, and their effect on TWR
+regression               15  OLS and Newey-West against statsmodels
+montecarlo               14  block vs IID resampling, the daily-series guard
+inflation                14  real metrics and the Fisher relation
+lots                     13  FIFO/average/HIFO, splits, fee drag, reconciliation
+export                   13  CSV correctness, escaping, chart-series alignment
+schedule                 12  date arithmetic and period boundaries
+provider-contract        12  live data contracts, gated behind VERIFY_DATA
+market-data              12  the provider data contract, against recorded live data
+failover                 11  per-symbol fallback and failure attribution
+strategy                 10  glidepath, momentum, and look-ahead refusal
+runs                      9  snapshot immutability and provenance
+periods-extra             9  period boundary edge cases
+share                     7  URL round-tripping of a configuration
+scenarios                 7  episodes derived from data, coverage handling
+rolling                   7  calendar-time windows and outcome distributions
+plan-bridge               7  the Planner-to-Backtester handover and its caveats
+weight-input              6  what a percentage field accepts while being typed
+parity-tiingo             6  engine vs Tiingo's adjusted close, to floating point
+parity                    5  engine vs Yahoo's, bounded by the convention gap
+currency                  5  FX translation and base-currency selection
 ```
 
 Every expected value is arithmetic a reader can redo by hand, or comes from
@@ -484,7 +882,9 @@ chart omits the row rather than implying no drawdown occurred.
 
 ## Recommended next features
 
-Roughly in order of value per unit of work.
+Monte Carlo, currency translation and factor regression have since been built;
+see [Metric methodology](#metric-methodology) and [Market data](#market-data).
+What remains, roughly in order of value per unit of work:
 
 1. **Tax-aware accounts** — taxable / TFSA / RRSP / FHSA. Lot-level basis,
    realised gains and holding periods are already computed, so what remains is
@@ -493,13 +893,10 @@ Roughly in order of value per unit of work.
    likely to change someone's actual decision.
 2. **Shareable result links** — persist a `BacktestRun` row and rerun
    deterministically from its stored config. The schema is already written.
-3. **Monte Carlo** — with the generator choice stated on screen and simulated
-   results visually separated from historical ones.
-4. **Currency translation** — an FX series in the provider interface and a base
-   currency on the config, unlocking non-USD portfolios properly.
-5. **Factor regression** — Fama–French three- or five-factor attribution against
-   published factor return series.
-6. **Web Worker execution** — the engine is pure and has no I/O, so it can move
+3. **Rolling factor loadings** — the regression is a single window, so a
+   strategy that changed its exposure halfway through reports the average of two
+   things it never was. Rolling betas would show the drift.
+4. **Web Worker execution** — the engine is pure and has no I/O, so it can move
    off the main thread or into a queue unchanged when portfolios get large.
 
 ---

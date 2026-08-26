@@ -1,6 +1,7 @@
 import type {
   BacktestConfig,
   BacktestWarning,
+  BarInterval,
   IsoDate,
   Position,
   PriceSeries,
@@ -8,6 +9,7 @@ import type {
 import { CASH_SYMBOL } from '@/lib/types';
 import type { MarketDataProvider } from '@/lib/market-data/provider';
 import { checkSeries } from '@/lib/market-data/integrity';
+import { alignRates, getFxSeries } from '@/lib/market-data/fx';
 import { buildDeflator, getInflationProvider } from '@/lib/market-data/inflation';
 import { maxIso, minIso, yearsBetween } from '@/lib/market-data/dates';
 import type { PreparedAsset, PreparedData } from './types';
@@ -75,6 +77,14 @@ export async function prepareData({
     if (res.status === 'fulfilled' && res.value.bars.length) {
       seriesBySymbol.set(symbol, res.value);
       warnings.push(...checkSeries(res.value));
+      if (res.value.stale) {
+        warnings.push({
+          severity: 'warning',
+          code: 'stale-cache',
+          symbol,
+          message: `${symbol} was served from a cached copy retrieved ${res.value.fetchedAt.slice(0, 10)} because the data provider could not be reached. These are real prices, but the most recent sessions may be missing.`,
+        });
+      }
     } else {
       const reason =
         res.status === 'rejected'
@@ -93,6 +103,14 @@ export async function prepareData({
 
   const usable = fetchList.filter((s) => seriesBySymbol.has(s));
   const hasCashSleeve = [...unique.keys()].some(isCashSymbol);
+
+  // Weighted holdings that could not be loaded. A benchmark failing is a
+  // nuisance; a funded holding failing means the requested portfolio cannot be
+  // evaluated at all, and the caller must decide rather than be handed a
+  // silently different one.
+  const unavailableHoldings = fetchList.filter(
+    (sym) => !seriesBySymbol.has(sym) && (unique.get(sym)?.weight ?? 0) !== 0,
+  );
 
   // A portfolio made only of cash is legitimate — it is the baseline every
   // other allocation is measured against — but it has no priceable security to
@@ -125,6 +143,7 @@ export async function prepareData({
       periodsPerYear: 252,
       sources: [],
       anySynthetic: provider.synthetic,
+      unavailableHoldings,
     };
   }
 
@@ -200,6 +219,55 @@ export async function prepareData({
   void delisted;
 
   /* -------------------------------------------------------------- */
+  /* Currency                                                        */
+  /* -------------------------------------------------------------- */
+
+  // The engine sums `shares x price`, so holdings in different currencies must
+  // be translated into one before they can be added. Where that is impossible
+  // the run is refused rather than producing a confident wrong total.
+  const weightedSymbols = usable.filter((s) => (unique.get(s)?.weight ?? 0) !== 0);
+  const currencyOf = new Map<string, string>();
+  for (const sym of weightedSymbols) {
+    const ccy = seriesBySymbol.get(sym)?.meta.currency;
+    if (ccy) currencyOf.set(sym, ccy.toUpperCase());
+  }
+  const distinct = new Set(currencyOf.values());
+
+  /**
+   * Default base is whichever currency the largest share of the portfolio is
+   * already in, so a single-currency portfolio is never converted and never
+   * acquires FX movement it did not actually experience.
+   */
+  let baseCurrency = config.baseCurrency?.toUpperCase();
+  if (!baseCurrency && distinct.size > 0) {
+    const byWeight = new Map<string, number>();
+    for (const [sym, ccy] of currencyOf) {
+      byWeight.set(ccy, (byWeight.get(ccy) ?? 0) + Math.abs(unique.get(sym)?.weight ?? 0));
+    }
+    baseCurrency = [...byWeight.entries()].sort((a, b) => b[1] - a[1])[0][0];
+  }
+
+  const needsFx =
+    baseCurrency != null &&
+    [...currencyOf.values()].some((c) => c !== baseCurrency);
+
+  if (distinct.size === 0 && weightedSymbols.length > 1) {
+    // Provider does not report currency. An exchange suffix hints at the venue
+    // but is not a statement about denomination, so this warns rather than
+    // refusing or silently converting.
+    const suffixes = new Set(
+      weightedSymbols.map((s) => (/\.([A-Z]{1,3})$/.exec(s)?.[1] ?? 'US')),
+    );
+    if (suffixes.size > 1) {
+      warnings.push({
+        severity: 'warning',
+        code: 'possible-mixed-currency',
+        message: `These holdings are listed on different exchanges (${weightedSymbols.join(', ')}) and this data provider does not report currency, so no exchange-rate translation could be applied. If they are denominated differently, the totals below add incompatible units.`,
+      });
+    }
+  }
+
+  /* -------------------------------------------------------------- */
   /* Master calendar                                                 */
   /* -------------------------------------------------------------- */
 
@@ -209,14 +277,40 @@ export async function prepareData({
   const nonCrypto = usable.filter((s) => !isCryptoSymbol(seriesBySymbol.get(s)));
   const calendarSymbols = nonCrypto.length ? nonCrypto : usable;
 
+  // The coarsest interval any holding publishes at governs the whole run: a
+  // portfolio is only observed as often as its least-observed leg.
+  const intervalOf = (s: string): BarInterval => seriesBySymbol.get(s)!.interval ?? 'daily';
+  const intervals = calendarSymbols.map(intervalOf);
+  const coarsest: BarInterval = intervals.includes('monthly')
+    ? 'monthly'
+    : intervals.includes('weekly')
+      ? 'weekly'
+      : 'daily';
+
+  // The calendar must be built at that interval, not merely annualised at it.
+  //
+  // The dayset is a UNION, so a single daily benchmark alongside a weekly
+  // holding produced a daily calendar on which the weekly holding was stale
+  // four days in five. Returns then landed on one day a week and were
+  // annualised as if weekly, which understated volatility about twofold — and
+  // the holding's last weekly bar, sitting a few days short of the final
+  // calendar day, tripped the engine's delisting rule and liquidated a
+  // perfectly live position to cash. Both follow from the same mismatch.
+  const coarseSymbols =
+    coarsest === 'daily' ? calendarSymbols : calendarSymbols.filter((s) => intervalOf(s) === coarsest);
+
   const dayset = new Set<IsoDate>();
-  for (const s of calendarSymbols) {
+  for (const s of coarseSymbols) {
     for (const bar of seriesBySymbol.get(s)!.bars) {
       if (bar.date >= effectiveStart && bar.date <= effectiveEnd) dayset.add(bar.date);
     }
   }
-  for (const d of fallbackCalendar) {
-    if (d >= effectiveStart && d <= effectiveEnd) dayset.add(d);
+  // The fallback calendar is a daily exchange calendar; adding it to a weekly
+  // run would reintroduce exactly the mismatch above.
+  if (coarsest === 'daily') {
+    for (const d of fallbackCalendar) {
+      if (d >= effectiveStart && d <= effectiveEnd) dayset.add(d);
+    }
   }
   const calendar = [...dayset].sort();
 
@@ -236,6 +330,7 @@ export async function prepareData({
       periodsPerYear: 252,
       sources: [],
       anySynthetic: provider.synthetic,
+      unavailableHoldings,
     };
   }
 
@@ -251,12 +346,90 @@ export async function prepareData({
       message: `This backtest covers ${calendar.length} trading days (${(span * 12).toFixed(1)} months). CAGR, volatility, Sharpe and Sortino are annualised from that short sample and extrapolate heavily — read the total return instead.`,
     });
   }
+  // The floor exists to stop a sparse or gappy DAILY calendar annualising into
+  // nonsense. Applied to genuinely weekly data it produces different nonsense:
+  // volatility scaled by sqrt(200) instead of sqrt(52) overstates risk about
+  // twofold, silently. So the floor tracks the interval.
+  const FLOOR: Record<BarInterval, number> = { daily: 200, weekly: 40, monthly: 10 };
+  const CEILING: Record<BarInterval, number> = { daily: 366, weekly: 53, monthly: 12 };
+  const NOMINAL: Record<BarInterval, number> = { daily: 252, weekly: 52, monthly: 12 };
+
   const periodsPerYear =
-    span >= 1 ? Math.min(366, Math.max(200, calendar.length / span)) : nonCrypto.length ? 252 : 365;
+    span >= 1
+      ? Math.min(CEILING[coarsest], Math.max(FLOOR[coarsest], calendar.length / span))
+      : coarsest !== 'daily'
+        ? NOMINAL[coarsest]
+        : nonCrypto.length
+          ? 252
+          : 365;
+
+  if (coarsest !== 'daily') {
+    // A drawdown that opens and closes between two bars is not in the data at
+    // all, so the reported maximum is a floor. This is the kind of thing that
+    // must be said rather than left for someone to infer from a provider name.
+    const which = coarseSymbols.join(', ');
+    warnings.push({
+      severity: 'warning',
+      code: 'coarse-interval',
+      message: `${which} ${which.includes(',') ? 'publish' : 'publishes'} ${coarsest} bars, so this whole backtest runs at ${coarsest} resolution. Any drawdown that began and ended between two bars is invisible: the maximum drawdown shown is a floor, not the figure. Volatility and Sharpe are computed from about ${Math.round(periodsPerYear)} observations a year rather than 252.`,
+    });
+  }
 
   /* -------------------------------------------------------------- */
   /* Calendar-aligned asset arrays                                   */
   /* -------------------------------------------------------------- */
+
+  /* -------------------------------------------------------------- */
+  /* Exchange rates                                                   */
+  /* -------------------------------------------------------------- */
+
+  /** Aligned rate per calendar day, by the currency being converted FROM. */
+  const fxByCurrency = new Map<string, number[]>();
+  let fxSourceLabel: string | null = null;
+
+  if (needsFx && baseCurrency) {
+    const foreign = [...new Set([...currencyOf.values()].filter((c) => c !== baseCurrency))];
+
+    for (const from of foreign) {
+      try {
+        const series = await getFxSeries(from, baseCurrency, {
+          start: calendar[0],
+          end: calendar[calendar.length - 1],
+        });
+        const { rates, missingBefore } = alignRates(series, calendar);
+        fxByCurrency.set(from, rates);
+        fxSourceLabel = series.sourceLabel;
+
+        if (missingBefore) {
+          // Rates do not reach the start of the window. Extrapolating one
+          // backwards would be inventing the single number the conversion
+          // depends on, so the affected days are dropped instead.
+          warnings.push({
+            severity: 'warning',
+            code: 'fx-history-short',
+            message: `Exchange rates for ${from}/${baseCurrency} from ${series.sourceLabel} begin ${series.earliest}, after this backtest starts. Days before that cannot be valued and are excluded.`,
+          });
+        }
+      } catch (err) {
+        warnings.push({
+          severity: 'error',
+          code: 'fx-unavailable',
+          message:
+            err instanceof Error
+              ? err.message
+              : `No ${from}/${baseCurrency} exchange rate could be loaded, so this portfolio cannot be valued.`,
+        });
+      }
+    }
+
+    if (fxByCurrency.size > 0) {
+      warnings.push({
+        severity: 'info',
+        code: 'fx-applied',
+        message: `Holdings in ${foreign.join(', ')} are translated into ${baseCurrency} at the ${fxSourceLabel ?? 'published'} daily rate. Returns therefore include currency movement, which is real risk borne by a ${baseCurrency} investor and not an artefact.`,
+      });
+    }
+  }
 
   const assets: PreparedAsset[] = [];
 
@@ -354,6 +527,43 @@ export async function prepareData({
         message: `${symbol} has no price data inside ${calendar[0]} – ${calendar.at(-1)}.`,
       });
       continue;
+    }
+
+    // Translate into the base currency. Prices and dividends both convert at
+    // the rate for their own day: a dividend received in USD is worth whatever
+    // it was worth on the day it was paid, not at some later rate.
+    const assetCurrency = currencyOf.get(symbol);
+    const fx = assetCurrency ? fxByCurrency.get(assetCurrency) : undefined;
+    if (fx) {
+      for (let i = 0; i < calendar.length; i++) {
+        const rate = fx[i];
+        if (!Number.isFinite(rate)) {
+          // No rate for this day means the holding cannot be valued in the
+          // base currency; treat it as absent rather than guessing.
+          prices[i] = Number.NaN;
+          dividends[i] = 0;
+          continue;
+        }
+        if (Number.isFinite(prices[i])) prices[i] *= rate;
+        if (dividends[i]) dividends[i] *= rate;
+      }
+      // Re-derive the tradable span, which the missing rates may have shortened.
+      firstIndex = prices.findIndex((v) => Number.isFinite(v) && v > 0);
+      for (let i = calendar.length - 1; i >= 0; i--) {
+        if (Number.isFinite(prices[i]) && prices[i] > 0) {
+          lastIndex = i;
+          break;
+        }
+      }
+      if (firstIndex < 0) {
+        warnings.push({
+          severity: 'error',
+          code: 'no-data-in-window',
+          symbol,
+          message: `${symbol} could not be converted into ${baseCurrency} for any day in this window.`,
+        });
+        continue;
+      }
     }
 
     assets.push({
@@ -456,6 +666,12 @@ export async function prepareData({
     symbol,
     source: s.source,
     synthetic: s.synthetic,
+    // When this series was retrieved, and the last date it actually covers.
+    // Both matter: a cached series can be fresh-looking but stale, and a live
+    // fetch can still be missing the most recent sessions.
+    fetchedAt: s.fetchedAt,
+    lastBarDate: s.bars.at(-1)?.date,
+    stale: s.stale === true,
   }));
 
   return {
@@ -468,5 +684,6 @@ export async function prepareData({
     periodsPerYear,
     sources,
     anySynthetic: provider.synthetic || sources.some((s) => s.synthetic),
+    unavailableHoldings,
   };
 }

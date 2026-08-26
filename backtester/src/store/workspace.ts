@@ -81,6 +81,11 @@ export interface WorkspaceState {
   removeBenchmark: (symbol: string) => void;
 
 
+  /** Assumptions carried over from the Planner, shown beside the result. */
+  planAssumptions: string[] | null;
+  applyPlan: (config: Partial<BacktestConfig>, assumptions: string[]) => void;
+  clearPlan: () => void;
+
   saveRun: (result: BacktestResult, label?: string) => SavedRun;
   renameRun: (runId: string, label: string) => void;
   deleteRun: (runId: string) => void;
@@ -101,6 +106,7 @@ export const useWorkspace = create<WorkspaceState>()(
       config: defaultConfig(),
       runs: [],
       compareRunIds: [],
+      planAssumptions: null,
 
       setDraft: (p) => set({ draft: touch(p) }),
       renameDraft: (name) => set((s) => ({ draft: touch({ ...s.draft, name }) })),
@@ -289,6 +295,11 @@ export const useWorkspace = create<WorkspaceState>()(
         })),
 
 
+      applyPlan: (patch, assumptions) =>
+        set((s) => ({ config: { ...s.config, ...patch }, planAssumptions: assumptions })),
+
+      clearPlan: () => set({ planAssumptions: null }),
+
       saveRun: (result, label) => {
         const run = createRun(result, label);
         set((s) => ({
@@ -356,6 +367,7 @@ export const useWorkspace = create<WorkspaceState>()(
         config: s.config,
         runs: s.runs,
         compareRunIds: s.compareRunIds,
+        planAssumptions: s.planAssumptions,
       }),
       onRehydrateStorage: () => (state) => {
         // Flipped after rehydration so components can avoid rendering persisted

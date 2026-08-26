@@ -43,12 +43,31 @@ export function memorySet(key: string, series: PriceSeries, ttlMs = DEFAULT_TTL_
 }
 
 export async function diskGet(key: string): Promise<PriceSeries | undefined> {
+  const hit = await diskGetEntry(key);
+  return hit && !hit.expired ? hit.series : undefined;
+}
+
+/**
+ * Reads the cache including EXPIRED entries, reporting which it found.
+ *
+ * Expired data is not useless data. When the upstream provider is unreachable,
+ * yesterday's real prices are far more useful than an error — and infinitely
+ * more useful than generated ones. The caller decides whether to accept it, and
+ * the staleness is surfaced to the user rather than hidden.
+ */
+export async function diskGetEntry(
+  key: string,
+): Promise<{ series: PriceSeries; expired: boolean; cachedAt: number } | undefined> {
   try {
     const file = path.join(cacheDir(), `${safeName(key)}.json`);
     const raw = await fs.readFile(file, 'utf8');
     const parsed = JSON.parse(raw) as { expiresAt: number; series: PriceSeries };
-    if (parsed.expiresAt < Date.now()) return undefined;
-    return parsed.series;
+    if (!parsed?.series?.bars?.length) return undefined;
+    return {
+      series: parsed.series,
+      expired: parsed.expiresAt < Date.now(),
+      cachedAt: parsed.expiresAt,
+    };
   } catch {
     return undefined;
   }

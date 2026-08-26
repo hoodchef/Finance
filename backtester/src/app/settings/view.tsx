@@ -1,12 +1,13 @@
 'use client';
 
 import * as React from 'react';
-import { Database, Download, FlaskConical, Trash2, Upload } from 'lucide-react';
+import { Database, Download, Scale, Trash2, Upload } from 'lucide-react';
 import { PageBody, PageHeader } from '@/components/layout/app-shell';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Separator } from '@/components/ui/separator';
+import { Skeleton } from '@/components/ui/skeleton';
 import {
   Dialog,
   DialogContent,
@@ -18,8 +19,45 @@ import {
 import { ThemeToggle } from '@/components/layout/theme-toggle';
 import { useHydrated } from '@/hooks/use-hydrated';
 import { useWorkspace } from '@/store/workspace';
+import { cn } from '@/lib/utils';
+
+interface DataSourceInfoResponse {
+  active: { id: string; label: string; description: string; synthetic: boolean };
+  licence: {
+    commercial: string;
+    summary: string;
+    commercialPath: string;
+    freeTier: string;
+    corporateActions: string;
+  } | null;
+  rejected: Array<{ provider: string; reason: string }>;
+  tiingoKeyConfigured: boolean;
+  universe: {
+    source: string;
+    sourceUrl: string;
+    builtAt: string;
+    count: number;
+    etfCount: number;
+    equityCount: number;
+  };
+}
 
 export function SettingsView() {
+  const [source, setSource] = React.useState<DataSourceInfoResponse | null>(null);
+
+  React.useEffect(() => {
+    let cancelled = false;
+    void fetch('/api/data-source')
+      .then((r) => (r.ok ? r.json() : null))
+      .then((d) => {
+        if (!cancelled && d) setSource(d as DataSourceInfoResponse);
+      })
+      .catch(() => {});
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
   const hydrated = useHydrated();
   const portfolios = useWorkspace((s) => s.portfolios);
   const config = useWorkspace((s) => s.config);
@@ -82,46 +120,127 @@ export function SettingsView() {
               <Database className="h-4 w-4" />
               Market data
             </CardTitle>
+            <p className="text-xs text-muted-foreground">
+              Which provider is serving prices, and what its terms allow.
+            </p>
           </CardHeader>
           <CardContent className="space-y-4 text-sm">
-            <div className="flex items-start justify-between gap-4">
-              <div>
-                <p className="font-medium">Yahoo Finance</p>
-                <p className="mt-0.5 text-xs leading-relaxed text-muted-foreground">
-                  Daily split-adjusted closes, cash dividends and split events. No API key needed.
-                  This is an unofficial endpoint: it is delayed, occasionally rate-limits, and
-                  carries no accuracy warranty.
-                </p>
-              </div>
-              <Badge variant="positive">Active</Badge>
-            </div>
+            {source ? (
+              <>
+                <div className="flex items-start justify-between gap-4">
+                  <div className="min-w-0">
+                    <p className="flex items-center gap-2 font-medium">
+                      {source.active.label}
+                      {source.active.synthetic && <Badge variant="warning">Synthetic</Badge>}
+                    </p>
+                    <p className="mt-0.5 text-xs leading-relaxed text-muted-foreground">
+                      {source.active.description}
+                    </p>
+                  </div>
+                  <Badge variant={source.active.synthetic ? 'warning' : 'positive'}>Active</Badge>
+                </div>
 
-            <Separator />
+                {source.licence && (
+                  <div
+                    className={cn(
+                      'rounded-md border p-3 text-xs leading-relaxed',
+                      source.licence.commercial === 'permitted'
+                        ? 'border-border bg-muted/40'
+                        : 'border-[hsl(var(--warning))]/40 bg-[hsl(var(--warning))]/8',
+                    )}
+                  >
+                    <p className="mb-1 flex items-center gap-1.5 font-medium">
+                      <Scale className="h-3.5 w-3.5" />
+                      {source.licence.commercial === 'unlicensed'
+                        ? 'No data licence'
+                        : source.licence.commercial === 'personal-only'
+                          ? 'Personal use only'
+                          : 'No licence required'}
+                    </p>
+                    <p>{source.licence.summary}</p>
+                    {source.licence.commercial !== 'permitted' && (
+                      <p className="mt-1.5 text-muted-foreground">
+                        <span className="font-medium">To build a product on this:</span>{' '}
+                        {source.licence.commercialPath}
+                      </p>
+                    )}
+                    <p className="mt-1.5 text-2xs text-muted-foreground">
+                      Free tier: {source.licence.freeTier} · Corporate actions:{' '}
+                      {source.licence.corporateActions}
+                    </p>
+                  </div>
+                )}
 
-            <div className="flex items-start justify-between gap-4">
-              <div>
-                <p className="flex items-center gap-1.5 font-medium">
-                  <FlaskConical className="h-3.5 w-3.5" />
-                  Demo (synthetic)
-                </p>
-                <p className="mt-0.5 text-xs leading-relaxed text-muted-foreground">
-                  A seeded random walk for exploring the product offline. Results carry a permanent
-                  banner because the prices are invented. Enable it by setting{' '}
-                  <code className="rounded bg-muted px-1 py-0.5 text-2xs">
-                    MARKET_DATA_PROVIDER=demo
-                  </code>{' '}
-                  in <code className="rounded bg-muted px-1 py-0.5 text-2xs">.env.local</code> and
-                  restarting the server.
-                </p>
-              </div>
-              <Badge variant="outline">Env var</Badge>
-            </div>
+                <Separator />
 
-            <p className="rounded-md border border-border bg-muted/40 p-3 text-xs leading-relaxed text-muted-foreground">
-              The provider is chosen on the server rather than in this panel on purpose: a data
-              source is a property of the deployment, and a toggle here would let one browser tab
-              show synthetic results while another shows real ones.
-            </p>
+                <div>
+                  <p className="mb-1.5 text-xs font-medium">Switching provider</p>
+                  <p className="text-xs leading-relaxed text-muted-foreground">
+                    Set <code className="rounded bg-muted px-1 py-0.5 text-2xs">MARKET_DATA_PROVIDER</code>{' '}
+                    in <code className="rounded bg-muted px-1 py-0.5 text-2xs">.env.local</code> and
+                    restart. Tiingo additionally needs{' '}
+                    <code className="rounded bg-muted px-1 py-0.5 text-2xs">TIINGO_API_KEY</code>
+                    {source.tiingoKeyConfigured ? ' (configured).' : ' (not configured).'} After
+                    changing provider, run{' '}
+                    <code className="rounded bg-muted px-1 py-0.5 text-2xs">npm run verify:data</code>{' '}
+                    to check its corporate-action conventions against live data before trusting a
+                    backtest.
+                  </p>
+                </div>
+
+                <Separator />
+
+                <div>
+                  <p className="mb-1 text-xs font-medium">Symbol universe</p>
+                  <p className="text-xs leading-relaxed text-muted-foreground">
+                    <span className="numeric text-foreground">
+                      {source.universe.count.toLocaleString()}
+                    </span>{' '}
+                    US-listed securities —{' '}
+                    <span className="numeric text-foreground">
+                      {source.universe.etfCount.toLocaleString()}
+                    </span>{' '}
+                    ETFs and{' '}
+                    <span className="numeric text-foreground">
+                      {source.universe.equityCount.toLocaleString()}
+                    </span>{' '}
+                    equities — from the exchanges&rsquo; own directory. Search runs against this
+                    locally, so it keeps working even while the price provider is rate-limited.
+                    Refresh it with{' '}
+                    <code className="rounded bg-muted px-1 py-0.5 text-2xs">
+                      npm run build:universe
+                    </code>
+                    .
+                  </p>
+                  <p className="mt-1 text-2xs text-muted-foreground">
+                    {source.universe.source} · built{' '}
+                    {new Date(source.universe.builtAt).toLocaleDateString()}
+                  </p>
+                </div>
+
+                <details className="text-xs">
+                  <summary className="cursor-pointer text-muted-foreground hover:text-foreground">
+                    Providers evaluated and rejected ({source.rejected.length})
+                  </summary>
+                  <ul className="mt-2 space-y-1.5 border-l border-border pl-3">
+                    {source.rejected.map((r) => (
+                      <li key={r.provider}>
+                        <span className="font-medium">{r.provider}</span>
+                        <span className="text-muted-foreground"> — {r.reason}</span>
+                      </li>
+                    ))}
+                  </ul>
+                </details>
+
+                <p className="rounded-md border border-border bg-muted/40 p-3 text-xs leading-relaxed text-muted-foreground">
+                  The provider is chosen on the server, never by the browser. A request cannot ask
+                  for synthetic data, and an unrecognised setting falls back to real data rather
+                  than generated data.
+                </p>
+              </>
+            ) : (
+              <Skeleton className="h-40 w-full" />
+            )}
           </CardContent>
         </Card>
 

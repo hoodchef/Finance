@@ -3,6 +3,16 @@ node_modules
 out
 .env
 .env.local
+# Editor backups of the env file carry the same secrets (nano writes
+# .env.local.save, vim .env.local~, and so on).
+.env*.local
+.env.local.*
+.env.local~
 *.tsbuildinfo
 next-env.d.ts
 .cache
+
+# Recorded vendor price data. Tiingo's licence is personal-use only, so these
+# are NOT redistributable — regenerate them with your own key:
+#   npm run record:fixtures
+tests/fixtures/tiingo-*.json

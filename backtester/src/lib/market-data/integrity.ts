@@ -98,9 +98,15 @@ export function checkSeries(
   series: PriceSeries,
   options: IntegrityOptions = {},
 ): BacktestWarning[] {
+  const interval = series.interval ?? 'daily';
+  // Both the gap threshold and the dividend reconciliation below assume bars
+  // are one trading day apart. On a weekly series every bar is a seven-day
+  // "gap", so the threshold scales with the interval rather than crying wolf.
+  const intervalDays = interval === 'monthly' ? 31 : interval === 'weekly' ? 7 : 1;
+
   const {
     splitJumpRatio = 1.45,
-    maxGapDays = 10,
+    maxGapDays = 10 * intervalDays,
     dividendTolerance = 0.02,
   } = options;
   const warnings: BacktestWarning[] = [];
@@ -151,7 +157,14 @@ export function checkSeries(
   }
 
   // Dividend feed vs adjusted close.
-  const recon = reconcileDividends(series);
+  //
+  // Only meaningful on daily bars. The implied dividend is derived from the
+  // PREVIOUS bar's close, which on a weekly series is a week before the
+  // ex-date rather than the day before it — so the implied figure is wrong by
+  // however much the price moved that week, and every weekly series would
+  // report a mismatch. A warning that always fires is worse than no warning:
+  // it teaches people to ignore the one that matters on daily data.
+  const recon = interval === 'daily' ? reconcileDividends(series) : [];
   const mismatched = recon.filter((r) => r.relativeError > dividendTolerance);
   if (mismatched.length > Math.max(1, recon.length * 0.1)) {
     warnings.push({

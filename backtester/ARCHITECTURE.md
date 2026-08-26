@@ -125,33 +125,75 @@ Build in Backtester ─▶ Run ─▶ Run recorded (immutable snapshot)
 A portfolio is mutable and lives in the library. A run is immutable and
 references a snapshot, not the library entry.
 
-## The next seam: strategies
+## Seam 3 — strategies
 
-Target weights are currently computed **once, before the day loop**, from static
-position weights:
+`src/lib/engine/strategy.ts`
+
+Target weights were computed **once, before the day loop**, from static position
+weights. That made momentum, factor tilts, glidepaths and optimisation
+inexpressible: every one needs weights to be a function of date and portfolio
+state.
+
+A `TargetWeightStrategy` is now asked for weights at each rebalance:
 
 ```ts
-const normWeight = new Map<string, number>();
-for (const a of assets) normWeight.set(a.symbol, a.targetWeight / declaredWeight);
+interface StrategyContext {
+  date; index; progress;          // where we are
+  declaredWeights;                // the baseline to tilt from
+  totalValue;
+  priceAt(symbol, daysAgo);       // clamped — cannot read the future
+  trailingReturn(symbol, days);   // null when the window is not yet available
+}
 ```
 
-Momentum, factor tilts, glidepaths and optimization all need weights to be a
-*function of date and portfolio state*. That is one change — replacing the
-constant map with a `TargetWeightStrategy` the engine calls per rebalance — and
-it unlocks all four at once.
+Three ship: `fixedWeights` (the default, behaviourally identical to before —
+all 497 pre-existing tests pass unchanged), `glidepath`, and `momentum`.
 
-What does **not** need it:
+**Look-ahead is structurally prevented**, not merely avoided by convention.
+`priceAt` clamps a negative lookback to today, and `trailingReturn` returns null
+rather than a shortened window, since ranking holdings over unequal periods is
+its own quiet bias. The decisive test runs one strategy against two datasets
+that agree up to day 60 and diverge violently after, and requires identical
+records through day 60.
 
-- **Monte Carlo** — varies the return path; the engine already accepts an
-  arbitrary daily series, so a simulated path runs through identical accounting.
-- **DCA analysis** — varies cash flow; the contribution schedule is already a seam.
-- **Rebalancing analysis** — already built, varies only the rule.
-- **Tax-aware backtesting** — lot-level basis, realised gains and holding periods
-  already exist; what remains is a jurisdiction layer of published rates.
+Anything a strategy leaves unallocated stays in cash, and a strategy asking for
+more than 100% is scaled back rather than silently levering the account.
 
-**Options are out of scope** for this engine. It models share quantities and cash;
-options need an instrument model with expiry, strike and assignment. That is a
-different engine, not an extension of this one.
+**Still out of scope:** options, which need an instrument model with expiry,
+strike and assignment. That is a different engine, not an extension of this one.
+
+## Seam 4 — provider failover
+
+`src/lib/market-data/failover.ts`
+
+No single free provider covers everything: Tiingo has the better quota and an
+explicit corporate-actions model but does not carry `XEQT.TO`; Yahoo carries the
+Canadian listings but throttles without warning. `FailoverProvider` tries each
+in order **per symbol**, so one portfolio can hold both.
+
+Two properties matter more than the mechanism:
+
+- It **refuses to be constructed** with a synthetic provider. Generated prices
+  silently filling one leg of a portfolio is the worst possible place for them,
+  so it is blocked at construction rather than at call time.
+- It only reports a symbol as unknown when **every** provider agreed it is. A
+  live run exposed the alternative: Tiingo did not list `XEQT.TO`, Yahoo was
+  throttled, and the chain said "unknown symbol" — which would send someone
+  hunting a typo that was not there.
+
+## The Planner bridge
+
+`src/lib/plan-bridge.ts`
+
+The Planner sizes one year's contributions; the Backtester projects them
+forward. Connecting them means the extrapolation is large, so the assumptions
+travel with the config and are rendered above the result rather than folded
+silently into a number:
+
+- repeating one year assumes income and contribution room hold steady
+- including the government boost assumes the refund is reinvested, not spent,
+  and that it arrives in the year that earned it (it arrives the next spring)
+- account-level tax treatment is not modelled
 
 ## Deliberately not built yet
 

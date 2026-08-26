@@ -311,6 +311,7 @@ export function ConfigPanel() {
                 <SelectContent>
                   <SelectItem value="reinvest">Reinvest</SelectItem>
                   <SelectItem value="cash">Take as cash</SelectItem>
+                  <SelectItem value="ignore">Exclude (price return)</SelectItem>
                 </SelectContent>
               </Select>
             </Field>
@@ -400,6 +401,28 @@ export function ConfigPanel() {
               </span>
             </label>
           )}
+        </Section>
+
+        <Separator />
+
+        {/* ---------------------------------------------------------- */}
+        <Section
+          title="Reporting currency"
+          hint="Holdings denominated differently are translated into this before being added together, at the published daily rate. Returns then include currency movement, which is real risk borne by an investor in this currency rather than an artefact. Leave it on automatic and a single-currency portfolio is never converted."
+        >
+          <Select
+            value={config.baseCurrency ?? 'auto'}
+            onValueChange={(v) => setConfig({ baseCurrency: v === 'auto' ? undefined : v })}
+          >
+            <SelectTrigger className="text-xs">
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="auto">Automatic (dominant holding)</SelectItem>
+              <SelectItem value="USD">US dollars</SelectItem>
+              <SelectItem value="CAD">Canadian dollars</SelectItem>
+            </SelectContent>
+          </Select>
         </Section>
 
         <Separator />

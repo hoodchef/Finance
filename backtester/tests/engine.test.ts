@@ -515,3 +515,155 @@ describe('regressions', () => {
     expect(r.warnings.some((w) => w.code === 'withdrawal-shortfall')).toBe(true);
   });
 });
+
+describe('price-return mode', () => {
+  const cal = makeCalendar('2020-01-02', 260);
+  const data = () =>
+    buildPrepared(cal, [
+      // A steady riser paying four quarterly dividends.
+      { symbol: 'A', prices: ramp(100, 130, 260), weight: 100, dividends: { 40: 1.5, 100: 1.5, 160: 1.5, 220: 1.5 } },
+    ]);
+
+  it('excludes dividends from the result entirely', () => {
+    const total = runEngine({
+      portfolio: portfolio([['A', 100]]),
+      config: testConfig({ dividends: 'reinvest' }),
+      data: data(),
+    });
+    const price = runEngine({
+      portfolio: portfolio([['A', 100]]),
+      config: testConfig({ dividends: 'ignore' }),
+      data: data(),
+    });
+
+    // No cash is credited and no shares are bought.
+    expect(price.totals.totalDividends).toBe(0);
+    expect(price.daily[price.daily.length - 1].cash).toBeCloseTo(0, 6);
+    expect(price.daily[price.daily.length - 1].positionShares.A).toBeCloseTo(100, 6);
+
+    // And the result is materially lower than the total return.
+    expect(price.totals.finalValue).toBeLessThan(total.totals.finalValue);
+  });
+
+  it('measures and reports what it left out rather than hiding it', () => {
+    const price = runEngine({
+      portfolio: portfolio([['A', 100]]),
+      config: testConfig({ dividends: 'ignore' }),
+      data: data(),
+    });
+
+    // 100 shares x 1.5 x four payments.
+    expect(price.totals.dividendsExcluded).toBeCloseTo(600, 6);
+
+    const warning = price.warnings.find((w) => w.code === 'price-return-only');
+    expect(warning, 'a price-return run must say so').toBeTruthy();
+    expect(warning!.severity).toBe('warning');
+    expect(warning!.message).toContain('PRICE returns');
+    expect(warning!.message).toContain('600.00');
+  });
+
+  it('equals a pure price series, confirming nothing else changed', () => {
+    const price = runEngine({
+      portfolio: portfolio([['A', 100]]),
+      config: testConfig({ dividends: 'ignore' }),
+      data: data(),
+    });
+    // 100 shares bought at 100, held to 130 — the dividends are simply absent.
+    expect(price.totals.finalValue).toBeCloseTo(13_000, 4);
+  });
+
+  it('leaves the default untouched, and reinvestment compounds', () => {
+    const defaulted = runEngine({
+      portfolio: portfolio([['A', 100]]),
+      config: testConfig(),
+      data: data(),
+    });
+
+    // More than the 600 a static 100 shares would receive: each reinvested
+    // dividend buys shares that collect the next one. That compounding is
+    // precisely what the price-return mode discards.
+    expect(defaulted.totals.totalDividends).toBeGreaterThan(600);
+    expect(defaulted.totals.totalDividends).toBeLessThan(650);
+    expect(defaulted.totals.dividendsExcluded).toBe(0);
+    expect(defaulted.warnings.some((w) => w.code === 'price-return-only')).toBe(false);
+  });
+});
+
+describe('a holding whose data cannot be loaded', () => {
+  /**
+   * The bug this covers: asking for A 50% / B 50%, losing B, and receiving a
+   * fully-invested 100% position in A — a different portfolio reported as the
+   * one requested. The warning existed; the number was still wrong.
+   */
+  const cal = makeCalendar('2020-01-02', 200);
+  const onlyA = () =>
+    buildPrepared(cal, [{ symbol: 'A', prices: ramp(100, 200, 200), weight: 50 }]);
+
+  it('leaves the missing weight in cash instead of inflating the survivors', () => {
+    const r = runEngine({
+      portfolio: {
+        id: 'p',
+        name: 'P',
+        positions: [
+          { id: 'a', symbol: 'A', weight: 50 },
+          { id: 'b', symbol: 'B', weight: 50 },
+        ],
+      },
+      config: testConfig({ rebalance: 'never' }),
+      data: onlyA(),
+    });
+
+    const first = r.daily[0];
+    // Half invested, half in cash — not 100% A.
+    expect(first.positionValues.A).toBeCloseTo(5_000, 4);
+    expect(first.cash).toBeCloseTo(5_000, 4);
+    expect(first.positionValues.A / first.totalValue).toBeCloseTo(0.5, 6);
+
+    // A doubles, so the honest answer is 15,000, not 20,000.
+    expect(r.totals.finalValue).toBeCloseTo(15_000, 4);
+  });
+
+  it('is unaffected when every holding loads', () => {
+    const data = buildPrepared(cal, [
+      { symbol: 'A', prices: ramp(100, 200, 200), weight: 50 },
+      { symbol: 'B', prices: flat(100, 200), weight: 50 },
+    ]);
+    const r = runEngine({
+      portfolio: {
+        id: 'p',
+        name: 'P',
+        positions: [
+          { id: 'a', symbol: 'A', weight: 50 },
+          { id: 'b', symbol: 'B', weight: 50 },
+        ],
+      },
+      config: testConfig({ rebalance: 'never' }),
+      data,
+    });
+    expect(r.daily[0].cash).toBeCloseTo(0, 6);
+    expect(r.totals.finalValue).toBeCloseTo(15_000, 4);
+  });
+
+  it('still normalises weights that do not sum to 100', () => {
+    // 30 and 10 of a declared 40 remain 75/25 of the portfolio.
+    const data = buildPrepared(cal, [
+      { symbol: 'A', prices: flat(100, 200), weight: 30 },
+      { symbol: 'B', prices: flat(100, 200), weight: 10 },
+    ]);
+    const r = runEngine({
+      portfolio: {
+        id: 'p',
+        name: 'P',
+        positions: [
+          { id: 'a', symbol: 'A', weight: 30 },
+          { id: 'b', symbol: 'B', weight: 10 },
+        ],
+      },
+      config: testConfig(),
+      data,
+    });
+    expect(r.daily[0].positionValues.A).toBeCloseTo(7_500, 4);
+    expect(r.daily[0].positionValues.B).toBeCloseTo(2_500, 4);
+    expect(r.daily[0].cash).toBeCloseTo(0, 6);
+  });
+});

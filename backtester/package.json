@@ -10,7 +10,11 @@
     "test": "vitest run",
     "test:watch": "vitest",
     "typecheck": "tsc --noEmit",
-    "dev:demo": "MARKET_DATA_PROVIDER=demo next dev -p 3101"
+    "dev:demo": "MARKET_DATA_PROVIDER=demo next dev -p 3101",
+    "verify:data": "VERIFY_DATA=1 vitest run tests/provider-contract.test.ts",
+    "build:universe": "node scripts/build-universe.mjs",
+    "record:fixtures": "node scripts/record-tiingo-fixtures.mjs",
+    "test:parity": "REQUIRE_FIXTURES=1 vitest run tests/parity.test.ts tests/parity-tiingo.test.ts"
   },
   "dependencies": {
     "@dnd-kit/core": "^6.1.0",

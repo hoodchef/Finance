@@ -11,6 +11,45 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { cn, seriesColor } from '@/lib/utils';
 
+/**
+ * Percentage fields are `type="text"`, not `type="number"`.
+ *
+ * A number input reports `value` as an empty string for anything it cannot
+ * parse, and a half-typed decimal is one of those: typing "0." reads back as
+ * "", so a controlled field wipes what was just typed and the next keystroke
+ * turns "0.2" into "2". Text plus `inputMode="decimal"` keeps the mobile
+ * numeric keypad while letting the raw string through intact; the guard below
+ * does the job `type="number"` was there for.
+ *
+ * Losing the spinner arrows is deliberate — nudging an allocation by 0.1 was
+ * never how these get filled in.
+ */
+const PARTIAL_DECIMAL = /^\d*\.?\d*$/;
+
+/** True for anything that is, or could still become, a non-negative decimal. */
+export function isPartialDecimal(raw: string): boolean {
+  return raw === '' || PARTIAL_DECIMAL.test(raw);
+}
+
+/** The number a partial entry represents, or null while it is still just "." */
+export function parsePartialDecimal(raw: string): number | null {
+  if (raw === '' || raw === '.') return null;
+  const n = Number(raw);
+  return Number.isFinite(n) ? n : null;
+}
+
+/**
+ * Holds what the user is typing, or null when the field is not being edited.
+ *
+ * A new row starts at weight 0, which rendered as a literal "0" rather than a
+ * placeholder — so typing 10 into it produced "010". Showing '' for zero fixes
+ * that, but on its own it fights the user mid-decimal, hence the buffer: while
+ * focused the raw string wins, and on blur the committed number formats itself.
+ */
+function useDecimalDraft() {
+  return React.useState<string | null>(null);
+}
+
 export function HoldingRow({
   position,
   index,
@@ -28,6 +67,14 @@ export function HoldingRow({
 
   const catalogName = position.name ?? lookupCatalog(position.symbol)?.name;
   const isCash = position.symbol.toUpperCase() === CASH_SYMBOL;
+
+  const [weightDraft, setWeightDraft] = useDecimalDraft();
+  const [expenseDraft, setExpenseDraft] = useDecimalDraft();
+
+  const weightShown =
+    weightDraft ??
+    (Number.isFinite(position.weight) && position.weight !== 0 ? String(position.weight) : '');
+  const expenseShown = expenseDraft ?? (position.expenseRatio ?? '').toString();
 
   return (
     <div
@@ -77,13 +124,18 @@ export function HoldingRow({
           Weight
         </span>
         <Input
-          type="number"
+          type="text"
           inputMode="decimal"
-          step="0.1"
-          min="0"
           aria-label={`Weight for ${position.symbol || `holding ${index + 1}`} in percent`}
-          value={Number.isFinite(position.weight) ? position.weight : ''}
-          onChange={(e) => onChange({ weight: e.target.value === '' ? 0 : Number(e.target.value) })}
+          placeholder="0"
+          value={weightShown}
+          onChange={(e) => {
+            const raw = e.target.value;
+            if (!isPartialDecimal(raw)) return;
+            setWeightDraft(raw);
+            onChange({ weight: parsePartialDecimal(raw) ?? 0 });
+          }}
+          onBlur={() => setWeightDraft(null)}
           className="h-8 w-full min-w-0 pl-16 pr-5 text-right text-xs sm:pl-2"
         />
         <span className="pointer-events-none absolute right-1.5 top-1/2 -translate-y-1/2 text-2xs text-muted-foreground">
@@ -96,17 +148,20 @@ export function HoldingRow({
           Expense ratio
         </span>
         <Input
-          type="number"
+          type="text"
           inputMode="decimal"
-          step="0.01"
-          min="0"
           disabled={isCash}
           aria-label={`Expense ratio for ${position.symbol || `holding ${index + 1}`} in percent per year`}
           placeholder="—"
-          value={position.expenseRatio ?? ''}
-          onChange={(e) =>
-            onChange({ expenseRatio: e.target.value === '' ? undefined : Number(e.target.value) })
-          }
+          value={expenseShown}
+          onChange={(e) => {
+            const raw = e.target.value;
+            if (!isPartialDecimal(raw)) return;
+            setExpenseDraft(raw);
+            // Blank clears the override rather than asserting a 0% fee.
+            onChange({ expenseRatio: raw === '' ? undefined : (parsePartialDecimal(raw) ?? undefined) });
+          }}
+          onBlur={() => setExpenseDraft(null)}
           className="h-8 w-full min-w-0 pl-24 pr-5 text-right text-xs sm:pl-2"
         />
         <span className="pointer-events-none absolute right-1.5 top-1/2 -translate-y-1/2 text-2xs text-muted-foreground">

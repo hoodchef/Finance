@@ -23,7 +23,12 @@ export interface SecurityMeta {
   symbol: string;
   name: string;
   assetClass: AssetClass;
-  currency: string;
+  /**
+   * Reporting currency, when the provider states it. Undefined means UNKNOWN —
+   * not USD. Asserting a default here would let a CAD-denominated holding be
+   * summed with USD ones as though the units matched.
+   */
+  currency?: string;
   exchange?: string;
   /** First date for which the provider has price data. */
   firstTradeDate?: IsoDate;
@@ -81,17 +86,38 @@ export interface CorporateActions {
  */
 export type PriceAdjustment = 'split-adjusted' | 'raw';
 
+/**
+ * Spacing of the bars in a series.
+ *
+ * Not cosmetic: it sets how returns annualise, and it decides whether a
+ * drawdown between bars is observable at all. A weekly series cannot show a
+ * Tuesday crash that recovered by Friday, so a maximum drawdown computed from
+ * one is a floor, not the figure.
+ */
+export type BarInterval = 'daily' | 'weekly' | 'monthly';
+
 export interface PriceSeries {
   meta: SecurityMeta;
   bars: PriceBar[];
   dividends: DividendEvent[];
   splits: SplitEvent[];
   adjustment: PriceAdjustment;
+  /**
+   * Bar spacing. Optional so existing daily providers need no change; absent
+   * means daily.
+   */
+  interval?: BarInterval;
   /** Provider id the data came from, surfaced in the UI for transparency. */
   source: string;
   /** True when the numbers are generated rather than observed. */
   synthetic: boolean;
   fetchedAt: string;
+  /**
+   * True when this series was served from an expired cache because the
+   * provider could not be reached. The prices are real, but they may be
+   * missing recent sessions, and the user is told so.
+   */
+  stale?: boolean;
 }
 
 export interface DateRange {
@@ -175,7 +201,17 @@ export interface CashflowLeg {
   adjustForInflation: boolean;
 }
 
-export type DividendPolicy = 'reinvest' | 'cash';
+/**
+ * What happens to a cash dividend.
+ *
+ * `ignore` excludes them entirely, producing a PRICE RETURN rather than a total
+ * return. It exists for one honest reason: comparing against a price index such
+ * as ^GSPC, which itself excludes dividends. It is not a data-availability
+ * workaround — both supported providers supply dividends for free — and using
+ * it for a normal backtest understates results badly: roughly 40% of a 30-year
+ * equity result and 70% of a bond result. Every run that uses it says so.
+ */
+export type DividendPolicy = 'reinvest' | 'cash' | 'ignore';
 
 /**
  * How to handle assets whose price history starts after the requested start
@@ -244,6 +280,14 @@ export interface BacktestConfig {
   };
   /** Basis method used to split gains into realised and unrealised. */
   costBasisMethod: CostBasisMethod;
+  /**
+   * Currency every holding is translated into before being valued.
+   *
+   * When unset, the currency held by the largest share of the portfolio is
+   * used, so a single-currency portfolio is never converted and gains no FX
+   * noise it did not actually experience.
+   */
+  baseCurrency?: string;
   /** Additional scheduled flows, on top of the simple recurring contribution. */
   cashflows: CashflowLeg[];
   inflation: {

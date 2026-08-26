@@ -2,6 +2,7 @@ import type { BacktestWarning } from '@/lib/types';
 import { daysBetween } from '@/lib/market-data/dates';
 import { contributionIndices, monthEndIndices, rebalanceIndices } from './schedule';
 import { LotBook, summariseByYear, type LotSummary, type RealisedGain } from './lots';
+import { fixedWeights, makeContext, type TargetWeightStrategy } from './strategy';
 import { legAmount, resolveCashflows } from './cashflows';
 import type {
   DailyRecord,
@@ -79,13 +80,64 @@ export function runEngine(input: EngineInput): EngineResult {
     .filter((a) => a.isCash)
     .reduce((s, a) => s + a.targetWeight, 0);
 
+  /**
+   * The denominator is what the USER declared, not what successfully loaded.
+   *
+   * Taking it from loaded assets meant a holding whose data failed had its
+   * weight silently absorbed by the others: ask for 50/50, lose one leg, and
+   * receive a fully-invested 100% position in the survivor — a different
+   * portfolio, reported as though it were the one requested. The weight of a
+   * missing holding now stays in the denominator, so it is simply never funded
+   * and remains in cash, which is the honest outcome.
+   *
+   * `runBacktest` refuses such a run outright by default; this is the
+   * defence-in-depth that keeps the arithmetic right if one ever reaches here.
+   */
   const declaredWeight =
-    assets.reduce((s, a) => s + a.targetWeight, 0) || 1;
+    (portfolio.positions ?? []).reduce((sum, p) => sum + (Number(p.weight) || 0), 0) ||
+    assets.reduce((sum, a) => sum + a.targetWeight, 0) ||
+    1;
 
-  /** Target weights as fractions summing to 1 across everything declared. */
+  /** Target weights as fractions of everything the user asked for. */
   const normWeight = new Map<string, number>();
   for (const a of assets) normWeight.set(a.symbol, a.targetWeight / declaredWeight);
   const normCashSleeve = cashSleeveWeight / declaredWeight;
+
+  /**
+   * Weights are resolved through a strategy rather than fixed up front, so a
+   * rule that varies with date or portfolio state — a glidepath, a momentum
+   * tilt — is expressible. The default reproduces the declared weights exactly.
+   */
+  const strategy: TargetWeightStrategy = input.strategy ?? fixedWeights;
+  const declaredForStrategy = new Map(
+    tradeable.map((a) => [a.symbol, normWeight.get(a.symbol) ?? 0]),
+  );
+
+  /** Cached per day: a strategy is asked once, however many times it is read. */
+  const weightCache = new Map<number, Map<string, number>>();
+
+  function weightsAt(i: number): Map<string, number> {
+    const cached = weightCache.get(i);
+    if (cached) return cached;
+
+    let resolved: Map<string, number>;
+    if (strategy === fixedWeights) {
+      resolved = declaredForStrategy;
+    } else {
+      const ctx = makeContext(i, calendar, tradeable, declaredForStrategy, totalValueAt(i));
+      const raw = strategy.targetWeights(ctx);
+      // A strategy may not allocate more than the whole portfolio; anything
+      // over 1 is scaled back rather than silently levering the account.
+      const sum = [...raw.values()].reduce((t, v) => t + Math.max(0, v), 0);
+      resolved = new Map(
+        [...raw.entries()].map(([k, v]) => [k, sum > 1 ? Math.max(0, v) / sum : Math.max(0, v)]),
+      );
+    }
+    weightCache.set(i, resolved);
+    return resolved;
+  }
+
+  const weightFor = (symbol: string, i: number): number => weightsAt(i).get(symbol) ?? 0;
 
   const shares = new Map<string, number>(tradeable.map((a) => [a.symbol, 0]));
   const lots = new Map<string, Lot>(
@@ -117,6 +169,8 @@ export function runEngine(input: EngineInput): EngineResult {
   let totalContributions = 0;
   let totalWithdrawals = 0;
   let totalDividends = 0;
+  /** Dividends deliberately excluded under the price-return policy. */
+  let dividendsExcluded = 0;
   let totalManagementFees = 0;
   let totalExpenseRatioCost = 0;
   let totalTradingCosts = 0;
@@ -253,7 +307,7 @@ export function runEngine(input: EngineInput): EngineResult {
 
     const active = tradeable.filter((a) => isActive(a, i));
     const targets = new Map<string, number>();
-    for (const a of active) targets.set(a.symbol, total * (normWeight.get(a.symbol) ?? 0));
+    for (const a of active) targets.set(a.symbol, total * weightFor(a.symbol, i));
 
     // Sell side first so the proceeds fund the buy side.
     for (const a of active) {
@@ -288,12 +342,12 @@ export function runEngine(input: EngineInput): EngineResult {
   function deployCash(i: number, amount: number): void {
     if (amount <= DUST) return;
     const active = tradeable.filter((a) => isActive(a, i));
-    const investable = active.reduce((s, a) => s + (normWeight.get(a.symbol) ?? 0), 0);
+    const investable = active.reduce((s, a) => s + weightFor(a.symbol, i), 0);
     if (investable <= 0) return; // Everything is in the cash sleeve.
     const deployable = amount * investable; // The cash-sleeve share stays in cash.
     const budget = Math.max(0, (deployable - commission * active.length) / (1 + bps));
     for (const a of active) {
-      const slice = budget * ((normWeight.get(a.symbol) ?? 0) / investable);
+      const slice = budget * (weightFor(a.symbol, i) / investable);
       if (slice > DUST) execute(a, i, slice / priceAt(a, i), 'buy');
     }
   }
@@ -304,7 +358,7 @@ export function runEngine(input: EngineInput): EngineResult {
     const band = config.rebalanceThresholdPct / 100;
     for (const a of tradeable) {
       if (!isActive(a, i)) continue;
-      const target = normWeight.get(a.symbol) ?? 0;
+      const target = weightFor(a.symbol, i);
       const actual = positionValue(a, i) / total;
       if (Math.abs(actual - target) > band) return true;
     }
@@ -415,6 +469,14 @@ export function runEngine(input: EngineInput): EngineResult {
       const q = shares.get(a.symbol) ?? 0;
       if (q <= 0) continue;
       const gross = q * perShare;
+
+      // Price-return mode: the dividend is not credited, but it IS measured,
+      // so the result can state exactly how much return it left out rather
+      // than silently reporting a smaller number.
+      if (config.dividends === 'ignore') {
+        dividendsExcluded += gross;
+        continue;
+      }
       cash += gross;
       dividendIncome += gross;
       totalDividends += gross;
@@ -598,6 +660,16 @@ export function runEngine(input: EngineInput): EngineResult {
 
   const lotSummaries: LotSummary[] = [];
 
+  if (config.dividends === 'ignore' && dividendsExcluded > 0) {
+    const netInvestedForPct =
+      config.initialInvestment + totalContributions - totalWithdrawals || 1;
+    warnings.push({
+      severity: 'warning',
+      code: 'price-return-only',
+      message: `Dividends were excluded, so these are PRICE returns, not total returns. ${dividendsExcluded.toFixed(2)} of dividends were paid over this period and left out — about ${((dividendsExcluded / netInvestedForPct) * 100).toFixed(1)}% of the capital invested. Use this only to compare against a price index; for any question about what an investor would have earned, reinvest dividends instead.`,
+    });
+  }
+
   const ledgers: SymbolLedger[] = tradeable.map((a) => {
     const lot = lots.get(a.symbol)!;
     const endingShares = shares.get(a.symbol) ?? 0;
@@ -678,6 +750,7 @@ export function runEngine(input: EngineInput): EngineResult {
       finalValue,
       investmentGain,
       totalDividends,
+      dividendsExcluded,
       totalManagementFees,
       totalExpenseRatioCost,
       totalTradingCosts,
@@ -740,6 +813,7 @@ function emptyResult(
       finalValue: 0,
       investmentGain: 0,
       totalDividends: 0,
+      dividendsExcluded: 0,
       totalManagementFees: 0,
       totalExpenseRatioCost: 0,
       totalTradingCosts: 0,

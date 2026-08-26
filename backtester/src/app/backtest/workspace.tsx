@@ -49,6 +49,8 @@ export function BacktestWorkspace() {
   const config = useWorkspace((s) => s.config);
   const saveDraft = useWorkspace((s) => s.saveDraft);
   const saveRun = useWorkspace((s) => s.saveRun);
+  const planAssumptions = useWorkspace((s) => s.planAssumptions);
+  const clearPlan = useWorkspace((s) => s.clearPlan);
   const { result, error, pending, run } = useBacktest();
 
   // Only affects layouts below `lg`; the desktop grid shows everything at once.
@@ -237,6 +239,30 @@ export function BacktestWorkspace() {
             </div>
           )}
 
+          {/* Settings carried over from the Planner rest on assumptions the
+              Planner made. Applying them silently would let a projection
+              inherit a premise the user never saw. */}
+          {planAssumptions && planAssumptions.length > 0 && (
+            <div className="rounded-lg border border-primary/30 bg-primary/5 p-4">
+              <div className="flex items-start justify-between gap-3">
+                <p className="text-sm font-medium">Settings came from your plan</p>
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  onClick={clearPlan}
+                  className="text-xs text-muted-foreground"
+                >
+                  Dismiss
+                </Button>
+              </div>
+              <ul className="mt-1.5 list-disc space-y-1 pl-4 text-xs leading-relaxed text-muted-foreground">
+                {planAssumptions.map((a) => (
+                  <li key={a}>{a}</li>
+                ))}
+              </ul>
+            </div>
+          )}
+
           {error && (
             <div
               role="alert"
@@ -246,10 +272,14 @@ export function BacktestWorkspace() {
               <div className="min-w-0 space-y-1">
                 <p className="text-sm font-medium text-negative">Backtest failed</p>
                 <p className="text-xs leading-relaxed">{error.error}</p>
-                {error.kind === 'market-data' && (
+                {/* Only add a hint when it is actually true. The message above
+                    is already specific — a bad ticker, a currency mismatch — and
+                    appending "the service is rate-limiting" to it would send
+                    someone off diagnosing the wrong problem. */}
+                {error.kind === 'market-data' && /rate-limit|refused|unreachable/i.test(error.error) && (
                   <p className="text-xs text-muted-foreground">
-                    The market data service is unreachable or rate-limiting. Wait a moment and try
-                    again, or switch to the demo provider in Settings to keep exploring.
+                    This is a connectivity or quota problem rather than a mistake in your portfolio.
+                    A free Tiingo key raises the ceiling considerably — see Settings.
                   </p>
                 )}
               </div>

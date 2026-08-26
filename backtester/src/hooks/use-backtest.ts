@@ -103,6 +103,7 @@ export async function postRebalanceAnalysis(
       turnoverPerYear: number;
     }>;
     warnings: Array<{ severity: string; code: string; message: string; symbol?: string }>;
+    dataSource: BacktestResult['dataSource'];
   }>('/api/rebalance-analysis', { portfolio, config }, signal);
 }
 

@@ -13,7 +13,7 @@ export async function POST(request: Request) {
     const body = await request.json();
     const portfolio = parsePortfolio(body.portfolio);
     const config = parseConfig(body.config);
-    const provider = getProvider(body.provider);
+    const provider = getProvider();
 
     const result = await runBacktest({
       portfolio,

@@ -7,6 +7,8 @@ import type {
 } from '@/lib/types';
 import { CASH_SYMBOL } from '@/lib/types';
 import { getProvider } from '@/lib/market-data';
+import { MarketDataError } from '@/lib/market-data/provider';
+import { daysBetween, minIso, todayIso } from '@/lib/market-data/dates';
 import type { MarketDataProvider } from '@/lib/market-data/provider';
 import { prepareData } from '@/lib/engine/prepare';
 import { runEngine } from '@/lib/engine/engine';
@@ -84,7 +86,28 @@ export interface DataSourceInfo {
   providerLabel: string;
   providerDescription: string;
   synthetic: boolean;
-  symbols: Array<{ symbol: string; source: string; synthetic: boolean }>;
+  symbols: Array<{
+    symbol: string;
+    source: string;
+    synthetic: boolean;
+    fetchedAt?: string;
+    lastBarDate?: string;
+    stale?: boolean;
+  }>;
+  /**
+   * Oldest retrieval time across every series used. The oldest, not the
+   * newest: a result is only as current as its stalest input.
+   */
+  retrievedAt: string | null;
+  /**
+   * Most recent session any series covers, and how far behind today that is.
+   * A backtest run on Monday against data ending Thursday is not wrong, but the
+   * user should be told rather than left to assume it is current.
+   */
+  latestSessionDate: string | null;
+  dataAgeDays: number | null;
+  /** True when any series came from an expired cache after a provider failure. */
+  servedFromStaleCache: boolean;
 }
 
 export interface BacktestResult {
@@ -302,6 +325,45 @@ export async function runBacktest({
     extraSymbols: benchmarkSymbols,
   });
 
+  /**
+   * A funded holding whose data could not be loaded makes the requested
+   * portfolio unanswerable. Refusing is the only honest default: the
+   * alternative is reporting a number for a portfolio the user never asked
+   * about, which the warning alone did not make obvious enough.
+   *
+   * `inceptionPolicy: 'cash'` is an explicit opt-in to continue, and the
+   * missing weight then sits in cash rather than inflating the survivors.
+   */
+  if (data.unavailableHoldings.length > 0 && config.inceptionPolicy !== 'cash') {
+    const names = data.unavailableHoldings.join(', ');
+    const plural = data.unavailableHoldings.length > 1;
+    throw new MarketDataError(
+      `No price history could be loaded for ${names}, so this portfolio cannot be evaluated. ` +
+        `Running without ${plural ? 'them' : 'it'} would silently redistribute ${plural ? 'their' : 'its'} weight ` +
+        `across the remaining holdings and report a different portfolio than the one you asked for. ` +
+        `Check the ${plural ? 'tickers' : 'ticker'}, or set the inception policy to "hold that weight in cash" to continue deliberately.`,
+      data.unavailableHoldings[0],
+    );
+  }
+
+  /**
+   * Data problems that invalidate the arithmetic itself, as distinct from the
+   * many that merely deserve a note beside the result.
+   *
+   * A missing exchange rate makes a mixed-currency total meaningless — the
+   * engine would be adding incompatible units. An unapplied split manufactures
+   * or destroys a large chunk of return. Neither is something to render with a
+   * caveat underneath; a plausible-looking wrong number is more dangerous than
+   * no number.
+   */
+  const BLOCKING_CODES = new Set(['fx-unavailable', 'unadjusted-split']);
+  const blocking = data.warnings.filter(
+    (w) => w.severity === 'error' && BLOCKING_CODES.has(w.code),
+  );
+  if (blocking.length > 0) {
+    throw new MarketDataError(blocking.map((w) => w.message).join(' '), blocking[0].symbol);
+  }
+
   const t0 = Date.now();
 
   const result = runEngine({ portfolio: { ...portfolio, positions }, config, data });
@@ -491,16 +553,50 @@ export async function runBacktest({
     warnings: dedupeWarnings(result.warnings),
     transactions,
     transactionsTruncated: result.transactions.length > transactions.length,
-    dataSource: {
-      providerId: provider.id,
-      providerLabel: provider.label,
-      providerDescription: provider.description,
-      synthetic: data.anySynthetic,
-      symbols: data.sources,
-    },
+    dataSource: buildDataSourceInfo(provider, data, config.end),
     engineVersion: ENGINE_VERSION,
     generatedAt: new Date().toISOString(),
     computeMs,
+  };
+}
+
+/**
+ * Assembles the provenance block shown under every result: who supplied the
+ * prices, when they were retrieved, and how current they are.
+ */
+function buildDataSourceInfo(
+  provider: MarketDataProvider,
+  data: PreparedData,
+  requestedEnd: IsoDate,
+): DataSourceInfo {
+  const retrievals = data.sources
+    .map((s) => s.fetchedAt)
+    .filter((d): d is string => Boolean(d))
+    .sort();
+  const sessions = data.sources
+    .map((s) => s.lastBarDate)
+    .filter((d): d is string => Boolean(d))
+    .sort();
+
+  const latestSessionDate = sessions.length ? sessions[sessions.length - 1] : null;
+
+  return {
+    providerId: provider.id,
+    providerLabel: provider.label,
+    providerDescription: provider.description,
+    synthetic: data.anySynthetic,
+    symbols: data.sources,
+    // Oldest retrieval: a result is only as current as its stalest input.
+    retrievedAt: retrievals.length ? retrievals[0] : null,
+    latestSessionDate,
+    // Age is measured against the earlier of today and the requested end date.
+    // A backtest deliberately ending in 2024 is not working from stale data —
+    // it got exactly what it asked for — and calling that "601 days behind"
+    // would cry wolf on every historical study.
+    dataAgeDays: latestSessionDate
+      ? Math.max(0, daysBetween(latestSessionDate, minIso(todayIso(), requestedEnd)))
+      : null,
+    servedFromStaleCache: data.sources.some((s) => s.stale),
   };
 }
 
@@ -515,6 +611,49 @@ function dedupeWarnings(warnings: BacktestWarning[]): BacktestWarning[] {
     out.push(w);
   }
   return out.sort((a, b) => order[a.severity] - order[b.severity]);
+}
+
+/**
+ * The FULL daily time-weighted return series, undownsampled.
+ *
+ * `BacktestResult.series` is thinned to roughly 1,600 points for charting. That
+ * is right for a chart and catastrophic for anything that treats the points as
+ * daily observations: a fifteen-year run yields about 1,338 of them, so each
+ * spans nearly three trading days. Resampling those as if daily compounds three
+ * days of return per step, which turned a 9.3% strategy into a 28% one — a
+ * confident, attractive, entirely wrong number.
+ *
+ * Anything doing statistics on returns must use this rather than the chart
+ * series.
+ */
+export async function computeDailyReturns({
+  portfolio,
+  config,
+  provider = getProvider(),
+}: {
+  portfolio: Pick<Portfolio, 'id' | 'name' | 'positions'>;
+  config: BacktestConfig;
+  provider?: MarketDataProvider;
+}): Promise<{
+  returns: number[];
+  /** Trading day of each return, aligned 1:1 with `returns`. */
+  dates: IsoDate[];
+  periodsPerYear: number;
+  tradingDays: number;
+}> {
+  const positions = portfolio.positions.filter(
+    (p) => p.symbol.trim() && Number.isFinite(p.weight),
+  );
+  const data = await prepareData({ symbols: positions, config, provider });
+  const result = runEngine({ portfolio: { ...portfolio, positions }, config, data });
+
+  return {
+    // Day zero is the entry cost rather than a market move, as everywhere else.
+    returns: result.daily.slice(1).map((d) => d.twrReturn),
+    dates: result.daily.slice(1).map((d) => d.date),
+    periodsPerYear: result.periodsPerYear,
+    tradingDays: result.daily.length,
+  };
 }
 
 /* ------------------------------------------------------------------ */
@@ -556,7 +695,12 @@ export async function runRebalanceAnalysis({
   portfolio: Pick<Portfolio, 'id' | 'name' | 'positions'>;
   config: BacktestConfig;
   provider?: MarketDataProvider;
-}): Promise<{ scenarios: RebalanceScenario[]; warnings: BacktestWarning[] }> {
+}): Promise<{
+  scenarios: RebalanceScenario[];
+  warnings: BacktestWarning[];
+  /** Provenance travels with every result, including derived studies. */
+  dataSource: DataSourceInfo;
+}> {
   const positions = portfolio.positions.filter((p) => p.symbol.trim());
   const data = await prepareData({ symbols: positions, config, provider });
 
@@ -594,5 +738,9 @@ export async function runRebalanceAnalysis({
     });
   }
 
-  return { scenarios, warnings: dedupeWarnings(data.warnings) };
+  return {
+    scenarios,
+    warnings: dedupeWarnings(data.warnings),
+    dataSource: buildDataSourceInfo(provider, data, config.end),
+  };
 }

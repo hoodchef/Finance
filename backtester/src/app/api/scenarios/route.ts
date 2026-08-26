@@ -13,7 +13,7 @@ export async function POST(request: Request) {
     const analysis = await runScenarioAnalysis({
       portfolio: parsePortfolio(body.portfolio),
       config: parseConfig(body.config),
-      provider: getProvider(body.provider),
+      provider: getProvider(),
       reference: body.reference ? parseSymbol(body.reference, 'reference index') : 'SPY',
       count: Math.min(12, Math.max(1, Number(body.count) || 8)),
     });

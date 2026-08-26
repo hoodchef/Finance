@@ -99,6 +99,8 @@ export interface EngineResult {
     /** finalValue − netInvested. */
     investmentGain: number;
     totalDividends: number;
+    /** Dividends deliberately excluded under the price-return policy. */
+    dividendsExcluded: number;
     totalManagementFees: number;
     totalExpenseRatioCost: number;
     totalTradingCosts: number;
@@ -154,14 +156,29 @@ export interface PreparedData {
   /** Describes where the deflator came from; null when adjustment is off. */
   inflationSource: { label: string; synthetic: boolean } | null;
   periodsPerYear: number;
-  sources: Array<{ symbol: string; source: string; synthetic: boolean }>;
+  sources: Array<{
+    symbol: string;
+    source: string;
+    synthetic: boolean;
+    fetchedAt?: string;
+    lastBarDate?: string;
+    /** Served from an expired cache because the provider was unreachable. */
+    stale?: boolean;
+  }>;
   anySynthetic: boolean;
+  /** Weighted holdings whose price history could not be loaded at all. */
+  unavailableHoldings: string[];
 }
 
 export interface EngineInput {
   portfolio: Pick<Portfolio, 'id' | 'name' | 'positions'>;
   config: BacktestConfig;
   data: PreparedData;
+  /**
+   * Rule that decides target weights at each rebalance. Defaults to the
+   * declared weights, which is what the engine did before strategies existed.
+   */
+  strategy?: import('./strategy').TargetWeightStrategy;
   /** Benchmarks skip portfolio-level fees; see `runBacktest`. */
   applyPortfolioFees?: boolean;
 }

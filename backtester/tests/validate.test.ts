@@ -200,3 +200,23 @@ describe('portfolio repository contract', () => {
     expect(saved.updatedAt).not.toBe(portfolio.updatedAt);
   });
 });
+
+describe('share-class notation', () => {
+  it('accepts the dotted form and hands the provider the hyphenated one', () => {
+    // BRK.B is what appears on a statement; BRK-B is what the price API wants.
+    expect(parseSymbol('BRK.B')).toBe('BRK-B');
+    expect(parseSymbol('brk.b')).toBe('BRK-B');
+    expect(parseSymbol('BRK-B')).toBe('BRK-B');
+  });
+
+  it('leaves an exchange suffix alone', () => {
+    // The dot here is an exchange qualifier, not a share class; rewriting it
+    // would break the ticker.
+    expect(parseSymbol('XEQT.TO')).toBe('XEQT.TO');
+    expect(parseSymbol('VFV.TO')).toBe('VFV.TO');
+  });
+
+  it('leaves index prefixes alone', () => {
+    expect(parseSymbol('^GSPC')).toBe('^GSPC');
+  });
+});

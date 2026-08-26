@@ -13,7 +13,7 @@ export async function POST(request: Request) {
     const analysis = await runRebalanceAnalysis({
       portfolio: parsePortfolio(body.portfolio),
       config: parseConfig(body.config),
-      provider: getProvider(body.provider),
+      provider: getProvider(),
     });
     return NextResponse.json(analysis);
   } catch (error) {
