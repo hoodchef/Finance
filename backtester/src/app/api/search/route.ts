@@ -21,7 +21,9 @@ export const runtime = 'nodejs';
  */
 export async function GET(request: Request) {
   const url = new URL(request.url);
-  const query = url.searchParams.get('q')?.trim() ?? '';
+  // Bounded before it reaches a provider: an unbounded query becomes an
+  // unbounded outbound URL, and nothing useful is longer than this.
+  const query = (url.searchParams.get('q') ?? '').trim().slice(0, 64);
 
   // `?info=1` reports the universe's provenance and size for the UI.
   if (url.searchParams.get('info')) {
