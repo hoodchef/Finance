@@ -1,6 +1,7 @@
 import type {
   BacktestConfig,
   BacktestWarning,
+  BarInterval,
   IsoDate,
   Position,
   PriceSeries,
@@ -319,8 +320,45 @@ export async function prepareData({
       message: `This backtest covers ${calendar.length} trading days (${(span * 12).toFixed(1)} months). CAGR, volatility, Sharpe and Sortino are annualised from that short sample and extrapolate heavily — read the total return instead.`,
     });
   }
+  // The coarsest interval any holding publishes at governs the whole run: a
+  // portfolio is only observed as often as its least-observed leg.
+  const intervals = calendarSymbols.map((s) => seriesBySymbol.get(s)!.interval ?? 'daily');
+  const coarsest: BarInterval = intervals.includes('monthly')
+    ? 'monthly'
+    : intervals.includes('weekly')
+      ? 'weekly'
+      : 'daily';
+
+  // The floor exists to stop a sparse or gappy DAILY calendar annualising into
+  // nonsense. Applied to genuinely weekly data it produces different nonsense:
+  // volatility scaled by sqrt(200) instead of sqrt(52) overstates risk about
+  // twofold, silently. So the floor tracks the interval.
+  const FLOOR: Record<BarInterval, number> = { daily: 200, weekly: 40, monthly: 10 };
+  const CEILING: Record<BarInterval, number> = { daily: 366, weekly: 53, monthly: 12 };
+  const NOMINAL: Record<BarInterval, number> = { daily: 252, weekly: 52, monthly: 12 };
+
   const periodsPerYear =
-    span >= 1 ? Math.min(366, Math.max(200, calendar.length / span)) : nonCrypto.length ? 252 : 365;
+    span >= 1
+      ? Math.min(CEILING[coarsest], Math.max(FLOOR[coarsest], calendar.length / span))
+      : coarsest !== 'daily'
+        ? NOMINAL[coarsest]
+        : nonCrypto.length
+          ? 252
+          : 365;
+
+  if (coarsest !== 'daily') {
+    // A drawdown that opens and closes between two bars is not in the data at
+    // all, so the reported maximum is a floor. This is the kind of thing that
+    // must be said rather than left for someone to infer from a provider name.
+    const which = calendarSymbols
+      .filter((s) => (seriesBySymbol.get(s)!.interval ?? 'daily') !== 'daily')
+      .join(', ');
+    warnings.push({
+      severity: 'warning',
+      code: 'coarse-interval',
+      message: `${which} ${which.includes(',') ? 'publish' : 'publishes'} ${coarsest} bars, so this whole backtest runs at ${coarsest} resolution. Any drawdown that began and ended between two bars is invisible: the maximum drawdown shown is a floor, not the figure. Volatility and Sharpe are computed from about ${Math.round(periodsPerYear)} observations a year rather than 252.`,
+    });
+  }
 
   /* -------------------------------------------------------------- */
   /* Calendar-aligned asset arrays                                   */

@@ -395,18 +395,25 @@ without dividends and splits is not approximately right, it is wrong.
 |---|---|---|---|---|---|
 | **Yahoo Finance** | Yes | Unstated, throttles hard | Yes (`.TO`) | **No licence at all** | Default. Research only |
 | **Tiingo** | **Yes** — `adjClose`, `divCash`, `splitFactor` | 1,000/day, 500 symbols/mo | Limited | **Personal only, even at $30/mo** | Recommended free upgrade |
-| Alpha Vantage | **No** — adjusted close is premium | 25/day | Yes | — | **Rejected** |
+| **Alpha Vantage** | **Weekly only** — `adjClose` + dividends free; daily adjusted is premium | 25/day | **Yes — TSX, with currency** | **Personal only** | Used for Canadian listings |
 | Financial Modeling Prep | Partial | 250/day | **US only** on free | — | Rejected |
 | Nasdaq Data Link | **Discontinued** (WIKI, March 2018) | — | — | — | Rejected for prices |
 | EODHD | No on free; yes at $19.99/mo | 20/day | Yes, global | Enterprise plan | Best paid path |
 | Stooq | — | — | — | — | Behind a bot check |
 
-**Alpha Vantage was rejected on evidence, not preference.** Its own
-documentation states that `TIME_SERIES_DAILY_ADJUSTED` "is a premium API
-function". The free `TIME_SERIES_DAILY` returns raw OHLCV with no adjusted
-close, no dividends and no splits — a backtest on it would understate equity
-returns by roughly the dividend yield every year and produce nonsense at every
-split.
+**Alpha Vantage's DAILY endpoints were rejected on evidence, not preference.**
+`TIME_SERIES_DAILY_ADJUSTED` is a premium function, and plain
+`TIME_SERIES_DAILY` returns raw OHLCV with no adjusted close, no dividends and
+no splits — capped at 100 bars, since `outputsize=full` is premium too. A
+backtest on that would understate equity returns by roughly the dividend yield
+every year and produce nonsense at every split.
+
+That was the whole finding at first, and it was incomplete. The **weekly**
+adjusted endpoint is free, returns full history, and carries both an adjusted
+close and per-bar dividends — which makes Alpha Vantage the only free source
+here that covers TSX listings correctly. It is used for exactly that, at weekly
+resolution, with the trade stated on screen: see
+[Alpha Vantage (Canadian listings, weekly)](#alpha-vantage-canadian-listings-weekly).
 
 ### The licensing finding
 
@@ -477,6 +484,60 @@ Without them the suite **skips**, which is the right default but also how a
 parity anchor rots unnoticed. `npm run test:parity` sets `REQUIRE_FIXTURES=1`,
 which turns a missing fixture into an explicit failure naming the file and the
 command that fixes it. Use that form in CI.
+
+### Alpha Vantage (Canadian listings, weekly)
+
+```bash
+# .env.local
+ALPHA_VANTAGE_API_KEY=your_key_here
+```
+
+Tiingo does not carry TSX listings and Yahoo is unreliable, which left Canadian
+portfolios unbacktestable. Alpha Vantage fills that gap — **at weekly
+resolution**, which is a real trade and is treated as one.
+
+**Why weekly.** On the free tier `TIME_SERIES_DAILY_ADJUSTED` is premium, and
+plain `TIME_SERIES_DAILY` is capped at 100 bars with `outputsize=full` also
+premium: five months of raw OHLCV, no dividends, no splits. Neither can produce
+a correct total return. `TIME_SERIES_WEEKLY_ADJUSTED` is free, returns full
+history (RY.TRT goes back to 2005, AAPL to 1999), and carries an adjusted close
+plus per-bar dividends.
+
+**Verified against Tiingo, not assumed.** AAPL over 2019–2021, a window
+containing the 4:1 split: total return **393.5267%** from Alpha Vantage weekly
+against **393.5270%** from Tiingo daily, agreeing to `6.9e-7`, with adjusted
+closes identical on shared dates. Splits are already folded into both columns,
+so the series is declared `split-adjusted` with an empty split list and the
+engine does not apply one again.
+
+**What weekly costs, said out loud.** A drawdown that opens and closes inside
+one week is not in the data, so the maximum drawdown reported is a floor rather
+than the figure — XEQT.TO over 2020–2024 shows −27.8% where the true daily
+figure is nearer −34%. Every run touching a weekly holding raises a
+`coarse-interval` warning saying so.
+
+Two things had to change in the engine for this to be honest rather than merely
+possible:
+
+- **`periodsPerYear` now tracks the bar interval.** It was floored at 200
+  regardless, which is right for a gappy daily calendar and wrong for a weekly
+  one: volatility scaled by `√200` instead of `√52` overstates risk about
+  twofold. A test pins ~52, and a second pins annualised volatility at 7.2%
+  rather than 14.2% on a known series.
+- **The dividend reconciliation is skipped for non-daily series.** It derives
+  the implied dividend from the previous bar's close, which on weekly bars is a
+  week before the ex-date — so it fired on every Canadian backtest. A warning
+  that always fires teaches people to ignore the one that matters on daily data.
+
+Alpha Vantage sits **last** in the failover chain and refuses non-Canadian
+symbols, so a symbol another provider can serve daily never reaches it and a
+transient Tiingo outage cannot quietly coarsen a daily backtest. Its free tier
+is 25 requests/day and throttles bursts well before that, so everything is
+cached hard and fetched one symbol at a time.
+
+Symbol suffixes are mapped for you: `.TO` → `.TRT`, `.V` → `.TRV`, `.NE` →
+`.NEO`, `.CN` → `.CNQ`. A bare ticker is never treated as Canadian — `SHOP` is
+the US listing and `SHOP.TO` is the Toronto one, in a different currency.
 
 ### Verifying a provider before trusting it
 

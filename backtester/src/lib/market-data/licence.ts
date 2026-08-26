@@ -63,6 +63,20 @@ export const PROVIDER_LICENCES: Record<string, ProviderLicence> = {
       'Raw prices with per-bar divCash and splitFactor. The engine applies splits itself.',
     verifiedOn: '2026-08-23',
   },
+  alphavantage: {
+    providerId: 'alphavantage',
+    label: 'Alpha Vantage',
+    commercial: 'personal-only',
+    summary:
+      'Documented, key-authenticated API. Used here only for Canadian listings, and only at weekly resolution: the daily adjusted endpoint is premium and plain daily is capped at 100 bars.',
+    commercialPath:
+      'Alpha Vantage sells commercial plans that include the daily adjusted endpoint and lift the request cap. A product would need one; the free tier does not permit redistribution.',
+    freeTier:
+      '25 requests/day, and the throttle bites on bursts well before that. Everything is cached hard and fetched one symbol at a time.',
+    corporateActions:
+      'TIME_SERIES_WEEKLY_ADJUSTED carries an adjusted close and per-bar dividends. Splits are already folded into both close and adjusted close, verified against Tiingo across AAPL 2019-2021 (total return 393.5267% vs 393.5270%, agreeing to 6.9e-7).',
+    verifiedOn: '2026-08-24',
+  },
   demo: {
     providerId: 'demo',
     label: 'Demo (synthetic)',
@@ -78,9 +92,9 @@ export const PROVIDER_LICENCES: Record<string, ProviderLicence> = {
 /** Providers evaluated and rejected, with the reason, so it is not re-litigated. */
 export const EVALUATED_AND_REJECTED = [
   {
-    provider: 'Alpha Vantage',
+    provider: 'Alpha Vantage (daily endpoints only)',
     reason:
-      'TIME_SERIES_DAILY_ADJUSTED is a premium endpoint. The free TIME_SERIES_DAILY returns raw OHLCV with no adjusted close, no dividends and no splits — which cannot produce a correct total return. The free tier is also 25 requests/day.',
+      'TIME_SERIES_DAILY_ADJUSTED is premium, and plain TIME_SERIES_DAILY is capped at 100 bars with outputsize=full also premium — five months of raw OHLCV, no dividends, no splits. Neither can produce a correct total return. The WEEKLY adjusted endpoint IS free and correct, and is used for Canadian listings; see PROVIDER_LICENCES.alphavantage.',
   },
   {
     provider: 'Nasdaq Data Link',

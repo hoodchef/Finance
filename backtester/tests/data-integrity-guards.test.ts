@@ -504,3 +504,48 @@ describe('factor data is never fabricated', () => {
     expect(read('components/results/factor-panel.tsx')).toMatch(/attribution/);
   });
 });
+
+describe('weekly data cannot masquerade as daily', () => {
+  /**
+   * Alpha Vantage serves Canadian listings at weekly resolution. A weekly
+   * series that annualised as daily would overstate volatility about twofold
+   * and understate every drawdown, with nothing on screen to say why.
+   */
+  it('declares its interval rather than leaving it to be assumed', () => {
+    const body = read('lib/market-data/alphavantage.ts');
+    expect(body).toMatch(/interval: 'weekly'/);
+  });
+
+  it('annualises from the interval, not a fixed daily floor', () => {
+    const body = read('lib/engine/prepare.ts');
+    // The floor must vary by interval. A single hard-coded 200 is the bug.
+    expect(body).toMatch(/FLOOR: Record<BarInterval, number>/);
+    expect(body).toMatch(/weekly: 40/);
+  });
+
+  it('warns that a coarse interval hides drawdowns', () => {
+    const body = read('lib/engine/prepare.ts');
+    expect(body).toMatch(/coarse-interval/);
+    expect(body).toMatch(/floor, not the figure/);
+  });
+
+  it('restricts Alpha Vantage to Canadian listings', () => {
+    // Otherwise a transient Tiingo outage would quietly turn a daily US
+    // backtest into a weekly one.
+    const body = read('lib/market-data/alphavantage.ts');
+    expect(body).toMatch(/if \(!isCanadianSymbol\(requested\)\)/);
+  });
+
+  it('places Alpha Vantage last in the failover chain', () => {
+    const body = read('lib/market-data/index.ts');
+    // Last means a symbol another provider can serve daily never reaches it.
+    expect(body).toMatch(/providers\.tiingo,\s*providers\.yahoo,\s*\.\.\.tail/);
+  });
+
+  it('does not treat a 200-OK refusal as data', () => {
+    // Alpha Vantage answers 200 for premium gates and quota exhaustion alike.
+    const body = read('lib/market-data/alphavantage.ts');
+    expect(body).toMatch(/assertPayload/);
+    expect(body).toMatch(/Error Message|Information|Note/);
+  });
+});

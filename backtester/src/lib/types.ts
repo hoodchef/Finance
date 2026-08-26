@@ -86,12 +86,27 @@ export interface CorporateActions {
  */
 export type PriceAdjustment = 'split-adjusted' | 'raw';
 
+/**
+ * Spacing of the bars in a series.
+ *
+ * Not cosmetic: it sets how returns annualise, and it decides whether a
+ * drawdown between bars is observable at all. A weekly series cannot show a
+ * Tuesday crash that recovered by Friday, so a maximum drawdown computed from
+ * one is a floor, not the figure.
+ */
+export type BarInterval = 'daily' | 'weekly' | 'monthly';
+
 export interface PriceSeries {
   meta: SecurityMeta;
   bars: PriceBar[];
   dividends: DividendEvent[];
   splits: SplitEvent[];
   adjustment: PriceAdjustment;
+  /**
+   * Bar spacing. Optional so existing daily providers need no change; absent
+   * means daily.
+   */
+  interval?: BarInterval;
   /** Provider id the data came from, surfaced in the UI for transparency. */
   source: string;
   /** True when the numbers are generated rather than observed. */
