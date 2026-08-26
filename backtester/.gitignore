@@ -3,6 +3,11 @@ node_modules
 out
 .env
 .env.local
+# Editor backups of the env file carry the same secrets (nano writes
+# .env.local.save, vim .env.local~, and so on).
+.env*.local
+.env.local.*
+.env.local~
 *.tsbuildinfo
 next-env.d.ts
 .cache
