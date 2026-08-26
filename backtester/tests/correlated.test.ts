@@ -225,3 +225,148 @@ describe('return overrides', () => {
     expect(bullish.realisedCorrelation[0][1]).toBeCloseTo(base.realisedCorrelation[0][1], 1);
   });
 });
+
+describe('covariance shrinkage', () => {
+  /** n assets, all pairwise correlation `rho`, drawn from a known truth. */
+  function drawUniverse(n: number, T: number, rho: number, seed: number): number[][] {
+    let a = seed >>> 0;
+    const rand = () => {
+      a = (a + 0x6d2b79f5) >>> 0;
+      let t = Math.imul(a ^ (a >>> 15), 1 | a);
+      t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t;
+      return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+    };
+    const norm = () => {
+      let u = 0;
+      while (u <= 0) u = rand();
+      return Math.sqrt(-2 * Math.log(u)) * Math.cos(2 * Math.PI * rand());
+    };
+    const b = Math.sqrt(rho);
+    const idio = Math.sqrt(1 - rho);
+    const out: number[][] = Array.from({ length: n }, () => []);
+    for (let t = 0; t < T; t++) {
+      const common = norm();
+      for (let i = 0; i < n; i++) out[i].push(Math.expm1(0.01 * (b * common + idio * norm())));
+    }
+    return out;
+  }
+
+  /** Mean squared error of the off-diagonal correlations against the truth. */
+  function corrError(corr: number[][], rho: number): number {
+    const n = corr.length;
+    let acc = 0;
+    let k = 0;
+    for (let i = 0; i < n; i++) {
+      for (let j = i + 1; j < n; j++) {
+        acc += (corr[i][j] - rho) * (corr[i][j] - rho);
+        k++;
+      }
+    }
+    return acc / k;
+  }
+
+  it('reduces correlation error when assets are many and history is short', () => {
+    // 15 assets is 105 correlations from 120 observations. This is exactly the
+    // regime where a raw sample matrix is confidently wrong.
+    const TRUTH = 0.35;
+    const data = drawUniverse(15, 120, TRUTH, 99);
+    const raw = estimateMoments(
+      data.map((_, i) => `A${i}`), data, { shrink: false },
+    );
+    const shrunk = estimateMoments(data.map((_, i) => `A${i}`), data);
+
+    expect(shrunk.shrinkage).toBeGreaterThan(0);
+    expect(corrError(shrunk.corr, TRUTH)).toBeLessThan(corrError(raw.corr, TRUTH));
+  });
+
+  /**
+   * A universe whose correlations DIFFER from one another, via per-asset
+   * loadings on a common factor: corr(i,j) = b_i·b_j.
+   *
+   * This matters. A constant-correlation universe IS the shrinkage target, so
+   * the distance to it is ~0, the intensity saturates at 1, and full shrinkage
+   * is both correct and harmless — which makes it useless for testing whether
+   * intensity responds to sample size.
+   */
+  function drawHeterogeneous(loadings: number[], T: number, seed: number): number[][] {
+    let a = seed >>> 0;
+    const rand = () => {
+      a = (a + 0x6d2b79f5) >>> 0;
+      let t = Math.imul(a ^ (a >>> 15), 1 | a);
+      t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t;
+      return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+    };
+    const norm = () => {
+      let u = 0;
+      while (u <= 0) u = rand();
+      return Math.sqrt(-2 * Math.log(u)) * Math.cos(2 * Math.PI * rand());
+    };
+    const out: number[][] = loadings.map(() => []);
+    for (let t = 0; t < T; t++) {
+      const common = norm();
+      loadings.forEach((b, i) => {
+        out[i].push(Math.expm1(0.01 * (b * common + Math.sqrt(1 - b * b) * norm())));
+      });
+    }
+    return out;
+  }
+
+  it('intervenes less as history grows', () => {
+    // Loadings spread wide, so pairwise correlations range from ~0.09 to ~0.72
+    // and the constant-correlation target is genuinely wrong for most pairs.
+    const loadings = [0.95, 0.85, 0.6, 0.4, 0.25, 0.1];
+    const names = loadings.map((_, i) => `A${i}`);
+    const short = estimateMoments(names, drawHeterogeneous(loadings, 90, 7));
+    const long = estimateMoments(names, drawHeterogeneous(loadings, 8000, 7));
+
+    // The estimator's whole job: lean on the target when the sample is thin,
+    // step back when it is not.
+    expect(long.shrinkage).toBeLessThan(short.shrinkage);
+    expect(long.shrinkage).toBeLessThan(0.2);
+  });
+
+  it('recovers distinct correlations when history is plentiful', () => {
+    const loadings = [0.9, 0.8, 0.2];
+    const m = estimateMoments(['A', 'B', 'C'], drawHeterogeneous(loadings, 8000, 11));
+    // corr(i,j) = b_i * b_j
+    expect(m.corr[0][1]).toBeCloseTo(0.72, 1);
+    expect(m.corr[0][2]).toBeCloseTo(0.18, 1);
+  });
+
+  it('leaves variances untouched', () => {
+    const data = drawUniverse(8, 200, 0.3, 3);
+    const names = data.map((_, i) => `A${i}`);
+    const raw = estimateMoments(names, data, { shrink: false });
+    const shrunk = estimateMoments(names, data);
+    // Each asset's own risk is estimated far more reliably than co-movement;
+    // shrinking it to fix a joint problem would distort the wrong thing.
+    for (let i = 0; i < 8; i++) {
+      expect(shrunk.cov[i][i]).toBeCloseTo(raw.cov[i][i], 12);
+      expect(shrunk.sigma[i]).toBeCloseTo(raw.sigma[i], 12);
+    }
+  });
+
+  it('pulls correlations toward their average, not toward zero', () => {
+    const data = drawUniverse(12, 150, 0.5, 21);
+    const names = data.map((_, i) => `A${i}`);
+    const raw = estimateMoments(names, data, { shrink: false });
+    const shrunk = estimateMoments(names, data);
+    const spread = (m: typeof raw) => {
+      const off: number[] = [];
+      for (let i = 0; i < 12; i++) for (let j = i + 1; j < 12; j++) off.push(m.corr[i][j]);
+      const mean = off.reduce((a, b) => a + b, 0) / off.length;
+      return Math.sqrt(off.reduce((s, v) => s + (v - mean) ** 2, 0) / off.length);
+    };
+    // Dispersion falls; the average is preserved.
+    expect(spread(shrunk)).toBeLessThan(spread(raw));
+    expect(shrunk.averageCorrelation).toBeCloseTo(0.5, 1);
+  });
+
+  it('keeps the shrunk matrix factorisable', () => {
+    const data = drawUniverse(10, 60, 0.6, 5);
+    const m = estimateMoments(data.map((_, i) => `A${i}`), data);
+    // Shrinkage toward a well-conditioned target should IMPROVE conditioning,
+    // never break it — that is half the reason to do it.
+    expect(() => cholesky(m.cov)).not.toThrow();
+  });
+});

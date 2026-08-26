@@ -62,7 +62,7 @@ export async function POST(request: Request) {
         });
       }
 
-      const moments = estimateMoments(symbols, returns);
+      const moments = estimateMoments(symbols, returns, { shrink: body.shrink !== false });
 
       const declared = portfolio.positions
         .filter((p) => symbols.includes(p.symbol.toUpperCase()) || symbols.includes(p.symbol))
@@ -115,6 +115,8 @@ export async function POST(request: Request) {
           correlation: moments.corr,
           annualVolatility: moments.sigma.map((s) => s * Math.sqrt(periodsPerYear)),
           observations: moments.observations,
+          shrinkage: moments.shrinkage,
+          averageCorrelation: moments.averageCorrelation,
           from: dates[0],
           to: dates[dates.length - 1],
         },

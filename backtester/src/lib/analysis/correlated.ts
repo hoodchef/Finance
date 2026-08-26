@@ -37,6 +37,10 @@ export interface AssetMoments {
   sigma: number[];
   /** Overlapping observations the estimate is built from. */
   observations: number;
+  /** Ledoit-Wolf intensity applied, 0 when shrinkage was not requested. */
+  shrinkage: number;
+  /** The constant correlation shrunk toward, for reporting. */
+  averageCorrelation: number;
 }
 
 /* ------------------------------------------------------------------ */
@@ -50,7 +54,11 @@ export interface AssetMoments {
  * mismatched dates pairs a Tuesday against a Wednesday and produces a number
  * that looks like a correlation but is not one.
  */
-export function estimateMoments(symbols: string[], returns: number[][]): AssetMoments {
+export function estimateMoments(
+  symbols: string[],
+  returns: number[][],
+  options: { shrink?: boolean } = {},
+): AssetMoments {
   const n = symbols.length;
   if (n === 0) throw new CorrelatedError('No assets to estimate.');
   const T = returns[0]?.length ?? 0;
@@ -86,6 +94,13 @@ export function estimateMoments(symbols: string[], returns: number[][]): AssetMo
     }
   }
 
+  // Shrinkage acts on the log-return covariance, before anything is derived
+  // from it, so the correlations reported and the ones simulated are the same
+  // numbers.
+  const shrunk = options.shrink === false ? null : shrinkCovariance(cov, logs);
+  const finalCov = shrunk ? shrunk.cov : cov;
+  for (let i = 0; i < n; i++) for (let j = 0; j < n; j++) cov[i][j] = finalCov[i][j];
+
   const sigma = cov.map((row, i) => Math.sqrt(Math.max(0, row[i])));
   const corr = Array.from({ length: n }, (_, i) =>
     Array.from({ length: n }, (_, j) =>
@@ -93,7 +108,95 @@ export function estimateMoments(symbols: string[], returns: number[][]): AssetMo
     ),
   );
 
-  return { symbols, mu, cov, corr, sigma, observations: T };
+  return {
+    symbols,
+    mu,
+    cov,
+    corr,
+    sigma,
+    observations: T,
+    shrinkage: shrunk?.intensity ?? 0,
+    averageCorrelation: shrunk?.averageCorrelation ?? 0,
+  };
+}
+
+/**
+ * Ledoit–Wolf shrinkage toward a constant-correlation target.
+ *
+ * A sample covariance is noisy, and it is noisy in a way that does specific
+ * damage: the largest estimated correlations are biased upward and the
+ * smallest downward, because extreme sample values are the ones most likely to
+ * be extreme by luck. Simulating from it produces confident diversification
+ * that the data does not support. With 10 assets there are 45 correlations to
+ * estimate; with 20 there are 190, and daily history runs out long before the
+ * estimates settle.
+ *
+ * Shrinkage pulls every off-diagonal toward the average correlation:
+ *
+ *     Sigma* = (1 - d) Sigma + d F
+ *
+ * where F has the same variances and one shared correlation. The intensity is
+ * chosen by the Ledoit–Wolf rule — the value minimising expected squared error
+ * — and clamped to [0, 1]. Variances are left alone; they are estimated far
+ * more reliably than co-movements and shrinking them would distort each
+ * asset's own risk to fix a joint problem.
+ */
+export function shrinkCovariance(
+  cov: number[][],
+  returns: number[][],
+): { cov: number[][]; intensity: number; averageCorrelation: number } {
+  const n = cov.length;
+  const T = returns[0]?.length ?? 0;
+  if (n < 2 || T < 2) return { cov, intensity: 0, averageCorrelation: 0 };
+
+  const sd = cov.map((row, i) => Math.sqrt(Math.max(0, row[i])));
+  // Average of the off-diagonal correlations — the target's single value.
+  let sum = 0;
+  let count = 0;
+  for (let i = 0; i < n; i++) {
+    for (let j = i + 1; j < n; j++) {
+      if (sd[i] > 0 && sd[j] > 0) {
+        sum += cov[i][j] / (sd[i] * sd[j]);
+        count++;
+      }
+    }
+  }
+  const rbar = count > 0 ? sum / count : 0;
+
+  const target = Array.from({ length: n }, (_, i) =>
+    Array.from({ length: n }, (_, j) => (i === j ? cov[i][i] : rbar * sd[i] * sd[j])),
+  );
+
+  // pi: summed variance of the sample covariance entries.
+  // gamma: squared distance from the sample matrix to the target.
+  const means = returns.map((r) => r.reduce((a, b) => a + b, 0) / T);
+  let pi = 0;
+  let gamma = 0;
+  for (let i = 0; i < n; i++) {
+    for (let j = 0; j < n; j++) {
+      let acc = 0;
+      for (let t = 0; t < T; t++) {
+        const d = (returns[i][t] - means[i]) * (returns[j][t] - means[j]) - cov[i][j];
+        acc += d * d;
+      }
+      pi += acc / T;
+      const diff = target[i][j] - cov[i][j];
+      gamma += diff * diff;
+    }
+  }
+
+  // rho (the covariance between estimation errors of Sigma and F) is dropped.
+  // Ledoit and Wolf note the omission is small for this target, and including
+  // it costs an O(n^2 T) pass for a correction well inside the noise it fixes.
+  const intensity = gamma > 0 ? Math.max(0, Math.min(1, pi / T / gamma)) : 0;
+
+  const out = Array.from({ length: n }, (_, i) =>
+    Array.from({ length: n }, (_, j) =>
+      i === j ? cov[i][j] : (1 - intensity) * cov[i][j] + intensity * target[i][j],
+    ),
+  );
+
+  return { cov: out, intensity, averageCorrelation: rbar };
 }
 
 /* ------------------------------------------------------------------ */
