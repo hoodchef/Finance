@@ -36,6 +36,21 @@ import { percentile } from '@/lib/metrics/stats';
 
 export type ResampleMethod = 'block' | 'iid';
 
+/**
+ * How a path is generated.
+ *
+ *   block      resample contiguous stretches of real history (default)
+ *   iid        resample individual real days, independently
+ *   normal     draw from a fitted lognormal
+ *   student-t  draw from a fitted Student-t, standardised to the target vol
+ *
+ * The two bootstraps make no distributional assumption and cannot produce a
+ * day the history does not contain. The two parametric methods can — which is
+ * their point and their danger: a normal fit understates tails badly, and
+ * Student-t exists here so that can be seen rather than argued about.
+ */
+export type SimMethod = ResampleMethod | 'normal' | 'student-t';
+
 export interface MonteCarloOptions {
   /** The portfolio's realised daily time-weighted returns. */
   returns: number[];
@@ -53,11 +68,34 @@ export interface MonteCarloOptions {
   years: number;
   /** Number of paths. */
   paths?: number;
-  method?: ResampleMethod;
+  method?: SimMethod;
   /** Block length in trading days. Ignored for `iid`. */
   blockDays?: number;
   /** Seed, so a given set of inputs always produces the same answer. */
   seed?: number;
+
+  /* ---- decumulation ---------------------------------------------------- */
+  /**
+   * Amount withdrawn every `withdrawalEvery` periods, in TODAY's dollars. It
+   * is inflated forward, because a retiree's spending is a real quantity and
+   * holding it nominal quietly makes every plan look safer than it is.
+   */
+  withdrawalAmount?: number;
+  withdrawalEvery?: number;
+
+  /* ---- assumptions ----------------------------------------------------- */
+  /**
+   * Annual arithmetic return. Null estimates it from the supplied history.
+   * Only used by the parametric methods; a bootstrap takes its mean from the
+   * sample by construction.
+   */
+  expectedReturn?: number | null;
+  /** Annual volatility. Null estimates it from the supplied history. */
+  volatility?: number | null;
+  /** Degrees of freedom for `student-t`. Lower means fatter tails. */
+  degreesOfFreedom?: number;
+  /** Annual inflation, used to report outcomes in today's dollars. */
+  inflation?: number;
 }
 
 export interface MonteCarloBand {
@@ -73,7 +111,7 @@ export interface MonteCarloBand {
 }
 
 export interface MonteCarloResult {
-  method: ResampleMethod;
+  method: SimMethod;
   paths: number;
   years: number;
   blockDays: number | null;
@@ -100,6 +138,31 @@ export interface MonteCarloResult {
   worstDrawdown: { median: number; p95: number };
   totalContributed: number;
   bands: MonteCarloBand[];
+
+  /**
+   * Every number the simulation ran on, and whether it was measured or
+   * asserted. A fan chart drawn from assumed parameters is indistinguishable
+   * from one drawn from measured ones, so the distinction has to travel with
+   * the result rather than living in whoever set it up.
+   */
+  parameters: {
+    expectedReturn: number;
+    volatility: number;
+    expectedReturnSource: 'history' | 'assumed';
+    volatilitySource: 'history' | 'assumed';
+    degreesOfFreedom: number | null;
+    inflation: number;
+  };
+
+  /** Terminal values deflated to today's dollars. */
+  terminalReal: { p5: number; median: number; p95: number };
+  /**
+   * Fraction of paths that never hit zero. Meaningful only when withdrawing;
+   * 1 when there is nothing to run out of.
+   */
+  successRate: number;
+  /** Median year of depletion among the paths that failed, else null. */
+  medianRuinYear: number | null;
 }
 
 /** mulberry32 — small and fully deterministic from a 32-bit seed. */
@@ -111,6 +174,74 @@ function makeRng(seed: number): () => number {
     t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t;
     return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
   };
+}
+
+/* ------------------------------------------------------------------ */
+/* Parametric draws                                                    */
+/* ------------------------------------------------------------------ */
+
+/** Standard normal, Box–Muller. Rejects u=0 so the log is finite. */
+function makeNormal(rng: () => number): () => number {
+  let spare: number | null = null;
+  return () => {
+    if (spare !== null) {
+      const v = spare;
+      spare = null;
+      return v;
+    }
+    let u = 0;
+    while (u <= 0) u = rng();
+    const r = Math.sqrt(-2 * Math.log(u));
+    const theta = 2 * Math.PI * rng();
+    spare = r * Math.sin(theta);
+    return r * Math.cos(theta);
+  };
+}
+
+/**
+ * Gamma(shape, 1) by Marsaglia–Tsang, for shape >= 1.
+ *
+ * Needed for Student-t: a chi-square with v degrees of freedom is
+ * 2·Gamma(v/2, 1). Building it from a sum of v squared normals instead would
+ * be exact but costs v draws per step — tens of millions across a long
+ * simulation — where this accepts on the first try almost every time.
+ */
+function gamma1(shape: number, normal: () => number, rng: () => number): number {
+  const d = shape - 1 / 3;
+  const c = 1 / Math.sqrt(9 * d);
+  for (;;) {
+    const x = normal();
+    const v = Math.pow(1 + c * x, 3);
+    if (v <= 0) continue;
+    const u = rng();
+    if (u < 1 - 0.0331 * x * x * x * x) return d * v;
+    if (Math.log(u) < 0.5 * x * x + d * (1 - v + Math.log(v))) return d * v;
+  }
+}
+
+/**
+ * Student-t with `df` degrees of freedom, standardised to unit variance.
+ *
+ * A raw t has variance df/(df−2), so feeding it straight into a vol parameter
+ * would overshoot the target — at df=4 by 41%. Scaling by sqrt((df−2)/df)
+ * makes the fat tails a redistribution of the same variance rather than extra
+ * variance, which is the honest comparison against the normal.
+ */
+function makeStudentT(df: number, normal: () => number, rng: () => number): () => number {
+  const scale = Math.sqrt((df - 2) / df);
+  return () => {
+    const chi2 = 2 * gamma1(df / 2, normal, rng);
+    return (normal() / Math.sqrt(chi2 / df)) * scale;
+  };
+}
+
+/** Sample mean and standard deviation of log(1+r), the compounding space. */
+function fitLogMoments(returns: number[]): { mu: number; sigma: number } {
+  const logs = returns.filter((r) => r > -1).map((r) => Math.log1p(r));
+  const n = logs.length;
+  const mu = logs.reduce((s, v) => s + v, 0) / n;
+  const varce = logs.reduce((s, v) => s + (v - mu) * (v - mu), 0) / Math.max(1, n - 1);
+  return { mu, sigma: Math.sqrt(varce) };
 }
 
 /**
@@ -154,7 +285,12 @@ export function runMonteCarlo(options: MonteCarloOptions): MonteCarloResult {
     paths = 1000,
     method = 'block',
     seed = 12345,
+    withdrawalAmount = 0,
+    withdrawalEvery = 0,
+    inflation = 0,
+    degreesOfFreedom = 5,
   } = options;
+  const parametric = method === 'normal' || method === 'student-t';
 
   const clean = returns.filter((r) => Number.isFinite(r));
   if (clean.length < 30) {
@@ -170,6 +306,32 @@ export function runMonteCarlo(options: MonteCarloOptions): MonteCarloResult {
 
   const steps = Math.max(1, Math.round(years * periodsPerYear));
   const rng = makeRng(seed);
+  const normal = makeNormal(rng);
+
+  // Historical moments, in log space, are the fallback for both parameters and
+  // the baseline the overrides are measured against.
+  const fitted = fitLogMoments(clean);
+  const histVolAnnual = fitted.sigma * Math.sqrt(periodsPerYear);
+  // Arithmetic annual mean implied by the fitted lognormal.
+  const histReturnAnnual =
+    Math.exp(periodsPerYear * (fitted.mu + (fitted.sigma * fitted.sigma) / 2)) - 1;
+
+  const usingReturnOverride = options.expectedReturn != null && Number.isFinite(options.expectedReturn);
+  const usingVolOverride = options.volatility != null && Number.isFinite(options.volatility);
+  const targetReturn = usingReturnOverride ? (options.expectedReturn as number) : histReturnAnnual;
+  const targetVol = usingVolOverride ? (options.volatility as number) : histVolAnnual;
+
+  // Per-period log parameters. sigma scales with the square root of time; mu
+  // carries the -sigma^2/2 correction so the ARITHMETIC annual mean lands on
+  // the target rather than the median doing so.
+  const sigmaStep = targetVol / Math.sqrt(periodsPerYear);
+  const muStep = Math.log1p(targetReturn) / periodsPerYear - (sigmaStep * sigmaStep) / 2;
+  const draw =
+    method === 'student-t' ? makeStudentT(Math.max(3, degreesOfFreedom), normal, rng) : normal;
+
+  const inflationStep = Math.pow(1 + inflation, 1 / periodsPerYear);
+  const ruinYears: number[] = [];
+  let survived = 0;
 
   const terminals: number[] = [];
   const drawdowns: number[] = [];
@@ -179,7 +341,9 @@ export function runMonteCarlo(options: MonteCarloOptions): MonteCarloResult {
   let totalContributed = initialInvestment;
 
   for (let p = 0; p < paths; p++) {
-    const path = samplePath(clean, steps, method, blockDays, rng);
+    const path = parametric
+      ? Array.from({ length: steps }, () => Math.expm1(muStep + sigmaStep * draw()))
+      : samplePath(clean, steps, method as ResampleMethod, blockDays, rng);
     let value = initialInvestment;
     let contributed = initialInvestment;
     let peak = value;
@@ -188,11 +352,25 @@ export function runMonteCarlo(options: MonteCarloOptions): MonteCarloResult {
     bandSamples[0].push(value);
     let nextYear = 1;
 
+    let ruinedAt = -1;
+    let priceLevel = 1;
+
     for (let i = 0; i < steps; i++) {
       value *= 1 + path[i];
       if (contributionEvery > 0 && contributionAmount > 0 && (i + 1) % contributionEvery === 0) {
         value += contributionAmount;
         contributed += contributionAmount;
+      }
+      priceLevel *= inflationStep;
+      if (withdrawalEvery > 0 && withdrawalAmount > 0 && (i + 1) % withdrawalEvery === 0) {
+        // Stated in today's dollars, so it grows with the price level. A
+        // nominal withdrawal shrinks in real terms every year and makes any
+        // retirement plan look safer than it is.
+        value -= withdrawalAmount * priceLevel;
+        if (value <= 0 && ruinedAt < 0) {
+          ruinedAt = i;
+          value = 0;
+        }
       }
       peak = Math.max(peak, value);
       if (peak > 0) worst = Math.min(worst, value / peak - 1);
@@ -206,6 +384,8 @@ export function runMonteCarlo(options: MonteCarloOptions): MonteCarloResult {
 
     terminals.push(value);
     drawdowns.push(worst);
+    if (ruinedAt >= 0) ruinYears.push(ruinedAt / periodsPerYear);
+    else survived++;
     if (p === 0) totalContributed = contributed;
   }
 
@@ -229,6 +409,8 @@ export function runMonteCarlo(options: MonteCarloOptions): MonteCarloResult {
   const annualisedFrom = (terminal: number): number =>
     totalContributed > 0 && terminal > 0 ? Math.pow(terminal / totalContributed, 1 / years) - 1 : 0;
 
+  // Everything nominal is divided by this to reach today's dollars.
+  const realDeflator = Math.pow(1 + inflation, years);
   const sorted = [...terminals].sort((a, b) => a - b);
   const sampleYears = clean.length / periodsPerYear;
 
@@ -262,5 +444,20 @@ export function runMonteCarlo(options: MonteCarloOptions): MonteCarloResult {
     },
     totalContributed,
     bands,
+    parameters: {
+      expectedReturn: targetReturn,
+      volatility: targetVol,
+      expectedReturnSource: usingReturnOverride ? 'assumed' : 'history',
+      volatilitySource: usingVolOverride ? 'assumed' : 'history',
+      degreesOfFreedom: method === 'student-t' ? Math.max(3, degreesOfFreedom) : null,
+      inflation,
+    },
+    terminalReal: {
+      p5: percentile(terminals, 0.05) / realDeflator,
+      median: percentile(terminals, 0.5) / realDeflator,
+      p95: percentile(terminals, 0.95) / realDeflator,
+    },
+    successRate: survived / paths,
+    medianRuinYear: ruinYears.length ? percentile(ruinYears, 0.5) : null,
   };
 }
