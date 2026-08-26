@@ -6,8 +6,8 @@ import { TooltipProvider } from '@/components/ui/tooltip';
 
 export const metadata: Metadata = {
   title: {
-    default: 'Backtester — portfolio analytics',
-    template: '%s · Backtester',
+    default: 'CanPath — Canadian financial planning and portfolio analytics',
+    template: '%s · CanPath',
   },
   description:
     'Construct portfolios, backtest them against real historical market data, and analyse return, risk and attribution.',

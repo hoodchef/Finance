@@ -28,12 +28,15 @@ export function errorResponse(error: unknown): NextResponse {
       { status: 400 },
     );
   }
+  // Everything above is an error this code raised deliberately, with a message
+  // written to be read by a user. What falls through here did not come from us
+  // — a driver, a parser, the runtime — and its message can carry internals:
+  // filesystem paths, and in the worst case a provider URL with the API key
+  // still in the query string. It is logged in full server-side and replaced
+  // with a fixed string on the wire.
   console.error('[api]', error);
   return NextResponse.json(
-    {
-      error: error instanceof Error ? error.message : 'Unexpected error running the backtest.',
-      kind: 'server',
-    },
+    { error: 'Something failed while computing this result.', kind: 'server' },
     { status: 500 },
   );
 }

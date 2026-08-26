@@ -1,3 +1,12 @@
+// GENERATED FROM schema.prisma BY scripts/mirror-schema.mjs — DO NOT EDIT.
+//
+// SQLite mirror, for local tests only. Prisma cannot take its datasource
+// provider from an environment variable, so verifying the repository without
+// standing up Postgres needs a second schema. Native type hints and Json are
+// translated because SQLite has neither; the MODELS must not drift, and
+// tests/prisma.test.ts fails if they do.
+//
+//   npm run db:mirror && npm run db:push:test
 // Postgres model for server-side portfolio storage.
 //
 // NOT WIRED IN. The running app keeps portfolios in browser local storage, so
@@ -14,11 +23,12 @@
 
 generator client {
   provider = "prisma-client-js"
+  output   = "../node_modules/.prisma/test-client"
 }
 
 datasource db {
-  provider = "postgresql"
-  url      = env("DATABASE_URL")
+  provider = "sqlite"
+  url      = env("SQLITE_URL")
 }
 
 model User {
@@ -101,9 +111,9 @@ model Position {
   /// Display name captured at the time the holding was added.
   name        String?
   /// Target weight as a percentage, e.g. 40 for 40%.
-  weight      Decimal   @db.Decimal(9, 4)
+  weight      Decimal
   /// Annual fund expense ratio in percent. Null means "do not model one".
-  expenseRatio Decimal? @db.Decimal(7, 4)
+  expenseRatio Decimal?
   /// Display order in the builder.
   sortOrder   Int       @default(0)
 
@@ -122,21 +132,21 @@ model BacktestRun {
   portfolio   Portfolio? @relation(fields: [portfolioId], references: [id], onDelete: SetNull)
 
   /// Serialised BacktestConfig, exactly as the engine received it.
-  config        Json
+  config        String
   /// Engine version, so an old run is never silently re-read under new maths.
   engineVersion String
   /// Provider id the prices came from, plus whether they were synthetic.
   dataSource    String
   synthetic     Boolean  @default(false)
 
-  effectiveStart DateTime @db.Date
-  effectiveEnd   DateTime @db.Date
-  finalValue     Decimal  @db.Decimal(20, 4)
-  totalReturn    Decimal  @db.Decimal(12, 8)
-  cagr           Decimal  @db.Decimal(12, 8)
-  volatility     Decimal  @db.Decimal(12, 8)
-  maxDrawdown    Decimal  @db.Decimal(12, 8)
-  sharpe         Decimal  @db.Decimal(12, 8)
+  effectiveStart DateTime
+  effectiveEnd   DateTime
+  finalValue     Decimal
+  totalReturn    Decimal
+  cagr           Decimal
+  volatility     Decimal
+  maxDrawdown    Decimal
+  sharpe         Decimal
 
   createdAt DateTime @default(now())
 
