@@ -155,7 +155,7 @@ export function BacktestWorkspace() {
   return (
     <>
       <PageHeader
-        title="Backtester"
+        title="Backtest"
         description="Build a portfolio, set the rules, and see what it would have done."
         actions={
           <>

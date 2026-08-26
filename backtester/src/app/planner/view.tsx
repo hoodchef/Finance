@@ -170,7 +170,7 @@ export function PlannerView() {
   return (
     <>
       <PageHeader
-        title="Planner"
+        title="Tax &amp; benefits"
         description="What your next dollar is actually worth in Canada, and which account it belongs in."
         actions={
           data && <Badge variant="outline">{data.taxYear} tax year · {data.province}</Badge>

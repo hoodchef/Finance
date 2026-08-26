@@ -16,15 +16,20 @@ const currencyFmtCents = new Intl.NumberFormat('en-US', {
 export function formatCurrency(v: number | null | undefined, cents = false): string {
   if (v == null || !Number.isFinite(v)) return '—';
   const abs = Math.abs(v);
-  if (!cents && abs >= 1000) return currencyFmt.format(v);
-  return currencyFmtCents.format(v);
+  // A residual of -1e-12 formats as "-$0.00", which in a reconciliation panel
+  // reads as a real discrepancy too small to show rather than as agreement.
+  // Anything that rounds to zero IS zero at display precision.
+  const rounded = abs < (cents || abs < 1000 ? 0.005 : 0.5) ? 0 : v;
+  if (!cents && abs >= 1000) return currencyFmt.format(rounded);
+  return currencyFmtCents.format(rounded);
 }
 
 /** Compact form for axis labels: $1.8M, $284K. */
 export function formatCurrencyCompact(v: number | null | undefined): string {
   if (v == null || !Number.isFinite(v)) return '—';
   const abs = Math.abs(v);
-  const sign = v < 0 ? '-' : '';
+  // Same reasoning as formatCurrency: no "-$0".
+  const sign = v < 0 && abs >= 0.5 ? '-' : '';
   if (abs >= 1e9) return `${sign}$${(abs / 1e9).toFixed(abs >= 1e10 ? 0 : 1)}B`;
   if (abs >= 1e6) return `${sign}$${(abs / 1e6).toFixed(abs >= 1e7 ? 0 : 1)}M`;
   if (abs >= 1e3) return `${sign}$${(abs / 1e3).toFixed(abs >= 1e4 ? 0 : 1)}K`;

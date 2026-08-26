@@ -75,7 +75,7 @@ export function AssetsView() {
   return (
     <>
       <PageHeader
-        title="Assets"
+        title="Holdings"
         description="Examine one ticker on its own — buy and hold, dividends reinvested, no fees."
         actions={
           symbol && (

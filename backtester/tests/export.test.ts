@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { buildCsv, safeFilename } from '../src/lib/export/csv';
+import { formatCurrency, formatCurrencyCompact } from '../src/lib/format';
 import { runBacktest, type BacktestResult } from '../src/lib/backtest';
 import { DemoDataProvider } from '../src/lib/market-data/demo';
 import { testConfig } from './helpers';
@@ -172,5 +173,28 @@ describe('gains export', () => {
       .filter((l) => l.symbol !== 'CASH')
       .reduce((s, l) => s + l.profitAndLoss, 0);
     expect(perHolding).toBeCloseTo(ledgerTotal, 4);
+  });
+});
+
+describe('currency formatting never shows a negative zero', () => {
+  it('renders a residual that rounds to zero as zero', () => {
+    // The Lab's reconciliation showed "-$0.00" for a residual of about -1e-12.
+    // In a panel whose whole job is to demonstrate that two figures agree, a
+    // minus sign reads as a discrepancy too small to display.
+    expect(formatCurrency(-1e-12)).toBe('$0.00');
+    expect(formatCurrency(-0.0001)).toBe('$0.00');
+    expect(formatCurrency(-0)).toBe('$0.00');
+    expect(formatCurrencyCompact(-1e-9)).toBe('$0');
+  });
+
+  it('still shows real negatives', () => {
+    expect(formatCurrency(-12.5)).toMatch(/^-/);
+    expect(formatCurrency(-5000)).toMatch(/^-/);
+    expect(formatCurrencyCompact(-25_000)).toBe('-$25K');
+  });
+
+  it('leaves positive values untouched', () => {
+    expect(formatCurrency(1234.56)).toMatch(/1,235|1,234/);
+    expect(formatCurrencyCompact(1_500_000)).toBe('$1.5M');
   });
 });

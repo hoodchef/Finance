@@ -41,7 +41,7 @@ import { DataFreshness, SyntheticDataBanner } from '@/components/results/panels'
 import { postBacktestCompare, type ApiError } from '@/hooks/use-backtest';
 import { useHydrated } from '@/hooks/use-hydrated';
 import { useWorkspace } from '@/store/workspace';
-import { runProvenance, type RunProvenance, type SavedRun } from '@/lib/runs';
+import { runIncoherence, runProvenance, type RunProvenance, type SavedRun } from '@/lib/runs';
 import type { BacktestResult } from '@/lib/backtest';
 import { daysBetween } from '@/lib/market-data/dates';
 import {
@@ -145,7 +145,7 @@ export function CompareView() {
   return (
     <>
       <PageHeader
-        title="Compare"
+        title="Runs"
         description="Saved backtest runs, side by side. Each replays from its own snapshot."
         actions={
           <Button size="lg" onClick={run} disabled={!selected.length || pending}>
@@ -261,18 +261,24 @@ function RunCard({
   onToggle: () => void;
   onDelete: () => void;
 }) {
+  // A snapshot outlives the code that made it. One whose own numbers contradict
+  // each other is not a result, and must not be offered for comparison as
+  // though it were.
+  const incoherent = runIncoherence(run);
+
   return (
     <div
       className={cn(
         'group relative rounded-md border p-3 transition-colors',
         selected ? 'border-primary bg-primary/8' : 'border-border hover:bg-accent/40',
         disabled && 'opacity-40',
+        incoherent && 'border-dashed border-destructive/40 bg-destructive/5',
       )}
     >
       <button
         type="button"
         aria-pressed={selected}
-        disabled={disabled}
+        disabled={disabled || Boolean(incoherent)}
         onClick={onToggle}
         className="w-full text-left focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
       >
@@ -296,9 +302,20 @@ function RunCard({
             </Badge>
           )}
           {run.summary.synthetic && <Badge variant="warning">Synthetic</Badge>}
+          {incoherent && (
+            <Badge variant="negative" title={incoherent}>
+              Unusable
+            </Badge>
+          )}
         </div>
 
-        <dl className="mt-2 grid grid-cols-3 gap-1 text-2xs">
+        {incoherent && (
+          <p className="mt-1.5 text-2xs leading-relaxed text-destructive">
+            {incoherent} It was most likely recorded by an older version; delete it and run again.
+          </p>
+        )}
+
+        <dl className={cn('mt-2 grid grid-cols-3 gap-1 text-2xs', incoherent && 'opacity-50')}>
           <div>
             <dt className="text-muted-foreground">CAGR</dt>
             <dd className="numeric font-medium">{formatPercent(run.summary.cagr, 1)}</dd>

@@ -42,7 +42,7 @@ export function AnalyticsView() {
   return (
     <>
       <PageHeader
-        title="Analytics"
+        title="Studies"
         description="Deeper studies on the portfolio currently loaded in the backtester."
       />
       <PageBody>
