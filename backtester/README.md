@@ -739,7 +739,7 @@ Yahoo throttles without warning, so this is routine rather than exceptional.
 ### Demo mode (synthetic)
 
 ```bash
-npm run dev:demo     # http://localhost:3101
+npm run dev:demo     # same port, synthetic data (stop the real one first)
 ```
 
 A seeded random walk for offline exploration. **It is not market data**, and
@@ -856,7 +856,7 @@ de-duplicated into one fetch.
 ```bash
 npm install
 npm run dev          # port 3100, live Yahoo data
-npm run dev:demo     # port 3101, synthetic data
+npm run dev:demo     # synthetic data, same port — one server at a time
 npm run build && npm start
 npm test             # 621 tests across 29 files
 npm run typecheck

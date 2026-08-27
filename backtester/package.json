@@ -10,7 +10,7 @@
     "test": "vitest run",
     "test:watch": "vitest",
     "typecheck": "tsc --noEmit",
-    "dev:demo": "MARKET_DATA_PROVIDER=demo next dev -p 3101",
+    "dev:demo": "MARKET_DATA_PROVIDER=demo next dev -p 3100",
     "verify:data": "VERIFY_DATA=1 vitest run tests/provider-contract.test.ts",
     "build:universe": "node scripts/build-universe.mjs",
     "record:fixtures": "node scripts/record-tiingo-fixtures.mjs",
@@ -18,8 +18,7 @@
     "db:mirror": "node scripts/mirror-schema.mjs",
     "db:push:test": "SQLITE_URL=\"file:./.cache/test.db\" prisma db push --schema prisma/schema.sqlite.prisma",
     "db:generate": "prisma generate --schema prisma/schema.prisma && prisma generate --schema prisma/schema.sqlite.prisma",
-    "db:migrate": "prisma migrate dev --schema prisma/schema.prisma",
-    "dev:alt": "next dev -p 3102"
+    "db:migrate": "prisma migrate dev --schema prisma/schema.prisma"
   },
   "dependencies": {
     "@auth/prisma-adapter": "^1.6.0",
