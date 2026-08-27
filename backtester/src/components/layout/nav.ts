@@ -1,6 +1,7 @@
 import {
   BarChart3,
   Briefcase,
+  Building2,
   Calculator,
   FlaskConical,
   History,
@@ -94,6 +95,13 @@ export const NAV_GROUPS: NavGroup[] = [
     id: 'analyse',
     label: 'Analyse',
     items: [
+      {
+        href: '/research',
+        label: 'Research',
+        icon: Building2,
+        short: 'Co',
+        hint: 'Company fundamentals from SEC filings',
+      },
       {
         href: '/assets',
         label: 'Holdings',

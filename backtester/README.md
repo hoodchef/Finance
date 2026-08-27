@@ -519,6 +519,48 @@ The engine ignores them at runtime — it works from the raw side — but
 `tests/parity-tiingo.test.ts` checks one against the other, which is the
 strongest parity anchor in the repo.
 
+### Company fundamentals, from the filings
+
+`/research` takes a ticker and reads that company's XBRL facts from **SEC
+EDGAR** — the filings themselves, not a vendor's transcription of them.
+
+Chosen over the alternatives on three grounds, in order of weight:
+
+1. **It is the primary source.** A vendor's fundamentals database is a copy of
+   this with its own errors and its own lag.
+2. **Public domain.** US government work carries no licence, which makes it the
+   only fundamentals source surveyed that a commercial product may show to its
+   users. Alpha Vantage's are personal-use, and its free tier allows 25 requests
+   a day against the five this page needs per company.
+3. **No key**, and a published limit of ten requests a second rather than a
+   daily quota.
+
+Covered: revenue and growth, EPS and growth, gross/operating/net margins, free
+cash flow, the balance sheet, cash and debt, P/E, P/S, P/B, EV/EBITDA, FCF
+yield, dividend yield and payout, ROE, ROIC, share count and dilution, and up to
+nineteen years of history.
+
+**Four bugs that only live data revealed**, each of which produced confident,
+plausible, wrong output:
+
+| Symptom | Cause | Fix |
+| --- | --- | --- |
+| Three different years of Apple revenue labelled 2025 | `fy` is the fiscal year of the FILING, not the period; a 10-K stamps its comparatives with its own year | Label by counting back from the newest period, whose original filing is the only one reliably retained |
+| NVIDIA shown at a quarter of its size, ending 2022 | It switched revenue tags in 2022; taking the first concept with any data dropped every year since | Merge the whole concept chain, resolving per period by latest filing |
+| Apple diluting shareholders 186% while buying back stock | SEC share counts are as-reported and not split-adjusted | Treat a jump over 40% as a split, measure after it, and say so |
+| Apple's market cap as "$4631B" | The compact formatter had no trillion tier | Added one |
+
+**What it does not do.** US filers only — a TSX-only listing files with SEDAR
+and is reported as unsupported rather than shown empty. Valuation is on the last
+full fiscal year, stated on screen, rather than trailing twelve months. And
+there are **no analyst estimates or forward metrics**: no free source surveyed
+licenses them for display, and a fabricated consensus would be worse than an
+absent one.
+
+Where a company did not report something the cell is a dash, never a zero. A
+page that substitutes zero for missing debt reports a flattering EV/EBITDA and
+looks entirely normal doing it.
+
 ### Options data: evaluated, none usable
 
 Surveyed August 2026, and the answer is the price-data finding in sharper

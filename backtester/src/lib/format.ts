@@ -30,6 +30,9 @@ export function formatCurrencyCompact(v: number | null | undefined): string {
   const abs = Math.abs(v);
   // Same reasoning as formatCurrency: no "-$0".
   const sign = v < 0 && abs >= 0.5 ? '-' : '';
+  // Trillions matter here: the largest listed companies are past $4T, and
+  // rendering one as "$4631B" is technically right and unreadable.
+  if (abs >= 1e12) return `${sign}$${(abs / 1e12).toFixed(abs >= 1e13 ? 1 : 2)}T`;
   if (abs >= 1e9) return `${sign}$${(abs / 1e9).toFixed(abs >= 1e10 ? 0 : 1)}B`;
   if (abs >= 1e6) return `${sign}$${(abs / 1e6).toFixed(abs >= 1e7 ? 0 : 1)}M`;
   if (abs >= 1e3) return `${sign}$${(abs / 1e3).toFixed(abs >= 1e4 ? 0 : 1)}K`;

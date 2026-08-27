@@ -18,7 +18,8 @@
     "db:mirror": "node scripts/mirror-schema.mjs",
     "db:push:test": "SQLITE_URL=\"file:./.cache/test.db\" prisma db push --schema prisma/schema.sqlite.prisma",
     "db:generate": "prisma generate --schema prisma/schema.prisma && prisma generate --schema prisma/schema.sqlite.prisma",
-    "db:migrate": "prisma migrate dev --schema prisma/schema.prisma"
+    "db:migrate": "prisma migrate dev --schema prisma/schema.prisma",
+    "dev:alt": "next dev -p 3102"
   },
   "dependencies": {
     "@auth/prisma-adapter": "^1.6.0",

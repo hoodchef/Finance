@@ -307,3 +307,19 @@ describe('analysis exports', () => {
     expect(csv).not.toMatch(/^Current,/m);
   });
 });
+
+describe('compact currency at company scale', () => {
+  it('renders trillions as trillions', () => {
+    // Apple at $4.6T rendered as "$4631B" — correct, and unreadable. The
+    // largest listed companies are exactly the ones people look up.
+    expect(formatCurrencyCompact(4_631_000_000_000)).toBe('$4.63T');
+    expect(formatCurrencyCompact(5_100_000_000_000)).toBe('$5.10T');
+    expect(formatCurrencyCompact(-2_500_000_000_000)).toBe('-$2.50T');
+  });
+
+  it('keeps billions and below unchanged', () => {
+    expect(formatCurrencyCompact(999_000_000_000)).toBe('$999B');
+    expect(formatCurrencyCompact(1_500_000_000)).toBe('$1.5B');
+    expect(formatCurrencyCompact(250_000_000)).toBe('$250M');
+  });
+});

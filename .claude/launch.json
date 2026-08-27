@@ -34,6 +34,17 @@
         "dev:demo"
       ],
       "port": 3101
+    },
+    {
+      "name": "backtester-dev-alt",
+      "runtimeExecutable": "npm",
+      "runtimeArgs": [
+        "--prefix",
+        "backtester",
+        "run",
+        "dev:alt"
+      ],
+      "port": 3102
     }
   ]
 }
