@@ -14,6 +14,7 @@ import {
 import { AlertCircle, Play, RefreshCw, Waves } from 'lucide-react';
 import type { MonteCarloResult, SimMethod } from '@/lib/analysis/montecarlo';
 import { PageBody, PageHeader } from '@/components/layout/app-shell';
+import { ContextBar } from '@/components/layout/context-bar';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
@@ -248,6 +249,26 @@ export function SimulatorView() {
 
   React.useEffect(() => () => controller.current?.abort(), []);
 
+  /**
+   * Run on arrival.
+   *
+   * Landing on an analysis page to be told nothing has been analysed, beside a
+   * button whose only possible use is to analyse it, is a step that exists for
+   * no one. The shared result cache makes the first run cheap when another
+   * surface has already asked the same question.
+   *
+   * Once only: re-running on every settings change would fire a job per
+   * keystroke.
+   */
+  const autoRan = React.useRef(false);
+  React.useEffect(() => {
+    if (autoRan.current) return;
+    if (!draft.positions.some((p) => p.symbol.trim())) return;
+    autoRan.current = true;
+    void run();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [draft.id]);
+
   const sim = data?.simulation;
   const corr = correlated.result;
   const busy = mode === 'assets' ? correlated.status === 'queued' || correlated.status === 'running' : pending;
@@ -295,6 +316,8 @@ export function SimulatorView() {
           </Button>
         }
       />
+
+      <ContextBar />
 
       <PageBody className="grid gap-4 lg:grid-cols-[19rem_minmax(0,1fr)]">
         {/* ---- controls ---- */}

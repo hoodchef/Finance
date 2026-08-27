@@ -2,6 +2,7 @@ import { NextResponse } from 'next/server';
 import { computeDailyReturns, runBacktest } from '@/lib/backtest';
 import { runMonteCarlo, type ResampleMethod } from '@/lib/analysis/montecarlo';
 import { getProvider } from '@/lib/market-data';
+import { sharedBacktest } from '@/lib/backtest-shared';
 import { errorResponse } from '@/lib/api-errors';
 import { parseConfig, parsePortfolio, ValidationError } from '@/lib/validate';
 
@@ -20,12 +21,7 @@ export async function POST(request: Request) {
     const config = parseConfig(body.config);
     const provider = getProvider();
 
-    const historical = await runBacktest({
-      portfolio,
-      config,
-      provider,
-      includeAssetAnalysis: false,
-    });
+    const { result: historical, cached } = await sharedBacktest({ portfolio, config, includeAssetAnalysis: false });
 
     const method: ResampleMethod = body.method === 'iid' ? 'iid' : 'block';
     const years = Math.min(50, Math.max(1, Number(body.years) || 20));

@@ -3,6 +3,7 @@
 import * as React from 'react';
 import { AlertCircle, BarChart3, Plus, Search } from 'lucide-react';
 import { PageBody, PageHeader } from '@/components/layout/app-shell';
+import { ContextBar } from '@/components/layout/context-bar';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
@@ -94,6 +95,8 @@ export function AssetsView() {
           )
         }
       />
+
+      <ContextBar />
 
       <PageBody className="space-y-5">
         <Card>

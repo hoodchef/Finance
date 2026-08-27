@@ -1,6 +1,5 @@
 import { NextResponse } from 'next/server';
-import { runBacktest } from '@/lib/backtest';
-import { getProvider } from '@/lib/market-data';
+import { sharedBacktest } from '@/lib/backtest-shared';
 import { errorResponse } from '@/lib/api-errors';
 import { parseConfig, parsePortfolio } from '@/lib/validate';
 import { universeInfo } from '@/lib/market-data/universe';
@@ -25,10 +24,9 @@ export async function POST(request: Request) {
     const config = parseConfig(body.config);
 
     const started = Date.now();
-    const result = await runBacktest({
+    const { result, cached } = await sharedBacktest({
       portfolio,
       config,
-      provider: getProvider(),
       includeAssetAnalysis: true,
     });
     const elapsedMs = Date.now() - started;
@@ -91,6 +89,7 @@ export async function POST(request: Request) {
         tradingDays: result.series.length,
         transactions: result.transactions.length,
         elapsedMs,
+        cached,
         engineVersion: result.engineVersion,
       },
       metrics: result.metrics,

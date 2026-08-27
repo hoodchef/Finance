@@ -2,6 +2,7 @@ import { NextResponse } from 'next/server';
 import { computeDailyReturns, runBacktest } from '@/lib/backtest';
 import { runMonteCarlo, type SimMethod } from '@/lib/analysis/montecarlo';
 import { getProvider } from '@/lib/market-data';
+import { sharedBacktest } from '@/lib/backtest-shared';
 import { errorResponse } from '@/lib/api-errors';
 import { parseConfig, parsePortfolio, ValidationError } from '@/lib/validate';
 
@@ -43,8 +44,8 @@ export async function POST(request: Request) {
 
     const method: SimMethod = METHODS.includes(body.method) ? body.method : 'block';
 
-    const [historical, daily] = await Promise.all([
-      runBacktest({ portfolio, config, provider, includeAssetAnalysis: false }),
+    const [{ result: historical, cached }, daily] = await Promise.all([
+      sharedBacktest({ portfolio, config, includeAssetAnalysis: false }),
       computeDailyReturns({ portfolio, config, provider }),
     ]);
 

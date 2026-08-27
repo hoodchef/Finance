@@ -3,6 +3,7 @@
 import * as React from 'react';
 import { AlertCircle, CheckCircle2, FlaskConical, Play, XCircle } from 'lucide-react';
 import { PageBody, PageHeader } from '@/components/layout/app-shell';
+import { ContextBar } from '@/components/layout/context-bar';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
@@ -143,6 +144,16 @@ export function LabView() {
 
   React.useEffect(() => () => controller.current?.abort(), []);
 
+  // Inspect on arrival; see the note in the Simulator. Once only.
+  const autoRan = React.useRef(false);
+  React.useEffect(() => {
+    if (autoRan.current) return;
+    if (!draft.positions.some((p) => p.symbol.trim())) return;
+    autoRan.current = true;
+    void run();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [draft.id]);
+
   const checks = data ? buildChecks(data) : [];
   const failing = checks.filter((c) => !c.passed);
 
@@ -167,6 +178,8 @@ export function LabView() {
           </Button>
         }
       />
+
+      <ContextBar />
 
       <PageBody className="space-y-4">
         {error && (
