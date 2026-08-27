@@ -276,3 +276,74 @@ describe('dilution across a split', () => {
     expect(d.changePct).toBeLessThan(0);
   });
 });
+
+describe('placeholder zeros in balance-sheet totals', () => {
+  /**
+   * Regression: Coca-Cola's research page reported 2007 shareholders' equity as
+   * $0. EDGAR really does carry that fact — value 0 at 2006-12-31 and
+   * 2007-12-31 for StockholdersEquityIncludingPortionAttributableToNoncontroll-
+   * ingInterest, both filed with the 2009 10-K, with the first real figure
+   * (20,862,000,000) at 2008-12-31. They come from the statement of shareowners'
+   * equity tagging comparative years the statement does not actually present.
+   *
+   * A company that filed a 10-K does not have equity of exactly nil to the
+   * dollar, so the figure is absent rather than zero. A missing figure and a
+   * figure of zero say very different things, and only one of them is true.
+   */
+  const instant = (endYear: number, val: number): Point => ({
+    end: `${endYear}-09-30`,
+    val,
+    fy: 2009,
+    fp: 'FY',
+    form: '10-K',
+    filed: '2010-02-26',
+  });
+
+  const revenues = [year(2007, 28857, 2009, '2010-02-26'), year(2008, 31944, 2009, '2010-02-26')];
+
+  it('omits an equity figure of exactly zero rather than reporting $0', () => {
+    const { rows } = buildAnnualRows(
+      facts({
+        Revenues: revenues,
+        StockholdersEquityIncludingPortionAttributableToNoncontrollingInterest: [
+          instant(2007, 0),
+          instant(2008, 20862000000),
+        ],
+      }),
+    );
+    expect(rows.find((r) => r.end === '2007-09-30')?.equity).toBeNull();
+    expect(rows.find((r) => r.end === '2008-09-30')?.equity).toBe(20862000000);
+  });
+
+  it('does not report a return on equity built on the placeholder', () => {
+    // The divide-by-zero guard already blanked ROE, but the $0 equity itself
+    // still rendered, which was the visible falsehood.
+    const { rows } = buildAnnualRows(
+      facts({
+        Revenues: revenues,
+        NetIncomeLoss: [year(2007, 5981, 2009, '2010-02-26')],
+        StockholdersEquity: [instant(2007, 0), instant(2008, 20862000000)],
+      }),
+    );
+    const y = rows.find((r) => r.end === '2007-09-30');
+    expect(y?.equity).toBeNull();
+    expect(y?.roe).toBeNull();
+  });
+
+  it('drops placeholder zeros in total assets too', () => {
+    const { rows } = buildAnnualRows(
+      facts({ Revenues: revenues, Assets: [instant(2007, 0), instant(2008, 40519000000)] }),
+    );
+    expect(rows.find((r) => r.end === '2007-09-30')?.assets).toBeNull();
+    expect(rows.find((r) => r.end === '2008-09-30')?.assets).toBe(40519000000);
+  });
+
+  it('keeps a genuine zero debt balance, which is a real thing to report', () => {
+    // A debt-free company is meaningful and must not be blanked out by the same
+    // rule that removes balance-sheet placeholders.
+    const { rows } = buildAnnualRows(
+      facts({ Revenues: revenues, LongTermDebtNoncurrent: [instant(2008, 0)] }),
+    );
+    expect(rows.find((r) => r.end === '2008-09-30')?.totalDebt).toBe(0);
+  });
+});

@@ -27,7 +27,12 @@ function escape(value: unknown): string {
   return /[",\n]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s;
 }
 
-function toCsv(rows: Array<Array<string | number | null | undefined>>): string {
+/**
+ * Shared so that every CSV the platform emits quotes identically. Duplicated
+ * escaping is how one exporter learns to handle a comma in a company name and
+ * another does not.
+ */
+export function toCsv(rows: Array<Array<string | number | null | undefined>>): string {
   return rows.map((r) => r.map(escape).join(',')).join('\n');
 }
 

@@ -11,7 +11,7 @@ import {
   XAxis,
   YAxis,
 } from 'recharts';
-import { AlertCircle, Building2, Check, LineChart, Plus } from 'lucide-react';
+import { AlertCircle, Building2, Check, Download, LineChart, Plus } from 'lucide-react';
 import { PageBody, PageHeader } from '@/components/layout/app-shell';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
@@ -23,55 +23,17 @@ import { Stat } from '@/components/ui/stat';
 import { AXIS_PROPS, ChartFrame, GRID_PROPS } from '@/components/charts/chart-chrome';
 import { formatCurrencyCompact, formatPercent } from '@/lib/format';
 import { cn, seriesColor, uid } from '@/lib/utils';
+import { buildFundamentalsCsv } from '@/lib/export/fundamentals-csv';
+import type { Dilution, Valuation, YearRow } from '@/lib/fundamentals/metrics';
+import { downloadCsv, safeFilename } from '@/lib/export/csv';
 import { useWorkspace } from '@/store/workspace';
 import Link from 'next/link';
-
-interface YearRow {
-  fiscalYear: number;
-  end: string;
-  revenue: number | null;
-  grossProfit: number | null;
-  operatingIncome: number | null;
-  netIncome: number | null;
-  epsDiluted: number | null;
-  operatingCashFlow: number | null;
-  capex: number | null;
-  freeCashFlow: number | null;
-  assets: number | null;
-  liabilities: number | null;
-  equity: number | null;
-  cash: number | null;
-  totalDebt: number | null;
-  sharesDiluted: number | null;
-  dividendsPaid: number | null;
-  grossMargin: number | null;
-  operatingMargin: number | null;
-  netMargin: number | null;
-  fcfMargin: number | null;
-  roe: number | null;
-  roic: number | null;
-  revenueGrowth: number | null;
-  epsGrowth: number | null;
-}
 
 interface Response {
   company: { ticker: string; name: string; cik: string };
   rows: YearRow[];
-  valuation: {
-    price: number;
-    marketCap: number | null;
-    enterpriseValue: number | null;
-    peRatio: number | null;
-    psRatio: number | null;
-    pbRatio: number | null;
-    evToEbitda: number | null;
-    fcfYield: number | null;
-    dividendYield: number | null;
-    payoutRatio: number | null;
-    sharesOutstanding: number | null;
-    basis: string;
-  } | null;
-  dilution: { changePct: number | null; years: number; splitNote: string | null } | null;
+  valuation: Valuation | null;
+  dilution: Dilution | null;
   price: { close: number; asOf: string | null } | null;
   priceNote: string | null;
   provenance: {
@@ -154,6 +116,14 @@ export function ResearchView() {
     draft.positions.some(
       (p) => p.symbol.trim().toUpperCase() === data.company.ticker.toUpperCase(),
     );
+
+  function exportCsv() {
+    if (!data) return;
+    downloadCsv(
+      `${safeFilename(data.company.ticker)}-fundamentals.csv`,
+      buildFundamentalsCsv(data),
+    );
+  }
 
   function addToPortfolio() {
     if (!data || alreadyHeld) return;
@@ -262,6 +232,10 @@ export function ResearchView() {
               )}
 
               <div className="ml-auto flex items-center gap-2">
+                <Button size="sm" variant="outline" onClick={exportCsv}>
+                  <Download className="h-3 w-3" />
+                  CSV
+                </Button>
                 {alreadyHeld ? (
                   <Button size="sm" variant="outline" asChild>
                     <Link href="/backtest">

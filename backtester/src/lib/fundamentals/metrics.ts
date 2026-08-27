@@ -128,6 +128,27 @@ export function buildAnnualRows(facts: CompanyFacts): {
     return s;
   };
 
+  /**
+   * Drops balance-sheet totals reported as exactly zero.
+   *
+   * A company that filed a 10-K does not have zero total assets, zero total
+   * liabilities, or equity of exactly nil to the dollar. Those zeros come from
+   * the statement of shareowners' equity, where a roll-forward line is tagged
+   * for comparative years that the statement does not actually present —
+   * Coca-Cola carries `StockholdersEquityIncludingPortionAttributableToNon-
+   * controllingInterest` of 0 at both 2006-12-31 and 2007-12-31, filed with the
+   * 2009 10-K, and then 20,862,000,000 at 2008-12-31 where the real balance
+   * sheet begins. Rendered literally, the research page reported Coca-Cola's
+   * 2007 equity as $0.
+   *
+   * A missing figure and a figure of zero say very different things, and only
+   * one of them is true here, so the placeholder becomes "not reported".
+   *
+   * Deliberately NOT applied to debt or cash: a company with no debt is a real
+   * and important thing to be able to see, and zeroing it out would hide it.
+   */
+  const withoutPlaceholderZeros = (points: AnnualPoint[]) => points.filter((p) => p.value !== 0);
+
   const revenue = series('revenue', C.revenue);
   const grossProfit = series('grossProfit', C.grossProfit);
   const operatingIncome = series('operatingIncome', C.operatingIncome);
@@ -138,9 +159,9 @@ export function buildAnnualRows(facts: CompanyFacts): {
   const dividends = series('dividendsPaid', C.dividendsPaid);
   const sharesD = series('sharesDiluted', C.sharesDiluted);
 
-  const assets = series('assets', C.assets, true);
-  const liabilities = series('liabilities', C.liabilities, true);
-  const equity = series('equity', C.equity, true);
+  const assets = withoutPlaceholderZeros(series('assets', C.assets, true));
+  const liabilities = withoutPlaceholderZeros(series('liabilities', C.liabilities, true));
+  const equity = withoutPlaceholderZeros(series('equity', C.equity, true));
   const cash = series('cash', C.cash, true);
   const ltDebt = series('longTermDebt', C.longTermDebt, true);
   const stDebt = series('shortTermDebt', C.shortTermDebt, true);

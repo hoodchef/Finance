@@ -9,6 +9,8 @@ import { formatCurrency, formatCurrencyCompact } from '../src/lib/format';
 import { runBacktest, type BacktestResult } from '../src/lib/backtest';
 import { DemoDataProvider } from '../src/lib/market-data/demo';
 import { testConfig } from './helpers';
+import { buildFundamentalsCsv, type FundamentalsExport } from '@/lib/export/fundamentals-csv';
+import type { YearRow } from '@/lib/fundamentals/metrics';
 
 /**
  * Export is the boundary where numbers leave the product, so the tests care
@@ -321,5 +323,102 @@ describe('compact currency at company scale', () => {
     expect(formatCurrencyCompact(999_000_000_000)).toBe('$999B');
     expect(formatCurrencyCompact(1_500_000_000)).toBe('$1.5B');
     expect(formatCurrencyCompact(250_000_000)).toBe('$250M');
+  });
+});
+
+describe('fundamentals CSV', () => {
+  /**
+   * The point of this exporter is that a figure keeps its provenance when it
+   * leaves the app. A spreadsheet full of unlabelled fundamentals is how a
+   * restated 2019 number ends up in someone's model as current.
+   */
+  const row = (over: Partial<YearRow> & { fiscalYear: number; end: string }): YearRow =>
+    ({
+      revenue: null, grossProfit: null, operatingIncome: null, netIncome: null,
+      epsDiluted: null, operatingCashFlow: null, capex: null, freeCashFlow: null,
+      assets: null, liabilities: null, equity: null, cash: null, totalDebt: null,
+      sharesDiluted: null, dividendsPaid: null, grossMargin: null,
+      operatingMargin: null, netMargin: null, fcfMargin: null, roe: null,
+      roic: null, revenueGrowth: null, epsGrowth: null,
+      ...over,
+    }) as YearRow;
+
+  const base: FundamentalsExport = {
+    company: { ticker: 'AAPL', name: 'Apple Inc.', cik: '0000320193' },
+    rows: [
+      row({ fiscalYear: 2023, end: '2023-09-30', revenue: 383285000000, netMargin: 0.2530962 }),
+      row({ fiscalYear: 2024, end: '2024-09-28', revenue: 391035000000, netMargin: 0.2397125 }),
+    ],
+    valuation: null,
+    dilution: null,
+    price: null,
+    provenance: {
+      financials: 'SEC EDGAR XBRL company facts, from the filings themselves',
+      latestFilingDate: '2024-11-01',
+      priceSource: null,
+      conceptsUsed: [{ field: 'revenue', concept: 'RevenueFromContractWithCustomerExcludingAssessedTax' }],
+      estimatesNote: 'No free source licenses analyst estimates for display.',
+    },
+  };
+
+  it('writes figures unrounded, not as the page abbreviates them', () => {
+    const csv = buildFundamentalsCsv(base);
+    // The page shows "$391.0B"; a spreadsheet must receive what was filed.
+    expect(csv).toContain('391035000000');
+    expect(csv).toContain('0.2397125');
+    expect(csv).not.toContain('391.0B');
+  });
+
+  it('leaves missing figures empty rather than writing null', () => {
+    const csv = buildFundamentalsCsv(base);
+    // "null" in a numeric column is a text cell that silently breaks a formula.
+    expect(csv).not.toMatch(/\bnull\b/);
+    expect(csv).toMatch(/2024,2024-09-28,391035000000,,/);
+  });
+
+  it('lays years out as rows, oldest first', () => {
+    const lines = buildFundamentalsCsv(base).split('\n');
+    const header = lines.findIndex((l) => l.startsWith('Fiscal year,'));
+    expect(header).toBeGreaterThan(-1);
+    expect(lines[header + 1]).toMatch(/^2023,/);
+    expect(lines[header + 2]).toMatch(/^2024,/);
+  });
+
+  it('carries the source, the filing it was read from, and the XBRL concepts', () => {
+    const csv = buildFundamentalsCsv(base);
+    expect(csv).toContain('SEC EDGAR XBRL company facts');
+    expect(csv).toContain('2024-11-01');
+    // Companies switch tags mid-history; which tag produced a column is the
+    // difference between a comparable series and a broken one.
+    expect(csv).toContain('RevenueFromContractWithCustomerExcludingAssessedTax');
+  });
+
+  it('quotes a company name containing a comma', () => {
+    const csv = buildFundamentalsCsv({
+      ...base,
+      company: { ticker: 'F', name: 'Ford Motor Company, Inc.', cik: '0000037996' },
+    });
+    // The whole field is quoted, so the comma inside it is data rather than a
+    // column break — a naive split on commas would read three cells here.
+    expect(csv.split('\n')[0]).toBe('Company,"Ford Motor Company, Inc."');
+  });
+
+  it('includes the split note when a split shortened the dilution window', () => {
+    const csv = buildFundamentalsCsv({
+      ...base,
+      dilution: { changePct: -0.12, years: 4, from: 1e9, to: 8.8e8, splitNote: 'Window starts after a share split.' },
+    });
+    expect(csv).toContain('Window starts after a share split.');
+  });
+
+  it('omits the valuation block entirely when no price was available', () => {
+    // Better an absent section than a section of empty ratios that reads as
+    // "we looked and the answer is nothing".
+    expect(buildFundamentalsCsv(base)).not.toContain('EV/EBITDA');
+    expect(buildFundamentalsCsv({ ...base, valuation: {
+      price: 227.52, sharesOutstanding: 15.1e9, marketCap: 3.4e12, enterpriseValue: 3.5e12,
+      peRatio: 36.2, psRatio: 8.8, pbRatio: 51.4, evToEbitda: 26.1, fcfYield: 0.0296,
+      dividendYield: 0.0044, payoutRatio: 0.159, basis: 'Last full fiscal year',
+    } })).toContain('EV/EBITDA');
   });
 });
