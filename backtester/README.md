@@ -535,6 +535,56 @@ Recorded in `lib/market-data/licence.ts` as `OPTIONS_SOURCES_EVALUATED`, with a
 test asserting every entry carries a blocker — so the search is not repeated,
 and so nothing gets integrated without the terms being read.
 
+### Describing a portfolio to a local model
+
+Optional, off unless a local Ollama daemon answers on `127.0.0.1:11434`. It
+turns *"a 60/40 with a gold sleeve, tested since 2010"* into a proposed
+portfolio and configuration.
+
+**Local specifically, not incidentally.** The proposition of this product is
+that a user's income, province and net worth never leave their machine.
+A hosted model would break the one property nothing else here breaks.
+
+```bash
+ollama pull llama3.2        # OLLAMA_MODEL to use another
+```
+
+**Input only, and the boundary is the whole safety argument.** The model
+chooses tickers and weights; it never produces a figure that reaches a result
+and never writes prose about one. Its answer is treated exactly like a shared
+link — hostile until parsed — and goes through `parsePositions` and
+`parseConfig`, the same functions a typed request uses. A hallucinated
+allocation cannot reach the engine by a route a typed one could not.
+
+What it will *not* do is narrate a backtest. Every figure in this application
+traces to a computation, and a model writing commentary is a fabrication engine
+aimed precisely at that. The failure has a shape already seen here: Alpha
+Vantage's free options endpoint returns a populated, parseable payload the
+response itself labels artificial. Plausible output with nothing behind it is
+the hazard, and no validator catches it — so there is no code path to one.
+
+Three things happen that a form does not need:
+
+- **Every symbol is checked against the local 13,000-symbol universe.** A model
+  will confidently invent a plausible ticker, and an invented ticker otherwise
+  fails much later as a provider error that reads like an outage. Unrecognised
+  symbols are flagged on the review screen instead.
+- **Weights that do not sum to 100 are reported, not normalised.** Silently
+  rescaling would hide that the request was misread.
+- **Nothing is applied.** The proposal is rendered for review, with every
+  defaulted field named and the model's own stated uncertainty shown, and the
+  user presses Use. A misread request produces a wrong screen, not a wrong
+  portfolio.
+
+**The live path is unverified.** Ollama was not installed on the machine this
+was written on. Every branch of the client is tested against a stubbed daemon —
+absence, a daemon missing the model, a refusal, and the three ways a small
+model returns something other than the JSON it was asked for — and the
+interpretation boundary is tested against invented tickers, unbalanced weights,
+numbers as strings, dates as prose and negative weights. What has not been
+confirmed is that a real model produces usable JSON often enough to be pleasant.
+A smaller model may not.
+
 ### Parity fixtures are not redistributable
 
 The Tiingo recordings that back `tests/parity-tiingo.test.ts` are gitignored.
