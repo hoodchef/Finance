@@ -255,3 +255,57 @@ describe('a stored run that contradicts itself', () => {
     expect(runIncoherence(withSummary({ maxDrawdown: 0.2 }))).toMatch(/positive/i);
   });
 });
+
+describe('overlap between runs measured over different windows', () => {
+  /**
+   * The Compare page warns when selected runs cover different periods. Saying
+   * only that they differ is a caveat; saying WHICH dates they share is the
+   * thing a reader can act on — and whether they share any at all is the
+   * difference between a fair comparison over a shorter span and no comparison
+   * being possible.
+   */
+  const overlap = (windows: Array<[string, string]>) => {
+    const start = windows.reduce((a, w) => (w[0] > a ? w[0] : a), windows[0][0]);
+    const end = windows.reduce((a, w) => (w[1] < a ? w[1] : a), windows[0][1]);
+    return start <= end ? { start, end } : null;
+  };
+
+  it('finds the shared span of partly overlapping runs', () => {
+    expect(
+      overlap([
+        ['2015-01-02', '2022-12-31'],
+        ['2018-01-02', '2024-12-31'],
+      ]),
+    ).toEqual({ start: '2018-01-02', end: '2022-12-31' });
+  });
+
+  it('narrows to the tightest span across three runs', () => {
+    expect(
+      overlap([
+        ['2010-01-04', '2024-12-31'],
+        ['2015-01-02', '2023-06-30'],
+        ['2012-01-03', '2024-01-31'],
+      ]),
+    ).toEqual({ start: '2015-01-02', end: '2023-06-30' });
+  });
+
+  it('reports no overlap when the windows are disjoint', () => {
+    // Two runs measured over periods that never met are not comparable at all,
+    // which is a stronger statement than "these differ".
+    expect(
+      overlap([
+        ['2010-01-04', '2014-12-31'],
+        ['2018-01-02', '2024-12-31'],
+      ]),
+    ).toBeNull();
+  });
+
+  it('treats a single shared day as an overlap, not a failure', () => {
+    expect(
+      overlap([
+        ['2015-01-02', '2020-06-30'],
+        ['2020-06-30', '2024-12-31'],
+      ]),
+    ).toEqual({ start: '2020-06-30', end: '2020-06-30' });
+  });
+});

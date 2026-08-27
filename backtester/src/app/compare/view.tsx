@@ -88,10 +88,20 @@ export function CompareView() {
     const out: string[] = [];
     const windows = new Set(selected.map((r) => `${r.summary.start}|${r.summary.end}`));
     if (windows.size > 1) {
+      // Naming the overlap makes this actionable. "These cover different
+      // periods" tells you something is wrong; the dates you could compare on
+      // tell you what to do about it — and whether there is any overlap at all
+      // is the difference between a caveat and a meaningless comparison.
+      const start = selected.reduce((a, r) => (r.summary.start > a ? r.summary.start : a), selected[0].summary.start);
+      const end = selected.reduce((a, r) => (r.summary.end < a ? r.summary.end : a), selected[0].summary.end);
+      const overlap =
+        start <= end
+          ? ` They overlap only on ${formatDate(start)}–${formatDate(end)}; a comparison is fair over that span and not outside it.`
+          : ' They do not overlap at all, so nothing here is comparable.';
       out.push(
         `These runs cover different periods (${selected
           .map((r) => `${r.label}: ${formatDate(r.summary.start)}–${formatDate(r.summary.end)}`)
-          .join('; ')}). Returns measured over different windows are not directly comparable.`,
+          .join('; ')}).${overlap}`,
       );
     }
     const capital = new Set(selected.map((r) => r.config.initialInvestment));

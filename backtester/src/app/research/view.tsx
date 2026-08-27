@@ -11,7 +11,7 @@ import {
   XAxis,
   YAxis,
 } from 'recharts';
-import { AlertCircle, Building2 } from 'lucide-react';
+import { AlertCircle, Building2, Check, LineChart, Plus } from 'lucide-react';
 import { PageBody, PageHeader } from '@/components/layout/app-shell';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
@@ -22,7 +22,9 @@ import { Skeleton } from '@/components/ui/skeleton';
 import { Stat } from '@/components/ui/stat';
 import { AXIS_PROPS, ChartFrame, GRID_PROPS } from '@/components/charts/chart-chrome';
 import { formatCurrencyCompact, formatPercent } from '@/lib/format';
-import { cn, seriesColor } from '@/lib/utils';
+import { cn, seriesColor, uid } from '@/lib/utils';
+import { useWorkspace } from '@/store/workspace';
+import Link from 'next/link';
 
 interface YearRow {
   fiscalYear: number;
@@ -133,6 +135,39 @@ export function ResearchView() {
   const v = data?.valuation ?? null;
   const last = rows[rows.length - 1];
 
+  /**
+   * Research was a dead end: it told you what a company reported and left you
+   * to retype the ticker somewhere else to do anything with it. The same shape
+   * as the optimiser before it could apply an allocation.
+   *
+   * Adding is deliberately additive and weightless — a new holding lands at 0%
+   * so nothing already in the portfolio is silently rescaled. Equal-weighting
+   * or setting a number is a decision for the builder, not a side effect of
+   * looking a company up.
+   */
+  const draft = useWorkspace((s) => s.draft);
+  const addPosition = useWorkspace((s) => s.addPosition);
+  const [added, setAdded] = React.useState<string | null>(null);
+
+  const alreadyHeld =
+    data != null &&
+    draft.positions.some(
+      (p) => p.symbol.trim().toUpperCase() === data.company.ticker.toUpperCase(),
+    );
+
+  function addToPortfolio() {
+    if (!data || alreadyHeld) return;
+    addPosition({
+      id: uid('pos'),
+      symbol: data.company.ticker,
+      name: data.company.name,
+      weight: 0,
+    });
+    setAdded(data.company.ticker);
+    window.setTimeout(() => setAdded(null), 2500);
+  }
+
+
   const chartData = React.useMemo(
     () =>
       recent.map((r) => ({
@@ -225,6 +260,31 @@ export function ResearchView() {
                   · price ${data.price.close.toFixed(2)} on {data.price.asOf}
                 </span>
               )}
+
+              <div className="ml-auto flex items-center gap-2">
+                {alreadyHeld ? (
+                  <Button size="sm" variant="outline" asChild>
+                    <Link href="/backtest">
+                      <LineChart className="h-3 w-3" />
+                      Already in {draft.name || 'your portfolio'}
+                    </Link>
+                  </Button>
+                ) : (
+                  <Button size="sm" variant="outline" onClick={addToPortfolio}>
+                    {added === data.company.ticker ? (
+                      <>
+                        <Check className="h-3 w-3" />
+                        Added at 0%
+                      </>
+                    ) : (
+                      <>
+                        <Plus className="h-3 w-3" />
+                        Add to portfolio
+                      </>
+                    )}
+                  </Button>
+                )}
+              </div>
             </div>
 
             {/* Valuation */}
