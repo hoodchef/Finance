@@ -12,7 +12,7 @@ import {
   XAxis,
   YAxis,
 } from 'recharts';
-import { AlertCircle, Play, RefreshCw, Scale } from 'lucide-react';
+import { AlertCircle, Check, Play, RefreshCw, Scale } from 'lucide-react';
 import type { BacktestConfig, Portfolio } from '@/lib/types';
 import type { OptimisedPortfolio } from '@/lib/analysis/optimise';
 import { Button } from '@/components/ui/button';
@@ -22,6 +22,7 @@ import { EmptyState } from '@/components/ui/empty-state';
 import { Skeleton } from '@/components/ui/skeleton';
 import { AXIS_PROPS, ChartFrame, GRID_PROPS } from '@/components/charts/chart-chrome';
 import { formatPercent } from '@/lib/format';
+import { useWorkspace } from '@/store/workspace';
 import { cn } from '@/lib/utils';
 
 interface Response {
@@ -82,6 +83,31 @@ export function OptimiserPanel({
   const controller = React.useRef<AbortController | null>(null);
 
   const priced = portfolio.positions.filter((p) => p.symbol.trim()).length;
+  const draft = useWorkspace((s) => s.draft);
+  const setDraft = useWorkspace((s) => s.setDraft);
+  const [applied, setApplied] = React.useState<string | null>(null);
+
+  /**
+   * Adopts a suggested allocation into the working portfolio.
+   *
+   * Without this the panel is a dead end: it tells you a better mix existed
+   * and leaves you to retype it. Weights are matched by SYMBOL rather than by
+   * position, because the optimiser only ever sees priced holdings — a cash
+   * sleeve or an unpriced row is not in its output and must keep whatever it
+   * had rather than being silently dropped.
+   */
+  function apply(key: MethodKey, symbols: string[], weights: number[]) {
+    const bySymbol = new Map(symbols.map((sym, i) => [sym.toUpperCase(), weights[i] * 100]));
+    setDraft({
+      ...draft,
+      positions: draft.positions.map((p) => {
+        const w = bySymbol.get(p.symbol.trim().toUpperCase());
+        return w === undefined ? p : { ...p, weight: Math.round(w * 10) / 10 };
+      }),
+    });
+    setApplied(key);
+    window.setTimeout(() => setApplied(null), 2500);
+  }
 
   async function run() {
     controller.current?.abort();
@@ -198,7 +224,8 @@ export function OptimiserPanel({
                   <th className="py-2 pr-3 text-right font-medium">Return</th>
                   <th className="py-2 pr-3 text-right font-medium">Risk</th>
                   <th className="py-2 pr-3 text-right font-medium">Sharpe</th>
-                  <th className="py-2 text-right font-medium">Spread</th>
+                  <th className="py-2 pr-3 text-right font-medium">Spread</th>
+                  <th className="py-2" />
                 </tr>
               </thead>
               <tbody>
@@ -210,7 +237,7 @@ export function OptimiserPanel({
                         {formatPercent(w, 0)}
                       </td>
                     ))}
-                    <td className="numeric py-2 pr-3 text-right text-muted-foreground" colSpan={4}>
+                    <td className="numeric py-2 pr-3 text-right text-muted-foreground" colSpan={5}>
                       as it stands
                     </td>
                   </tr>
@@ -244,12 +271,28 @@ export function OptimiserPanel({
                       </td>
                       <td
                         className={cn(
-                          'numeric py-2 text-right',
+                          'numeric py-2 pr-3 text-right',
                           spread < 2.5 && 'text-[hsl(var(--warning))]',
                         )}
                         title="Effective number of holdings. Well below the real count means the solution is a concentrated bet."
                       >
                         {spread.toFixed(1)} of {data.symbols.length}
+                      </td>
+                      <td className="py-2 text-right">
+                        <Button
+                          size="sm"
+                          variant="outline"
+                          onClick={() => apply(key, data.symbols, p.weights)}
+                        >
+                          {applied === key ? (
+                            <>
+                              <Check className="h-3 w-3" />
+                              Applied
+                            </>
+                          ) : (
+                            'Apply'
+                          )}
+                        </Button>
                       </td>
                     </tr>
                   );
@@ -293,6 +336,11 @@ export function OptimiserPanel({
               minimum variance and risk parity, which use no expected returns at all, are usually
               the more trustworthy answers &mdash; and maximum Sharpe, which reads best on paper,
               is the one to doubt.
+            </p>
+            <p className="mt-1.5 text-muted-foreground">
+              Applying one of these rewrites the weights in your working portfolio &mdash;
+              symbols the optimiser never saw, such as a cash sleeve, keep what they had. Nothing
+              is saved until you save it, and the Backtest page will re-run against the new mix.
             </p>
             <p className="mt-1.5 text-muted-foreground">
               Fitted to{' '}

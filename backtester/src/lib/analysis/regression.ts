@@ -302,3 +302,73 @@ export function regress(input: RegressionInput): RegressionResult {
     residualStdDev: Math.sqrt(sigma2),
   };
 }
+
+
+/* ------------------------------------------------------------------ */
+/* Rolling                                                             */
+/* ------------------------------------------------------------------ */
+
+export interface RollingWindow {
+  /** Index of the last observation in the window. */
+  endIndex: number;
+  /** Coefficient per regressor, excluding the intercept. */
+  betas: Record<string, number>;
+  alphaAnnualised: number;
+  rSquared: number;
+}
+
+/**
+ * Refits the regression over a sliding window.
+ *
+ * A single full-sample fit reports one number per factor for the whole
+ * history. A portfolio that was 90% equity for five years and 40% for the next
+ * five gets a market beta that describes neither period — the average of two
+ * things it never was. Rolling the window shows the drift, which is usually
+ * the more interesting answer and is the only way to see a strategy change at
+ * all.
+ *
+ * Windows are stepped rather than computed at every observation: consecutive
+ * daily fits overlap by all but one day and differ by less than the noise in
+ * either, so the extra work buys a smoother line and no extra information.
+ */
+export function rollingRegression(
+  input: RegressionInput & { window: number; step?: number },
+): RollingWindow[] {
+  const names = Object.keys(input.x);
+  const n = input.y.length;
+  const window = Math.max(names.length + 10, Math.floor(input.window));
+  const step = Math.max(1, Math.floor(input.step ?? Math.max(1, Math.round(window / 20))));
+
+  if (n < window) {
+    throw new RegressionError(
+      `A ${window}-observation window needs at least that many points; this has ${n}. ` +
+        'Shorten the window or widen the date range.',
+    );
+  }
+
+  const out: RollingWindow[] = [];
+  for (let end = window; end <= n; end += step) {
+    const from = end - window;
+    const slice: RegressionInput = {
+      y: input.y.slice(from, end),
+      x: Object.fromEntries(names.map((k) => [k, input.x[k].slice(from, end)])),
+      periodsPerYear: input.periodsPerYear,
+      // Newey–West lags are chosen from the window, not the whole sample.
+      lags: undefined,
+    };
+    try {
+      const fit = regress(slice);
+      out.push({
+        endIndex: end - 1,
+        betas: Object.fromEntries(fit.betas.map((b) => [b.name, b.estimate])),
+        alphaAnnualised: fit.alphaAnnualised,
+        rSquared: fit.rSquared,
+      });
+    } catch {
+      // A window can be collinear where the full sample is not — a factor that
+      // barely moved over those months. Skipping beats reporting a fabricated
+      // loading for it.
+    }
+  }
+  return out;
+}
