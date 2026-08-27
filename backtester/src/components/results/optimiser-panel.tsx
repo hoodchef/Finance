@@ -12,7 +12,7 @@ import {
   XAxis,
   YAxis,
 } from 'recharts';
-import { AlertCircle, Check, Play, RefreshCw, Scale } from 'lucide-react';
+import { AlertCircle, Check, Download, Play, RefreshCw, Scale } from 'lucide-react';
 import type { BacktestConfig, Portfolio } from '@/lib/types';
 import type { OptimisedPortfolio } from '@/lib/analysis/optimise';
 import { Button } from '@/components/ui/button';
@@ -23,6 +23,7 @@ import { Skeleton } from '@/components/ui/skeleton';
 import { AXIS_PROPS, ChartFrame, GRID_PROPS } from '@/components/charts/chart-chrome';
 import { formatPercent } from '@/lib/format';
 import { useWorkspace } from '@/store/workspace';
+import { buildOptimisationCsv, downloadCsv, safeFilename } from '@/lib/export/csv';
 import { cn } from '@/lib/utils';
 
 interface Response {
@@ -142,6 +143,20 @@ export function OptimiserPanel({
 
   React.useEffect(() => () => controller.current?.abort(), []);
 
+  function exportCsv() {
+    if (!data) return;
+    downloadCsv(
+      `${safeFilename(draft.name || 'portfolio')}-allocation.csv`,
+      buildOptimisationCsv({
+        symbols: data.symbols,
+        current: data.current,
+        portfolios: data.portfolios,
+        frontier: data.frontier,
+        estimate: data.estimate,
+      }),
+    );
+  }
+
   const frontier = React.useMemo(
     () =>
       data?.frontier.map((p) => ({
@@ -167,6 +182,13 @@ export function OptimiserPanel({
               support.
             </p>
           </div>
+          <div className="flex shrink-0 items-center gap-2">
+          {data && (
+            <Button variant="outline" onClick={exportCsv}>
+              <Download />
+              Export
+            </Button>
+          )}
           <Button onClick={run} disabled={pending}>
             {pending ? (
               <>
@@ -180,6 +202,7 @@ export function OptimiserPanel({
               </>
             )}
           </Button>
+          </div>
         </div>
       </CardHeader>
 

@@ -1,5 +1,10 @@
 import { describe, expect, it } from 'vitest';
-import { buildCsv, safeFilename } from '../src/lib/export/csv';
+import {
+  buildCsv,
+  buildOptimisationCsv,
+  buildSimulationCsv,
+  safeFilename,
+} from '../src/lib/export/csv';
 import { formatCurrency, formatCurrencyCompact } from '../src/lib/format';
 import { runBacktest, type BacktestResult } from '../src/lib/backtest';
 import { DemoDataProvider } from '../src/lib/market-data/demo';
@@ -196,5 +201,109 @@ describe('currency formatting never shows a negative zero', () => {
   it('leaves positive values untouched', () => {
     expect(formatCurrency(1234.56)).toMatch(/1,235|1,234/);
     expect(formatCurrencyCompact(1_500_000)).toBe('$1.5M');
+  });
+});
+
+describe('analysis exports', () => {
+  const sim = {
+    method: 'block',
+    paths: 2000,
+    years: 30,
+    parameters: {
+      expectedReturn: 0.0937,
+      volatility: 0.1074,
+      expectedReturnSource: 'history',
+      volatilitySource: 'assumed',
+      inflation: 0.025,
+    },
+    terminal: { p5: 50_000, p25: 90_000, median: 123_000, p75: 190_000, p95: 303_000 },
+    terminalReal: { p5: 24_000, median: 59_000, p95: 145_000 },
+    successRate: 0.93,
+    medianRuinYear: 22.4,
+    bands: [
+      { year: 0, p5: 10_000, median: 10_000, p95: 10_000, contributed: 10_000 },
+      { year: 1, p5: 9_100, median: 10_900, p95: 12_800, contributed: 10_000 },
+    ],
+    historical: { start: '2015-01-05', end: '2024-12-31', cagr: 0.087, volatility: 0.1076 },
+  };
+
+  it('leads with the parameters that produced it', () => {
+    // A backtest can be reproduced by re-running it. A simulation depends on a
+    // method and a set of assumptions that cannot be recovered from a column
+    // of outcomes, so they travel with the file.
+    const csv = buildSimulationCsv(sim);
+    expect(csv).toMatch(/Simulation parameters/);
+    expect(csv).toMatch(/Method,block/);
+    expect(csv).toMatch(/Paths,2000/);
+    // And crucially, whether each figure was measured or asserted.
+    expect(csv).toMatch(/Expected return \(annual\),0\.0937,history/);
+    expect(csv).toMatch(/Volatility \(annual\),0\.1074,assumed/);
+  });
+
+  it('carries the backtest it was grounded in', () => {
+    const csv = buildSimulationCsv(sim);
+    expect(csv).toMatch(/Grounded in a backtest of/);
+    expect(csv).toMatch(/2015-01-05/);
+  });
+
+  it('reports nominal and real outcomes side by side', () => {
+    const csv = buildSimulationCsv(sim);
+    // Reporting only nominal terminal values would overstate every long
+    // horizon by the compounded price level.
+    expect(csv).toMatch(/Median,123000,59000/);
+    expect(csv).toMatch(/Today's dollars/);
+  });
+
+  it('includes the yearly bands and the depletion figures', () => {
+    const csv = buildSimulationCsv(sim);
+    expect(csv).toMatch(/Money lasts \(fraction of paths\),0\.93/);
+    expect(csv).toMatch(/Median year of depletion,22\.4/);
+    const lines = csv.split('\n');
+    expect(lines.some((l) => l.startsWith('1,9100,10900,12800,10000'))).toBe(true);
+  });
+
+  it('handles a simulation with no depletion and no backtest', () => {
+    const csv = buildSimulationCsv({ ...sim, medianRuinYear: null, historical: undefined });
+    expect(csv).toMatch(/Median year of depletion,/);
+    expect(csv).not.toMatch(/Grounded in a backtest/);
+  });
+
+  const opt = {
+    symbols: ['SPY', 'BND'],
+    current: [0.6, 0.4],
+    portfolios: {
+      minimumVariance: { weights: [0.05, 0.95], expectedReturn: 0.019, volatility: 0.061, sharpe: -0.18, concentration: 0.905 },
+      riskParity: { weights: [0.24, 0.76], expectedReturn: 0.047, volatility: 0.071, sharpe: 0.24, concentration: 0.635 },
+    },
+    frontier: [
+      { volatility: 0.061, expectedReturn: 0.019, sharpe: -0.18 },
+      { volatility: 0.12, expectedReturn: 0.08, sharpe: 0.42 },
+    ],
+    estimate: { observations: 2515, shrinkage: 0.023, from: '2015-01-05', to: '2024-12-31' },
+  };
+
+  it('exports every allocation against the one already held', () => {
+    const csv = buildOptimisationCsv(opt);
+    expect(csv).toMatch(/Allocation,SPY,BND/);
+    expect(csv).toMatch(/^Current,0\.6,0\.4/m);
+    expect(csv).toMatch(/^minimumVariance,0\.05,0\.95/m);
+    expect(csv).toMatch(/^riskParity,0\.24,0\.76/m);
+  });
+
+  it('records what the estimate was fitted to', () => {
+    const csv = buildOptimisationCsv(opt);
+    expect(csv).toMatch(/Observations,2515/);
+    expect(csv).toMatch(/Shrinkage intensity,0\.023/);
+  });
+
+  it('includes the frontier as its own block', () => {
+    const csv = buildOptimisationCsv(opt);
+    expect(csv).toMatch(/Efficient frontier/);
+    expect(csv).toMatch(/^0\.12,0\.08,0\.42$/m);
+  });
+
+  it('omits the current row when there is no current allocation', () => {
+    const csv = buildOptimisationCsv({ ...opt, current: null });
+    expect(csv).not.toMatch(/^Current,/m);
   });
 });

@@ -11,7 +11,7 @@ import {
   XAxis,
   YAxis,
 } from 'recharts';
-import { AlertCircle, Play, RefreshCw, Waves } from 'lucide-react';
+import { AlertCircle, Download, Play, RefreshCw, Waves } from 'lucide-react';
 import type { MonteCarloResult, SimMethod } from '@/lib/analysis/montecarlo';
 import { PageBody, PageHeader } from '@/components/layout/app-shell';
 import { ContextBar } from '@/components/layout/context-bar';
@@ -32,6 +32,7 @@ import {
 } from '@/components/ui/select';
 import { AXIS_PROPS, ChartFrame, GRID_PROPS } from '@/components/charts/chart-chrome';
 import { formatCurrency, formatCurrencyCompact, formatPercent } from '@/lib/format';
+import { buildSimulationCsv, downloadCsv, safeFilename } from '@/lib/export/csv';
 import { CorrelationGrid } from '@/components/results/correlation-grid';
 import { useJob } from '@/hooks/use-job';
 import { useWorkspace } from '@/store/workspace';
@@ -270,6 +271,31 @@ export function SimulatorView() {
   }, [draft.id]);
 
   const sim = data?.simulation;
+
+  /**
+   * A simulation depends on a seed, a method and a set of assumptions that are
+   * easy to forget and impossible to recover from the chart. The export leads
+   * with all of them, so a file found later can be read for what it says.
+   */
+  function exportCsv() {
+    if (!sim || !data) return;
+    downloadCsv(
+      `${safeFilename(draft.name || 'portfolio')}-simulation.csv`,
+      buildSimulationCsv({
+        method: sim.method,
+        paths: sim.paths,
+        years: sim.years,
+        parameters: sim.parameters,
+        terminal: sim.terminal,
+        terminalReal: sim.terminalReal,
+        successRate: sim.successRate,
+        medianRuinYear: sim.medianRuinYear,
+        bands: sim.bands,
+        historical: data.historical,
+      }),
+    );
+  }
+
   const corr = correlated.result;
   const busy = mode === 'assets' ? correlated.status === 'queued' || correlated.status === 'running' : pending;
   const busyElapsed = mode === 'assets' ? correlated.elapsedSeconds : 0;
@@ -297,7 +323,14 @@ export function SimulatorView() {
         title="Simulator"
         description="Take this portfolio's measured behaviour forward, or replace any part of it with an assumption and see what that costs."
         actions={
-          <Button onClick={run} disabled={busy}>
+          <>
+            {sim && (
+              <Button variant="outline" onClick={exportCsv}>
+                <Download />
+                Export
+              </Button>
+            )}
+            <Button onClick={run} disabled={busy}>
             {busy ? (
               <>
                 <span className="h-3.5 w-3.5 animate-spin rounded-full border-2 border-current border-t-transparent" />
@@ -313,7 +346,8 @@ export function SimulatorView() {
                 {hasResult ? 'Rerun' : 'Simulate'}
               </>
             )}
-          </Button>
+            </Button>
+          </>
         }
       />
 
