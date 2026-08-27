@@ -43,6 +43,22 @@
     --ring: 205 88% 44%;
     --grid: 220 14% 92%;
 
+    --series-0: #0284c7;
+    --series-1: #7c3aed;
+    --series-2: #059669;
+    --series-3: #d97706;
+    --series-4: #e11d48;
+    --series-5: #0891b2;
+    --series-6: #9333ea;
+    --series-7: #16a34a;
+    --series-8: #ea580c;
+    --series-9: #db2777;
+    --series-10: #2563eb;
+    --series-11: #0d9488;
+    --series-12: #ca8a04;
+    --series-13: #c026d3;
+    --series-14: #64748b;
+
     --radius: 0.5rem;
   }
 
@@ -80,12 +96,131 @@
     --input: 220 13% 20%;
     --ring: 199 88% 56%;
     --grid: 220 13% 16%;
+
+    --series-0: #38bdf8;
+    --series-1: #a78bfa;
+    --series-2: #34d399;
+    --series-3: #fbbf24;
+    --series-4: #fb7185;
+    --series-5: #22d3ee;
+    --series-6: #c084fc;
+    --series-7: #4ade80;
+    --series-8: #f97316;
+    --series-9: #f472b6;
+    --series-10: #60a5fa;
+    --series-11: #2dd4bf;
+    --series-12: #facc15;
+    --series-13: #e879f9;
+    --series-14: #94a3b8;
+  }
+
+  /**
+   * Terminal.
+   *
+   * Amber-on-black, the way a monochrome monitor rendered numbers before
+   * colour was assumed. It is not a novelty: this application is almost
+   * entirely figures, and a single-hue palette on a near-black ground removes
+   * every colour cue that is not carrying information.
+   *
+   * Amber over the more obvious green because green is already load-bearing
+   * here — it means a gain. Building the chrome from the same hue as one of
+   * the two signals that matter would make a rising portfolio invisible
+   * against its own frame.
+   *
+   * Gains and losses therefore keep a green and a red, pushed toward the
+   * phosphor end and kept far enough apart in lightness to survive on a
+   * black background and in monochrome.
+   */
+  .terminal {
+    --background: 30 12% 4%;
+    --foreground: 39 65% 78%;
+
+    --card: 30 12% 6.5%;
+    --card-foreground: 39 65% 78%;
+
+    --popover: 30 12% 8%;
+    --popover-foreground: 39 65% 80%;
+
+    --primary: 38 96% 58%;
+    --primary-foreground: 30 20% 6%;
+    --primary-muted: 38 40% 14%;
+
+    --secondary: 34 14% 13%;
+    --secondary-foreground: 39 60% 82%;
+
+    --muted: 34 12% 11%;
+    --muted-foreground: 38 22% 55%;
+
+    --accent: 34 16% 15%;
+    --accent-foreground: 39 65% 84%;
+
+    --destructive: 4 78% 56%;
+    --destructive-foreground: 30 20% 6%;
+
+    --positive: 128 62% 52%;
+    --negative: 4 82% 62%;
+    --warning: 45 96% 58%;
+
+    --border: 36 16% 16%;
+    --input: 36 16% 19%;
+    --ring: 38 96% 58%;
+    --grid: 36 14% 12%;
+
+    --series-0: #f5a623;
+    --series-1: #8ae234;
+    --series-2: #7fd1e8;
+    --series-3: #ffd479;
+    --series-4: #c8e6a0;
+    --series-5: #e8b04b;
+    --series-6: #5fb336;
+    --series-7: #a8d8ea;
+    --series-8: #ffe9b0;
+    --series-9: #9dc46a;
+    --series-10: #d99a2b;
+    --series-11: #6ecf3f;
+    --series-12: #bfe3f0;
+    --series-13: #f0c674;
+    --series-14: #8a8578;
   }
 }
 
 @layer base {
   * {
     @apply border-border;
+  }
+
+  /* The whole surface in one face, with tabular figures so columns line up. */
+  .terminal body,
+  .terminal button,
+  .terminal input,
+  .terminal select,
+  .terminal textarea {
+    font-family: var(--font-mono);
+    font-variant-numeric: tabular-nums;
+    letter-spacing: -0.01em;
+  }
+
+  /* A faint scanline, well under the threshold where it costs legibility. */
+  .terminal body::before {
+    content: '';
+    position: fixed;
+    inset: 0;
+    z-index: 50;
+    pointer-events: none;
+    background: repeating-linear-gradient(
+      to bottom,
+      hsl(38 96% 58% / 0.022) 0px,
+      hsl(38 96% 58% / 0.022) 1px,
+      transparent 1px,
+      transparent 3px
+    );
+  }
+
+  /* Anyone who has asked for less motion has also asked for less of this. */
+  @media (prefers-reduced-motion: reduce) {
+    .terminal body::before {
+      display: none;
+    }
   }
 
   html {

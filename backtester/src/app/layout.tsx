@@ -24,7 +24,15 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
   return (
     <html lang="en" suppressHydrationWarning>
       <body>
-        <ThemeProvider attribute="class" defaultTheme="dark" enableSystem disableTransitionOnChange>
+        <ThemeProvider
+          attribute="class"
+          defaultTheme="dark"
+          enableSystem
+          disableTransitionOnChange
+          // next-themes only applies a class for themes it knows about, and
+          // "system" must stay in the list or the system option stops working.
+          themes={['light', 'dark', 'terminal', 'system']}
+        >
           <TooltipProvider delayDuration={200} skipDelayDuration={400}>
             <AppShell>{children}</AppShell>
           </TooltipProvider>

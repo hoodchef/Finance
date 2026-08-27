@@ -82,6 +82,27 @@ export function BacktestWorkspace() {
     }
   }, [validHoldings.length, pending, run, draft, config, saveRun]);
 
+  /**
+   * Run on arrival, once.
+   *
+   * The page opened on an empty Results panel beside a button whose only use
+   * was to fill it. The shared result cache makes this nearly free when
+   * another surface has already asked the same question.
+   *
+   * Deliberately not reactive to edits: this is the page where the portfolio
+   * is edited, and re-running on every change would fire a backtest per
+   * keystroke. `stale` already marks a result as out of date, and the button
+   * stays for re-running on purpose.
+   */
+  const autoRan = React.useRef(false);
+  React.useEffect(() => {
+    if (!hydrated || autoRan.current) return;
+    if (result != null || pending) return;
+    if (validHoldings.length === 0) return;
+    autoRan.current = true;
+    void onRun();
+  }, [hydrated, result, pending, validHoldings.length, onRun]);
+
   // A shared link is untrusted input, so it goes through the same validation a
   // typed request does before any of it reaches the store.
   React.useEffect(() => {

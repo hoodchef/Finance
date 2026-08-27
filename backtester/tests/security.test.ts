@@ -148,3 +148,45 @@ describe('the options-data evaluation is recorded, not just remembered', () => {
     expect(entries.some((e) => e.commercial === 'permitted')).toBe(false);
   });
 });
+
+describe('theming is complete for every theme', () => {
+  it('defines the same tokens in light, dark and terminal', () => {
+    const css = fs.readFileSync(path.join(SRC, 'app/globals.css'), 'utf8');
+    const blockFor = (selector: string) => {
+      const i = css.indexOf(selector);
+      expect(i, `${selector} block missing`).toBeGreaterThan(-1);
+      return css.slice(i, css.indexOf('\n  }', i));
+    };
+    const tokens = (block: string) =>
+      new Set([...block.matchAll(/(--[a-z0-9-]+):/g)].map(([, name]) => name));
+
+    // Structural tokens live only on :root and are inherited deliberately —
+    // a theme is a palette, not a different typeface or corner radius.
+    const STRUCTURAL = new Set(['--font-sans', '--font-mono', '--radius']);
+    const light = new Set([...tokens(blockFor(':root {'))].filter((t) => !STRUCTURAL.has(t)));
+    // A theme missing a token silently inherits whichever value :root left
+    // behind — usually a colour mixed for a different background.
+    for (const selector of ['.dark {', '.terminal {']) {
+      const other = tokens(blockFor(selector));
+      const missing = [...light].filter((t) => !other.has(t));
+      expect(missing, `${selector} is missing ${missing.join(', ')}`).toHaveLength(0);
+    }
+  });
+
+  it('gives every theme a full series palette', () => {
+    const css = fs.readFileSync(path.join(SRC, 'app/globals.css'), 'utf8');
+    // Charts read these by index; a short palette wraps and two series collide.
+    expect((css.match(/--series-0:/g) ?? []).length).toBe(3);
+    expect((css.match(/--series-14:/g) ?? []).length).toBe(3);
+  });
+
+  it('offers the terminal theme and registers it with the provider', () => {
+    // next-themes only applies a class for themes it is told about, so the
+    // toggle and the provider have to agree or the option does nothing.
+    expect(fs.readFileSync(path.join(SRC, 'components/layout/theme-toggle.tsx'), 'utf8'))
+      .toMatch(/value: 'terminal'/);
+    expect(fs.readFileSync(path.join(SRC, 'app/layout.tsx'), 'utf8')).toMatch(
+      /themes=\{\[[^\]]*'terminal'/,
+    );
+  });
+});
