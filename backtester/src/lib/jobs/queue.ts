@@ -1,5 +1,8 @@
+import fs from 'node:fs';
+import path from 'node:path';
+
 /**
- * In-process job queue for long computations.
+ * Job queue for long computations, durable across restarts.
  * =============================================================================
  * A backtest against two providers takes ~20 seconds cold. Held open as a
  * synchronous request that is a connection blocked for 20 seconds, a client
@@ -9,12 +12,20 @@
  * This accepts the work, returns an id immediately, and runs it with a
  * concurrency limit. The client polls.
  *
- * WHAT THIS IS NOT: durable. Jobs live in the process, so a restart loses
- * them and a second server instance cannot see them. That is a deliberate
- * stopping point — the alternative is Redis or a database table plus a worker,
- * which is real infrastructure and should not be added until something is
- * actually deployed. The interface below is the part that would survive that
- * move; only `store` would change.
+ * Finished jobs are mirrored to disk, so a dev-server restart — or a crash
+ * mid-analysis — no longer throws away a result that took twenty seconds to
+ * compute. The store is a plain JSON file under the cache directory, which
+ * keeps the zero-setup promise: no Redis, no database, nothing to run.
+ *
+ * WHAT THIS STILL IS NOT: shared. A second server instance has its own file
+ * and its own memory, so this does not distribute work. That genuinely needs
+ * Redis or a database table plus a worker, and should not be added until
+ * something is actually deployed. The interface below is the part that would
+ * survive that move; only the persistence swaps out.
+ *
+ * A job that was RUNNING when the process died is resurrected as failed, not
+ * as running. Anything else leaves a job that no worker owns, polling forever
+ * against a promise nobody is keeping.
  */
 
 export type JobStatus = 'queued' | 'running' | 'done' | 'failed';
@@ -48,6 +59,64 @@ const MAX_PENDING = 64;
 const jobs = new Map<string, Entry<unknown>>();
 const waiting: string[] = [];
 let active = 0;
+
+/* ------------------------------------------------------------------ */
+/* Persistence                                                         */
+/* ------------------------------------------------------------------ */
+
+function storePath(): string {
+  const dir = process.env.MARKET_DATA_CACHE_DIR ?? '.cache/market-data';
+  const base = path.isAbsolute(dir) ? dir : path.join(process.cwd(), dir);
+  return path.join(base, 'jobs.json');
+}
+
+/** Only settled jobs are worth persisting; the rest cannot survive anyway. */
+function persist(): void {
+  try {
+    const settled = [...jobs.values()]
+      .filter((j) => j.status === 'done' || j.status === 'failed')
+      .map(({ run: _run, ...rest }) => rest);
+    const file = storePath();
+    fs.mkdirSync(path.dirname(file), { recursive: true });
+    // Written via a temp file and renamed: a half-written store read back on
+    // the next boot would throw away every result, not just the newest.
+    const tmp = `${file}.tmp`;
+    fs.writeFileSync(tmp, JSON.stringify(settled));
+    fs.renameSync(tmp, file);
+  } catch {
+    // Persistence failing must never fail the job that triggered it.
+  }
+}
+
+let restored = false;
+
+/** Reads the store once per process, dropping anything already expired. */
+function restore(): void {
+  if (restored) return;
+  restored = true;
+  try {
+    const raw = fs.readFileSync(storePath(), 'utf8');
+    const parsed = JSON.parse(raw) as Array<Job<unknown>>;
+    const cutoff = Date.now() - RETENTION_MS;
+    for (const job of parsed) {
+      if (!job?.id || typeof job.id !== 'string') continue;
+      if (job.finishedAt !== null && job.finishedAt < cutoff) continue;
+      jobs.set(job.id, {
+        ...job,
+        // A job cannot be resumed — the closure that would run it did not
+        // survive the restart — so it must never claim it is still working.
+        status: job.status === 'done' ? 'done' : 'failed',
+        error: job.status === 'done' ? null : (job.error ?? 'Interrupted by a restart.'),
+        queuePosition: null,
+        run: async () => {
+          throw new Error('restored');
+        },
+      } as Entry<unknown>);
+    }
+  } catch {
+    // No store, or an unreadable one. Starting empty is correct.
+  }
+}
 
 export class QueueFullError extends Error {}
 
@@ -102,6 +171,7 @@ function pump(): void {
       .finally(() => {
         entry.finishedAt = Date.now();
         active--;
+        persist();
         sweep();
         pump();
       });
@@ -110,6 +180,7 @@ function pump(): void {
 
 /** Queues work and returns immediately. */
 export function enqueue<T>(kind: string, run: () => Promise<T>): Job<T> {
+  restore();
   sweep();
   const pending = [...jobs.values()].filter(
     (j) => j.status === 'queued' || j.status === 'running',
@@ -138,6 +209,7 @@ export function enqueue<T>(kind: string, run: () => Promise<T>): Job<T> {
 }
 
 export function getJob<T = unknown>(id: string): Job<T> | undefined {
+  restore();
   const entry = jobs.get(id) as Entry<T> | undefined;
   return entry ? publicView(entry) : undefined;
 }
@@ -149,6 +221,7 @@ export function queueStats(): {
   retained: number;
   maxConcurrent: number;
 } {
+  restore();
   return {
     active,
     queued: waiting.length,
@@ -162,4 +235,13 @@ export function __resetQueue(): void {
   jobs.clear();
   waiting.length = 0;
   active = 0;
+  restored = true; // Tests supply their own state rather than reading the store.
+}
+
+/** Test seam: forces the next call to read the store from disk again. */
+export function __reloadQueue(): void {
+  jobs.clear();
+  waiting.length = 0;
+  active = 0;
+  restored = false;
 }

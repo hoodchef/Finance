@@ -360,8 +360,9 @@ export function LabView() {
                 </div>
                 <p className="text-2xs leading-relaxed text-muted-foreground">
                   Simulations and correlated runs are queued rather than held open on the request.
-                  Jobs live in this process, so a restart loses them and a second server instance
-                  would not see them &mdash; that is the current limit, not a bug.
+                  Finished results are written to disk, so a restart no longer discards a
+                  computation that took twenty seconds. What this still does not do is share work:
+                  a second server instance has its own store and its own memory.
                 </p>
               </CardContent>
             </Card>
