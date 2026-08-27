@@ -122,8 +122,13 @@ export function buildAnnualRows(facts: CompanyFacts): {
   conceptsUsed: ConceptUse[];
 } {
   const conceptsUsed: ConceptUse[] = [];
-  const series = (field: string, concepts: readonly string[], instant = false) => {
-    const s = annualSeries(facts, [...concepts], { instant });
+  const series = (
+    field: string,
+    concepts: readonly string[],
+    instant = false,
+    filedCap?: Map<string, string>,
+  ) => {
+    const s = annualSeries(facts, [...concepts], { instant, filedCap });
     if (s.length) conceptsUsed.push({ field, concept: s[0].concept });
     return s;
   };
@@ -159,12 +164,23 @@ export function buildAnnualRows(facts: CompanyFacts): {
   const dividends = series('dividendsPaid', C.dividendsPaid);
   const sharesD = series('sharesDiluted', C.sharesDiluted);
 
+  /*
+   * Total assets dates the balance sheet.
+   *
+   * It is the one line every balance sheet reports, so the filing that most
+   * recently stated it is the most recent reading of the statement as a whole.
+   * The other lines are then taken as of that reading: each still resolves to
+   * its own newest value, but none may come from a later filing than the one
+   * total assets came from. See the note on `filedCap` in sec.ts.
+   */
   const assets = withoutPlaceholderZeros(series('assets', C.assets, true));
-  const liabilities = withoutPlaceholderZeros(series('liabilities', C.liabilities, true));
-  const equity = withoutPlaceholderZeros(series('equity', C.equity, true));
-  const cash = series('cash', C.cash, true);
-  const ltDebt = series('longTermDebt', C.longTermDebt, true);
-  const stDebt = series('shortTermDebt', C.shortTermDebt, true);
+  const asOf = new Map(assets.map((p) => [p.end, p.filed]));
+
+  const liabilities = withoutPlaceholderZeros(series('liabilities', C.liabilities, true, asOf));
+  const equity = withoutPlaceholderZeros(series('equity', C.equity, true, asOf));
+  const cash = series('cash', C.cash, true, asOf);
+  const ltDebt = series('longTermDebt', C.longTermDebt, true, asOf);
+  const stDebt = series('shortTermDebt', C.shortTermDebt, true, asOf);
 
   const maps = {
     revenue: byEnd(revenue),

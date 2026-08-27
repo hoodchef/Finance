@@ -347,3 +347,107 @@ describe('placeholder zeros in balance-sheet totals', () => {
     expect(rows.find((r) => r.end === '2008-09-30')?.totalDebt).toBe(0);
   });
 });
+
+describe('a balance sheet that adds up', () => {
+  /**
+   * Both cases below are real, and both produced a balance sheet on screen
+   * whose liabilities plus equity exceeded its total assets — which nothing
+   * legitimate causes. Noncontrolling and mezzanine interests make assets
+   * exceed liabilities-plus-equity; nothing makes it go the other way.
+   */
+  const instant = (end: string, val: number, filed: string, form = '10-K'): Point => ({
+    end,
+    val,
+    fy: Number(end.slice(0, 4)),
+    fp: 'FY',
+    form,
+    filed,
+  });
+
+  it('honours a restatement filed as a 10-K/A', () => {
+    // Apple restated fiscal 2008 in a 10-K/A filed 2010-01-25, cutting total
+    // liabilities from 18,542 to 13,874. Excluding amendments kept the
+    // superseded figure while assets and equity moved on.
+    const s = annualSeries(
+      facts({
+        Liabilities: [
+          instant('2008-09-27', 18542, '2009-10-27'),
+          instant('2008-09-27', 13874, '2010-01-25', '10-K/A'),
+        ],
+      }),
+      ['Liabilities'],
+      { instant: true },
+    );
+    expect(s).toHaveLength(1);
+    expect(s[0].value).toBe(13874);
+  });
+
+  it('does not take equity from a filing newer than the balance sheet it sits on', () => {
+    // Microsoft's equity at 2016-06-30 was restated to 83,090 in the fiscal
+    // 2018 10-K. That filing never re-reported assets or liabilities for the
+    // date — the equity statement runs three years where the balance sheet
+    // runs two — so the restated figure had no balance sheet to belong to.
+    const { rows } = buildAnnualRows(
+      facts({
+        Revenues: [year(2016, 91154, 2016, '2016-07-28')],
+        Assets: [
+          instant('2016-09-30', 193694, '2016-07-28'),
+          instant('2016-09-30', 193468, '2017-08-02'),
+        ],
+        Liabilities: [
+          instant('2016-09-30', 121697, '2016-07-28'),
+          instant('2016-09-30', 121471, '2017-08-02'),
+        ],
+        StockholdersEquity: [
+          instant('2016-09-30', 71997, '2016-07-28'),
+          instant('2016-09-30', 71997, '2017-08-02'),
+          instant('2016-09-30', 83090, '2018-08-03'),
+        ],
+      }),
+    );
+    const r = rows[0];
+    expect(r.equity).toBe(71997);
+    expect(r.assets).toBe(193468);
+    expect(r.liabilities! + r.equity!).toBe(r.assets);
+  });
+
+  it('still uses a line whose newest filing is older than the balance sheet', () => {
+    // The cap is a ceiling, not a requirement to match. Apple's restated
+    // liabilities were never re-reported after the 10-K/A, and that figure is
+    // current — nothing has restated it since.
+    const { rows } = buildAnnualRows(
+      facts({
+        Revenues: [year(2008, 37491, 2008, '2009-10-27')],
+        Assets: [
+          instant('2008-09-30', 39572, '2009-10-27'),
+          instant('2008-09-30', 36171, '2010-10-27'),
+        ],
+        Liabilities: [
+          instant('2008-09-30', 18542, '2009-10-27'),
+          instant('2008-09-30', 13874, '2010-01-25', '10-K/A'),
+        ],
+        StockholdersEquity: [
+          instant('2008-09-30', 21030, '2009-10-27'),
+          instant('2008-09-30', 22297, '2010-10-27'),
+        ],
+      }),
+    );
+    const r = rows[0];
+    expect(r.liabilities).toBe(13874);
+    expect(r.equity).toBe(22297);
+    expect(r.liabilities! + r.equity!).toBe(r.assets);
+  });
+
+  it('leaves the balance sheet alone when total assets are not reported', () => {
+    // With no anchor there is no cap, and the figures resolve as before rather
+    // than disappearing.
+    const { rows } = buildAnnualRows(
+      facts({
+        Revenues: [year(2016, 91154, 2016, '2016-07-28')],
+        StockholdersEquity: [instant('2016-09-30', 83090, '2018-08-03')],
+      }),
+    );
+    expect(rows[0].equity).toBe(83090);
+    expect(rows[0].assets).toBeNull();
+  });
+});
