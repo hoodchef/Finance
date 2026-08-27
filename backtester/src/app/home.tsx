@@ -9,6 +9,7 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { EmptyState } from '@/components/ui/empty-state';
 import { AllocationBar } from '@/components/builder/allocation-bar';
+import { SavingsFlow } from '@/components/planner/savings-flow';
 import { useHydrated } from '@/hooks/use-hydrated';
 import { useWorkspace } from '@/store/workspace';
 import { PRESETS } from '@/lib/presets';
@@ -49,6 +50,13 @@ export function DashboardHome() {
       />
 
       <PageBody className="space-y-6">
+        {/*
+          The allocation answer first, the way CanPath originally opened.
+          A launchpad of links put the one question the product exists to
+          answer behind a click; this asks three things and answers it.
+        */}
+        <SavingsFlow />
+
         {/*
           The journey, stated once.
           The nav groups these but does not explain how they connect, and a
