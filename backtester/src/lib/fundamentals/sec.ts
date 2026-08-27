@@ -35,6 +35,12 @@ function userAgent(): string {
   return process.env.SEC_USER_AGENT?.trim() || 'CanPath fundamentals research (contact via repo)';
 }
 
+/** Exported so the filings feed reaches EDGAR the same way, with the same
+ * contact header SEC asks for and the same error mapping. */
+export async function secGetJson<T>(url: string, timeoutMs = 20_000): Promise<T> {
+  return getJson<T>(url, timeoutMs);
+}
+
 async function getJson<T>(url: string, timeoutMs = 20_000): Promise<T> {
   const ac = new AbortController();
   const timer = setTimeout(() => ac.abort(), timeoutMs);

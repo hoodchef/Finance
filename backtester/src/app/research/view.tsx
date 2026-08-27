@@ -18,6 +18,7 @@ import { Badge } from '@/components/ui/badge';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { EmptyState } from '@/components/ui/empty-state';
 import { TickerSearch } from '@/components/builder/ticker-search';
+import { CompanyNews } from '@/components/research/company-news';
 import { Skeleton } from '@/components/ui/skeleton';
 import { Stat } from '@/components/ui/stat';
 import { AXIS_PROPS, ChartFrame, GRID_PROPS } from '@/components/charts/chart-chrome';
@@ -493,6 +494,11 @@ export function ResearchView() {
                 </table>
               </CardContent>
             </Card>
+
+            {/* News. Keyed on the ticker so switching companies remounts it
+                rather than showing the previous company's headlines while the
+                new ones load. */}
+            <CompanyNews key={data.company.ticker} ticker={data.company.ticker} />
 
             {/* Provenance */}
             <div className="rounded-md border border-border bg-muted/40 p-3 text-2xs leading-relaxed text-muted-foreground">
