@@ -62,8 +62,13 @@ export class RegressionError extends Error {}
 /* Linear algebra                                                      */
 /* ------------------------------------------------------------------ */
 
-/** Inverts a small symmetric positive-definite matrix by Gauss–Jordan. */
-function invert(a: number[][]): number[][] {
+/**
+ * Inverts a small symmetric positive-definite matrix by Gauss–Jordan.
+ *
+ * Exported because the optimiser needs the same inverse of the same kind of
+ * matrix; a second implementation would be a second thing to get wrong.
+ */
+export function invert(a: number[][]): number[][] {
   const n = a.length;
   // Work on a copy augmented with the identity.
   const m = a.map((row, i) => [...row, ...Array.from({ length: n }, (_, j) => (i === j ? 1 : 0))]);

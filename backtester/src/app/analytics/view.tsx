@@ -27,6 +27,7 @@ import { DataFreshness } from '@/components/results/panels';
 import { ScenarioPanel } from '@/components/results/scenario-panel';
 import { MonteCarloPanel } from '@/components/results/montecarlo-panel';
 import { FactorPanel } from '@/components/results/factor-panel';
+import { OptimiserPanel } from '@/components/results/optimiser-panel';
 import { useHydrated } from '@/hooks/use-hydrated';
 import { useWorkspace } from '@/store/workspace';
 import { formatCurrency, formatDate, formatNumber, formatPercent } from '@/lib/format';
@@ -67,6 +68,7 @@ export function AnalyticsView() {
             <TabsList>
               <TabsTrigger value="rebalancing">Rebalancing</TabsTrigger>
               <TabsTrigger value="montecarlo">Monte Carlo</TabsTrigger>
+              <TabsTrigger value="allocation">Allocation</TabsTrigger>
               <TabsTrigger value="factors">Factors</TabsTrigger>
               <TabsTrigger value="scenario">Scenarios</TabsTrigger>
             </TabsList>
@@ -77,6 +79,13 @@ export function AnalyticsView() {
 
             <TabsContent value="montecarlo">
               <MonteCarloPanel
+                portfolio={{ id: draft.id, name: draft.name, positions: draft.positions }}
+                config={config}
+              />
+            </TabsContent>
+
+            <TabsContent value="allocation">
+              <OptimiserPanel
                 portfolio={{ id: draft.id, name: draft.name, positions: draft.positions }}
                 config={config}
               />
