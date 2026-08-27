@@ -182,6 +182,76 @@
     --series-13: #f0c674;
     --series-14: #8a8578;
   }
+
+  /**
+   * Bloomberg.
+   *
+   * The terminal theme is one hue on black; this is the other convention a
+   * trading desk knows — black ground, ORANGE for labels and chrome, CYAN for
+   * data, and hard green and red for direction.
+   *
+   * The split is the point and it is not decoration: on a Bloomberg screen the
+   * colour tells you what KIND of thing you are looking at before you read it.
+   * Labels are orange, figures are cyan, and anything green or red is a
+   * movement. That is a different job from the terminal theme, where a single
+   * phosphor means every distinction has to come from position and weight.
+   *
+   * Denser than the other themes too — a desk display is read at a glance
+   * across a lot of numbers, not scrolled.
+   */
+  .bloomberg {
+    --background: 0 0% 0%;
+    --foreground: 190 75% 76%;
+
+    --card: 220 20% 5%;
+    --card-foreground: 190 75% 76%;
+
+    --popover: 220 20% 7%;
+    --popover-foreground: 190 75% 78%;
+
+    --primary: 33 100% 55%;
+    --primary-foreground: 0 0% 4%;
+    --primary-muted: 33 60% 13%;
+
+    --secondary: 220 18% 12%;
+    --secondary-foreground: 33 90% 62%;
+
+    --muted: 220 16% 10%;
+    /* Muted text is dimmed ORANGE, not grey: on this ground grey reads as
+       disabled, and these are labels. */
+    --muted-foreground: 33 45% 58%;
+
+    --accent: 220 18% 14%;
+    --accent-foreground: 33 95% 66%;
+
+    --destructive: 0 85% 55%;
+    --destructive-foreground: 0 0% 100%;
+
+    --positive: 130 75% 48%;
+    --negative: 0 90% 60%;
+    --warning: 45 100% 55%;
+
+    --border: 215 22% 16%;
+    --input: 215 22% 20%;
+    --ring: 33 100% 55%;
+    --grid: 215 20% 12%;
+
+    --series-0: #ff9e1b;
+    --series-1: #4fc3f7;
+    --series-2: #66bb6a;
+    --series-3: #ef5350;
+    --series-4: #ba68c8;
+    --series-5: #ffd54f;
+    --series-6: #4dd0e1;
+    --series-7: #aed581;
+    --series-8: #ff8a65;
+    --series-9: #f06292;
+    --series-10: #7986cb;
+    --series-11: #4db6ac;
+    --series-12: #dce775;
+    --series-13: #9575cd;
+    --series-14: #90a4ae;
+  }
 }
 
 @layer base {
@@ -194,7 +264,12 @@
   .terminal button,
   .terminal input,
   .terminal select,
-  .terminal textarea {
+  .terminal textarea,
+  .bloomberg body,
+  .bloomberg button,
+  .bloomberg input,
+  .bloomberg select,
+  .bloomberg textarea {
     font-family: var(--font-mono);
     font-variant-numeric: tabular-nums;
     letter-spacing: -0.01em;
@@ -214,6 +289,36 @@
       transparent 1px,
       transparent 3px
     );
+  }
+
+  /*
+   * The colour convention, applied structurally rather than per component:
+   * anything tabular-numeric is DATA and reads cyan; table headers and small
+   * caps labels are CHROME and read orange. Components did not need changing
+   * for this, which is the test of whether the token set was right.
+   *
+   * Toned figures are excluded. A blanket rule on .numeric out-specified the
+   * app's existing positive/negative colouring and turned every gain cyan —
+   * flattening the one distinction a trading palette exists to make, and doing
+   * it on a screen where green and red are the fastest thing to read.
+   */
+  .bloomberg .numeric:not(.text-positive):not(.text-negative):not([class*='--positive']):not([class*='--negative']) {
+    color: hsl(190 80% 72%);
+  }
+
+  .bloomberg th {
+    color: hsl(33 90% 60%);
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+  }
+
+  /* Headings are chrome, so they take the label colour like everything else
+     that names a thing rather than being one. Applying it to h1 alone left
+     section headings reading as data. */
+  .bloomberg h1,
+  .bloomberg h2,
+  .bloomberg h3 {
+    color: hsl(33 95% 62%);
   }
 
   /* Anyone who has asked for less motion has also asked for less of this. */

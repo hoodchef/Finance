@@ -11,13 +11,13 @@ import {
   XAxis,
   YAxis,
 } from 'recharts';
-import { AlertCircle, Building2, Search } from 'lucide-react';
+import { AlertCircle, Building2 } from 'lucide-react';
 import { PageBody, PageHeader } from '@/components/layout/app-shell';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { EmptyState } from '@/components/ui/empty-state';
-import { Input } from '@/components/ui/input';
+import { TickerSearch } from '@/components/builder/ticker-search';
 import { Skeleton } from '@/components/ui/skeleton';
 import { Stat } from '@/components/ui/stat';
 import { AXIS_PROPS, ChartFrame, GRID_PROPS } from '@/components/charts/chart-chrome';
@@ -155,26 +155,53 @@ export function ResearchView() {
       <PageHeader
         title="Research"
         description="What a company actually reported, straight from its SEC filings."
-        actions={
-          <div className="flex items-center gap-2">
-            <Input
-              value={input}
-              onChange={(e) => setInput(e.target.value.toUpperCase())}
-              onKeyDown={(e) => {
-                if (e.key === 'Enter') void look(input);
-              }}
-              placeholder="AAPL"
-              className="h-9 w-32 text-xs uppercase"
-              aria-label="Ticker symbol"
-            />
-            <Button onClick={() => look(input)} disabled={pending || !input.trim()}>
-              {pending ? 'Loading…' : <><Search />Look up</>}
-            </Button>
-          </div>
-        }
       />
 
       <PageBody className="space-y-4">
+        {/*
+          The search is the page.
+          It was in the header's action slot: small, right-aligned, competing
+          with the title — while the empty state below said "Enter a ticker"
+          with no input under it. The instruction and the affordance were in
+          different places, and the only thing this page does was the least
+          prominent thing on it.
+        */}
+        <div className={cn('mx-auto w-full', data ? 'max-w-xl' : 'max-w-2xl pt-8')}>
+          {!data && (
+            <div className="mb-4 text-center">
+              <h2 className="text-xl font-semibold">Look up a company</h2>
+              <p className="mx-auto mt-1 max-w-lg text-xs leading-relaxed text-muted-foreground">
+                Reads XBRL facts from SEC EDGAR &mdash; the filings themselves, not a vendor&rsquo;s
+                copy. US filers only: a TSX-only listing files with SEDAR and is not covered.
+              </p>
+            </div>
+          )}
+          <TickerSearch
+            autoFocus={!data}
+            placeholder="Ticker or company name — AAPL, Microsoft, NVDA…"
+            onSelect={(meta) => {
+              setInput(meta.symbol);
+              void look(meta.symbol);
+            }}
+            className={cn(!data && 'text-base')}
+          />
+          <div className="mt-2 flex flex-wrap justify-center gap-1.5">
+            {['AAPL', 'MSFT', 'NVDA', 'GOOGL', 'AMZN', 'KO', 'JPM', 'XOM'].map((t) => (
+              <Button
+                key={t}
+                size="sm"
+                variant={data?.company.ticker === t ? 'default' : 'outline'}
+                onClick={() => {
+                  setInput(t);
+                  void look(t);
+                }}
+              >
+                {t}
+              </Button>
+            ))}
+          </div>
+        </div>
+
         {error && (
           <div className="flex items-start gap-2 rounded-md border border-destructive/40 bg-destructive/8 p-3 text-xs">
             <AlertCircle className="mt-0.5 h-4 w-4 shrink-0 text-destructive" />
@@ -183,34 +210,6 @@ export function ResearchView() {
         )}
 
         {pending && !data && <Skeleton className="h-96 w-full" />}
-
-        {!data && !pending && !error && (
-          <Card>
-            <CardContent>
-              <EmptyState
-                icon={Building2}
-                title="Enter a ticker"
-                description="Reads the company's XBRL facts from SEC EDGAR — the filings themselves, not a vendor's copy. US filers only: a TSX-only listing files with SEDAR and is not covered."
-                className="border-0 py-16"
-              />
-              <div className="flex flex-wrap justify-center gap-1.5 pb-6">
-                {['AAPL', 'MSFT', 'NVDA', 'GOOGL', 'KO', 'JPM'].map((t) => (
-                  <Button
-                    key={t}
-                    size="sm"
-                    variant="outline"
-                    onClick={() => {
-                      setInput(t);
-                      void look(t);
-                    }}
-                  >
-                    {t}
-                  </Button>
-                ))}
-              </div>
-            </CardContent>
-          </Card>
-        )}
 
         {data && last && (
           <div className={cn('space-y-4', pending && 'opacity-60')}>
@@ -238,8 +237,18 @@ export function ResearchView() {
               </CardHeader>
               <CardContent>
                 {v ? (
-                  <div className="grid grid-cols-2 gap-px overflow-hidden rounded-md border border-border bg-border sm:grid-cols-4 lg:grid-cols-7">
+                  <div className="grid grid-cols-2 gap-px overflow-hidden rounded-md border border-border bg-border sm:grid-cols-4 lg:grid-cols-8">
+                    {/* Eight, not seven: an odd count leaves a bordered empty
+                        cell, and on a page where a blank means "the company did
+                        not report this" that reads as missing data. Enterprise
+                        value is worth showing beside market cap anyway. */}
                     <Stat className="bg-card" label="Market cap" value={money(v.marketCap)} />
+                    <Stat
+                      className="bg-card"
+                      label="Enterprise value"
+                      value={money(v.enterpriseValue)}
+                      hint="Market cap plus debt, less cash — what it would cost to buy the whole business outright."
+                    />
                     <Stat className="bg-card" label="P/E" value={mult(v.peRatio)} />
                     <Stat className="bg-card" label="P/S" value={mult(v.psRatio)} />
                     <Stat className="bg-card" label="P/B" value={mult(v.pbRatio)} />
@@ -256,7 +265,7 @@ export function ResearchView() {
             </Card>
 
             {/* Profitability */}
-            <div className="grid grid-cols-2 gap-px overflow-hidden rounded-lg border border-border bg-border sm:grid-cols-4 lg:grid-cols-7">
+            <div className="grid grid-cols-2 gap-px overflow-hidden rounded-lg border border-border bg-border sm:grid-cols-4 lg:grid-cols-8">
               <Stat className="bg-card" label="Revenue" value={money(last.revenue)} sub={pct(last.revenueGrowth)} />
               <Stat className="bg-card" label="Net income" value={money(last.netIncome)} sub={`EPS ${last.epsDiluted?.toFixed(2) ?? '—'}`} />
               <Stat className="bg-card" label="Gross margin" value={pct(last.grossMargin)} />
@@ -264,6 +273,13 @@ export function ResearchView() {
               <Stat className="bg-card" label="Net margin" value={pct(last.netMargin)} />
               <Stat className="bg-card" label="ROE" value={pct(last.roe)} hint="Net income over shareholders' equity. Very high figures usually mean equity shrunk through buybacks, not that returns improved." />
               <Stat className="bg-card" label="ROIC" value={pct(last.roic)} hint="Operating income over equity plus debt — the capital the business actually employs." />
+              <Stat
+                className="bg-card"
+                label="Free cash flow"
+                value={money(last.freeCashFlow)}
+                sub={last.fcfMargin != null ? `${pct(last.fcfMargin)} of revenue` : undefined}
+                hint="Operating cash flow less capital expenditure — what the business generated after paying to keep itself running."
+              />
             </div>
 
             <ChartFrame
@@ -277,7 +293,10 @@ export function ResearchView() {
                   <YAxis {...AXIS_PROPS} yAxisId="l" tickFormatter={(x) => formatCurrencyCompact(Number(x))} />
                   <YAxis {...AXIS_PROPS} yAxisId="r" orientation="right" tickFormatter={(x) => `${Number(x).toFixed(0)}%`} />
                   <Bar yAxisId="l" dataKey="revenue" fill={seriesColor('revenue', 0)} isAnimationActive={false} />
-                  <Line yAxisId="r" dataKey="growth" stroke={seriesColor('growth', 3)} strokeWidth={2} dot={false} isAnimationActive={false} />
+                  {/* Not the red slot. Growth is a neutral series, and in the Bloomberg
+                      palette red means a fall — a rising line drawn in it reads as
+                      the opposite of what it shows. */}
+                  <Line yAxisId="r" dataKey="growth" stroke={seriesColor('growth', 1)} strokeWidth={2} dot={false} isAnimationActive={false} />
                 </ComposedChart>
               </ResponsiveContainer>
             </ChartFrame>

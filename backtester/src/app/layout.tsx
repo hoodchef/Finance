@@ -31,7 +31,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
           disableTransitionOnChange
           // next-themes only applies a class for themes it knows about, and
           // "system" must stay in the list or the system option stops working.
-          themes={['light', 'dark', 'terminal', 'system']}
+          themes={['light', 'dark', 'terminal', 'bloomberg', 'system']}
         >
           <TooltipProvider delayDuration={200} skipDelayDuration={400}>
             <AppShell>{children}</AppShell>

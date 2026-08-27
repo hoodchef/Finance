@@ -166,7 +166,13 @@ describe('theming is complete for every theme', () => {
     const light = new Set([...tokens(blockFor(':root {'))].filter((t) => !STRUCTURAL.has(t)));
     // A theme missing a token silently inherits whichever value :root left
     // behind — usually a colour mixed for a different background.
-    for (const selector of ['.dark {', '.terminal {']) {
+    // A THEME block is one that defines --background. Matching every indented
+    // class caught utilities like .tnum and reported them as broken themes.
+    const themes = [...css.matchAll(/^ {2}(\.[a-z]+) \{([\s\S]*?)^ {2}\}/gm)]
+      .filter(([, , body]) => body.includes('--background:'))
+      .map(([, sel]) => `${sel} {`);
+    expect(themes.length).toBeGreaterThanOrEqual(3);
+    for (const selector of themes) {
       const other = tokens(blockFor(selector));
       const missing = [...light].filter((t) => !other.has(t));
       expect(missing, `${selector} is missing ${missing.join(', ')}`).toHaveLength(0);
@@ -176,8 +182,14 @@ describe('theming is complete for every theme', () => {
   it('gives every theme a full series palette', () => {
     const css = fs.readFileSync(path.join(SRC, 'app/globals.css'), 'utf8');
     // Charts read these by index; a short palette wraps and two series collide.
-    expect((css.match(/--series-0:/g) ?? []).length).toBe(3);
-    expect((css.match(/--series-14:/g) ?? []).length).toBe(3);
+    // Counted against the themes actually defined, so adding one cannot pass
+    // by leaving its palette out.
+    const themeCount =
+      [...css.matchAll(/^ {2}\.[a-z]+ \{([\s\S]*?)^ {2}\}/gm)].filter(([, body]) =>
+        body.includes('--background:'),
+      ).length + 1; // + :root
+    expect((css.match(/--series-0:/g) ?? []).length).toBe(themeCount);
+    expect((css.match(/--series-14:/g) ?? []).length).toBe(themeCount);
   });
 
   it('offers the terminal theme and registers it with the provider', () => {
@@ -187,6 +199,19 @@ describe('theming is complete for every theme', () => {
       .toMatch(/value: 'terminal'/);
     expect(fs.readFileSync(path.join(SRC, 'app/layout.tsx'), 'utf8')).toMatch(
       /themes=\{\[[^\]]*'terminal'/,
+    );
+  });
+});
+
+describe('the Bloomberg theme', () => {
+  it('is registered with the provider and offered by the toggle', () => {
+    // Completeness and palette are covered generically above; what is specific
+    // to a theme is that the toggle and the provider agree it exists, since
+    // next-themes only applies a class for themes it has been told about.
+    expect(fs.readFileSync(path.join(SRC, 'components/layout/theme-toggle.tsx'), 'utf8'))
+      .toMatch(/value: 'bloomberg'/);
+    expect(fs.readFileSync(path.join(SRC, 'app/layout.tsx'), 'utf8')).toMatch(
+      /themes=\{\[[^\]]*'bloomberg'/,
     );
   });
 });
