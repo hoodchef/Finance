@@ -44,6 +44,7 @@ import { useRouter } from 'next/navigation';
 import { formatCurrency, formatPercent } from '@/lib/format';
 import { planToBacktestConfig } from '@/lib/plan-bridge';
 import { useWorkspace } from '@/store/workspace';
+import { WrapperPanel } from '@/components/results/wrapper-panel';
 import { cn } from '@/lib/utils';
 
 /**
@@ -166,6 +167,33 @@ export function PlannerView() {
   React.useEffect(() => () => controller.current?.abort(), []);
 
   const gap = data ? data.marginal.effective_rate - data.marginal.statutory_rate : 0;
+
+  /**
+   * Growth for the wrapper comparison, taken from a REAL backtest when one
+   * exists.
+   *
+   * Time-weighted return is growth per dollar, which is exactly what is needed.
+   * Falling back to a flat assumption is fine here and clearly labelled,
+   * because the wrapper answer does not depend on the growth rate at all — the
+   * factor cancels. It only sets how much is at stake.
+   */
+  const runs = useWorkspace((s) => s.runs);
+  const growth = React.useMemo(() => {
+    const usable = runs.find(
+      (r) => r.summary && Number.isFinite(r.summary.totalReturn) && r.summary.finalValue > 0,
+    );
+    if (usable) {
+      return {
+        factor: 1 + usable.summary.totalReturn,
+        label: `${usable.label}'s measured growth over ${usable.summary.start} to ${usable.summary.end}`,
+      };
+    }
+    return {
+      factor: 2.5,
+      label: 'a placeholder 2.5x, because no backtest has been run — the ranking is unaffected',
+    };
+  }, [runs]);
+
 
   return (
     <>
@@ -408,6 +436,15 @@ export function PlannerView() {
                   }}
                 />
               )}
+
+              {/* Where the plan and the backtest meet. */}
+              <WrapperPanel
+                contribution={savingsCapacity}
+                growthFactor={growth.factor}
+                rateNow={data.marginal.effective_rate}
+                rateLater={retirementRate}
+                growthLabel={growth.label}
+              />
 
               <Card>
                 <CardHeader className="pb-2">
