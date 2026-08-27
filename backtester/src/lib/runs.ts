@@ -142,3 +142,41 @@ export function groupByFingerprint(runs: SavedRun[]): Map<string, SavedRun[]> {
   }
   return out;
 }
+
+/**
+ * Whether a stored run's own numbers agree with each other.
+ *
+ * Runs are snapshots held in browser storage, which means they outlive the
+ * code that produced them. A run recorded before a bug was fixed, or written by
+ * an older version, still deserializes cleanly and renders as a result — a
+ * zero-length window reporting a positive CAGR against a final value of zero,
+ * for instance, which is what prompted this.
+ *
+ * The engine refuses to PRODUCE such a run today. This catches the ones already
+ * on disk, so nothing incoherent is offered for comparison as though it were a
+ * measurement.
+ */
+export function runIncoherence(run: SavedRun): string | null {
+  const s = run.summary;
+  if (!s) return 'This run has no summary.';
+  if (!(s.start < s.end)) return 'Its window starts and ends on the same day.';
+  for (const [name, value] of Object.entries({
+    finalValue: s.finalValue,
+    cagr: s.cagr,
+    totalReturn: s.totalReturn,
+    volatility: s.volatility,
+    maxDrawdown: s.maxDrawdown,
+  })) {
+    if (!Number.isFinite(value)) return `Its ${name} is not a number.`;
+  }
+  // A final value of zero means everything was lost, which is a CAGR of -100%.
+  // Any other rate contradicts it — including 0%, which claims the money neither
+  // grew nor shrank while also being gone. Catching only positive rates missed
+  // exactly that case.
+  if (s.finalValue <= 0 && s.cagr > -0.99) {
+    return 'It ends with nothing while reporting a return other than a total loss.';
+  }
+  if (s.volatility < 0) return 'Its volatility is negative.';
+  if (s.maxDrawdown > 0) return 'Its maximum drawdown is positive.';
+  return null;
+}

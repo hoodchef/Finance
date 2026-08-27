@@ -18,9 +18,26 @@ import {
   SelectValue,
 } from '@/components/ui/select';
 import { formatPercent } from '@/lib/format';
+import {
+  CartesianGrid,
+  Line,
+  LineChart,
+  ResponsiveContainer,
+  XAxis,
+  YAxis,
+} from 'recharts';
+import { AXIS_PROPS, ChartFrame, GRID_PROPS } from '@/components/charts/chart-chrome';
+import { seriesColor } from '@/lib/utils';
 import { cn } from '@/lib/utils';
 
+interface RollingPoint {
+  date: string;
+  betas: Record<string, number>;
+  alpha: number;
+}
+
 interface Response {
+  rolling: RollingPoint[];
   model: { id: string; label: string; description: string; withMomentum: boolean };
   regression: RegressionResult;
   window: {
@@ -308,6 +325,38 @@ export function FactorPanel({
               </tbody>
             </table>
           </div>
+
+          {data.rolling.length > 3 && (
+            <ChartFrame
+              title="How the loadings moved"
+              description="Each point refits the model over a trailing one-year window. A line that wanders is a portfolio whose exposure changed — and a single number for the whole history would describe neither end of it."
+            >
+              <ResponsiveContainer width="100%" height={240}>
+                <LineChart
+                  data={data.rolling.map((p) => ({
+                    date: p.date,
+                    ...p.betas,
+                  }))}
+                  margin={{ top: 8, right: 12, bottom: 4, left: 4 }}
+                >
+                  <CartesianGrid {...GRID_PROPS} />
+                  <XAxis {...AXIS_PROPS} dataKey="date" minTickGap={48} />
+                  <YAxis {...AXIS_PROPS} tickFormatter={(v) => Number(v).toFixed(1)} />
+                  {fit.betas.map((b, i) => (
+                    <Line
+                      key={b.name}
+                      dataKey={b.name}
+                      name={b.name}
+                      stroke={seriesColor(b.name, i)}
+                      strokeWidth={1.5}
+                      dot={false}
+                      isAnimationActive={false}
+                    />
+                  ))}
+                </LineChart>
+              </ResponsiveContainer>
+            </ChartFrame>
+          )}
 
           {data.window.truncated && (
             <div className="rounded-md border border-[hsl(var(--warning))]/40 bg-[hsl(var(--warning))]/8 p-3 text-xs leading-relaxed">

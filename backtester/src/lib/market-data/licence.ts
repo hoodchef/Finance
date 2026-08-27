@@ -90,6 +90,40 @@ export const PROVIDER_LICENCES: Record<string, ProviderLicence> = {
 };
 
 /** Providers evaluated and rejected, with the reason, so it is not re-litigated. */
+/**
+ * Options data, evaluated August 2026.
+ *
+ * The conclusion is the same one the price-data survey reached, only sharper:
+ * a free options feed good enough to build on exists, and none of them may be
+ * shown to anyone else. Recorded here so the next person does not repeat the
+ * search and, worse, does not integrate one without noticing the terms.
+ */
+export const OPTIONS_SOURCES_EVALUATED = [
+  {
+    provider: 'Cboe delayed quotes CDN',
+    finding:
+      'Technically the best free source found. The public CDN returns a complete chain — 13,288 SPY contracts across 32 expiries to 2028, with bid/ask and sizes, IV, open interest, volume and full greeks including rho and a theoretical price — current to the session close, with no API key.',
+    blocker:
+      'Cboe\'s content policy requires advance written approval and an executed licence agreement to use any data from its websites. The endpoint being open is not a licence. Unusable for anything shown to another person.',
+    commercial: 'unlicensed' as const,
+  },
+  {
+    provider: 'Alpha Vantage HISTORICAL_OPTIONS / REALTIME_OPTIONS',
+    finding: 'Both are premium endpoints on the free key.',
+    blocker:
+      'REALTIME_OPTIONS returns a populated response on the free tier that parses cleanly and is labelled, in the payload itself, as artificial illustrative data. An integration written against it would produce plausible option chains from nothing. Treat any 200 from this endpoint as suspect.',
+    commercial: 'personal-only' as const,
+  },
+  {
+    provider: 'marketdata.app',
+    finding:
+      'Free tier is 100 credits a day, 24-hour delayed, one year of history — enough to prototype against.',
+    blocker:
+      'Free and mid-tier plans are "Internal Use" only. Redistribution is permitted solely on the top commercial plan, at custom pricing with an annual commitment.',
+    commercial: 'personal-only' as const,
+  },
+] as const;
+
 export const EVALUATED_AND_REJECTED = [
   {
     provider: 'Alpha Vantage (daily endpoints only)',

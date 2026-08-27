@@ -1,9 +1,11 @@
 import {
   BarChart3,
   Briefcase,
+  Building2,
   Calculator,
   FlaskConical,
   History,
+  Hourglass,
   LayoutDashboard,
   LineChart,
   Settings,
@@ -60,6 +62,13 @@ export const NAV_GROUPS: NavGroup[] = [
         short: 'Plan',
         hint: 'What your next dollar costs',
       },
+      {
+        href: '/retirement',
+        label: 'Retirement',
+        icon: Hourglass,
+        short: 'Retire',
+        hint: 'What CPP and OAS will pay',
+      },
     ],
   },
   {
@@ -86,6 +95,13 @@ export const NAV_GROUPS: NavGroup[] = [
     id: 'analyse',
     label: 'Analyse',
     items: [
+      {
+        href: '/research',
+        label: 'Research',
+        icon: Building2,
+        short: 'Co',
+        hint: 'Company fundamentals from SEC filings',
+      },
       {
         href: '/assets',
         label: 'Holdings',

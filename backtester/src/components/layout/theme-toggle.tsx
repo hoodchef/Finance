@@ -1,6 +1,6 @@
 'use client';
 
-import { Monitor, Moon, Sun } from 'lucide-react';
+import { Monitor, Moon, Sun, SquareTerminal, Radio } from 'lucide-react';
 import { useTheme } from 'next-themes';
 import { useHydrated } from '@/hooks/use-hydrated';
 import { cn } from '@/lib/utils';
@@ -8,6 +8,8 @@ import { cn } from '@/lib/utils';
 const OPTIONS = [
   { value: 'light', icon: Sun, label: 'Light' },
   { value: 'dark', icon: Moon, label: 'Dark' },
+  { value: 'terminal', icon: SquareTerminal, label: 'Terminal' },
+  { value: 'bloomberg', icon: Radio, label: 'Bloomberg' },
   { value: 'system', icon: Monitor, label: 'System' },
 ] as const;
 

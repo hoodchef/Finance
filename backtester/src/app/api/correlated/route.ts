@@ -1,9 +1,12 @@
 import { NextResponse } from 'next/server';
 import { computeAssetReturns } from '@/lib/backtest';
 import {
+  CorrelatedError,
   estimateMoments,
+  estimateRegimes,
   linearGlidepath,
   runCorrelated,
+  type RegimeMoments,
   type WeightSchedule,
 } from '@/lib/analysis/correlated';
 import { getProvider } from '@/lib/market-data';
@@ -62,7 +65,7 @@ export async function POST(request: Request) {
         });
       }
 
-      const moments = estimateMoments(symbols, returns);
+      const moments = estimateMoments(symbols, returns, { shrink: body.shrink !== false });
 
       const declared = portfolio.positions
         .filter((p) => symbols.includes(p.symbol.toUpperCase()) || symbols.includes(p.symbol))
@@ -85,8 +88,29 @@ export async function POST(request: Request) {
               ? Math.max(1, Math.round(periodsPerYear / 4))
               : Math.max(1, Math.round(periodsPerYear));
 
+      // Regimes are optional and can legitimately fail — a short window may not
+      // hold enough stressed days to fit. Falling back to the single covariance
+      // with a note beats refusing the whole run.
+      let regimes: RegimeMoments | undefined;
+      let regimeNote: string | null = null;
+      if (body.regimeAware) {
+        try {
+          regimes = estimateRegimes(symbols, returns, {
+            quantile: Math.min(0.4, Math.max(0.05, Number(body.stressQuantile) || 0.1)),
+            weights: target,
+            shrink: body.shrink !== false,
+          });
+        } catch (e) {
+          regimeNote =
+            e instanceof CorrelatedError
+              ? e.message
+              : 'Regimes could not be estimated from this window.';
+        }
+      }
+
       const simulation = runCorrelated({
         moments,
+        regimes,
         weights,
         periodsPerYear,
         years,
@@ -110,11 +134,15 @@ export async function POST(request: Request) {
 
       return {
         simulation,
+        regimeNote,
+        glidepath: glide ? { to: normalise(body.glidepathTo.map(Number)) } : null,
         estimate: {
           symbols,
           correlation: moments.corr,
           annualVolatility: moments.sigma.map((s) => s * Math.sqrt(periodsPerYear)),
           observations: moments.observations,
+          shrinkage: moments.shrinkage,
+          averageCorrelation: moments.averageCorrelation,
           from: dates[0],
           to: dates[dates.length - 1],
         },

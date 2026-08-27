@@ -4,6 +4,7 @@ import path from 'node:path';
 import { errorResponse } from '../src/lib/api-errors';
 import { MarketDataError } from '../src/lib/market-data/provider';
 import { ValidationError } from '../src/lib/validate';
+import { OPTIONS_SOURCES_EVALUATED } from '../src/lib/market-data/licence';
 
 const ROOT = path.join(__dirname, '..');
 const SRC = path.join(ROOT, 'src');
@@ -127,5 +128,90 @@ describe('provider requests cannot be steered or unbounded', () => {
     ).value;
     expect(csp).toMatch(/frame-ancestors 'none'/);
     expect(csp).toMatch(/object-src 'none'/);
+  });
+});
+
+describe('the options-data evaluation is recorded, not just remembered', () => {
+  it('names every source checked and why each is blocked', () => {
+    // A search someone repeats in six months is a search that was not written
+    // down. Each entry must carry a blocker, or it reads as an endorsement.
+    expect(OPTIONS_SOURCES_EVALUATED.length).toBeGreaterThanOrEqual(3);
+    for (const entry of OPTIONS_SOURCES_EVALUATED) {
+      expect(entry.blocker.length, `${entry.provider} has no blocker`).toBeGreaterThan(40);
+      expect(['unlicensed', 'personal-only', 'permitted']).toContain(entry.commercial);
+    }
+    // None of them may be shown to a third party. Read through a widened type
+    // so this stays a runtime guard: `as const` makes the comparison vacuous to
+    // the compiler, but the point is to fail when someone ADDS an entry marked
+    // permitted without revisiting what the app is allowed to display.
+    const entries: Array<{ commercial: string }> = [...OPTIONS_SOURCES_EVALUATED];
+    expect(entries.some((e) => e.commercial === 'permitted')).toBe(false);
+  });
+});
+
+describe('theming is complete for every theme', () => {
+  it('defines the same tokens in light, dark and terminal', () => {
+    const css = fs.readFileSync(path.join(SRC, 'app/globals.css'), 'utf8');
+    const blockFor = (selector: string) => {
+      const i = css.indexOf(selector);
+      expect(i, `${selector} block missing`).toBeGreaterThan(-1);
+      return css.slice(i, css.indexOf('\n  }', i));
+    };
+    const tokens = (block: string) =>
+      new Set([...block.matchAll(/(--[a-z0-9-]+):/g)].map(([, name]) => name));
+
+    // Structural tokens live only on :root and are inherited deliberately —
+    // a theme is a palette, not a different typeface or corner radius.
+    const STRUCTURAL = new Set(['--font-sans', '--font-mono', '--radius']);
+    const light = new Set([...tokens(blockFor(':root {'))].filter((t) => !STRUCTURAL.has(t)));
+    // A theme missing a token silently inherits whichever value :root left
+    // behind — usually a colour mixed for a different background.
+    // A THEME block is one that defines --background. Matching every indented
+    // class caught utilities like .tnum and reported them as broken themes.
+    const themes = [...css.matchAll(/^ {2}(\.[a-z]+) \{([\s\S]*?)^ {2}\}/gm)]
+      .filter(([, , body]) => body.includes('--background:'))
+      .map(([, sel]) => `${sel} {`);
+    expect(themes.length).toBeGreaterThanOrEqual(3);
+    for (const selector of themes) {
+      const other = tokens(blockFor(selector));
+      const missing = [...light].filter((t) => !other.has(t));
+      expect(missing, `${selector} is missing ${missing.join(', ')}`).toHaveLength(0);
+    }
+  });
+
+  it('gives every theme a full series palette', () => {
+    const css = fs.readFileSync(path.join(SRC, 'app/globals.css'), 'utf8');
+    // Charts read these by index; a short palette wraps and two series collide.
+    // Counted against the themes actually defined, so adding one cannot pass
+    // by leaving its palette out.
+    const themeCount =
+      [...css.matchAll(/^ {2}\.[a-z]+ \{([\s\S]*?)^ {2}\}/gm)].filter(([, body]) =>
+        body.includes('--background:'),
+      ).length + 1; // + :root
+    expect((css.match(/--series-0:/g) ?? []).length).toBe(themeCount);
+    expect((css.match(/--series-14:/g) ?? []).length).toBe(themeCount);
+  });
+
+  it('offers the terminal theme and registers it with the provider', () => {
+    // next-themes only applies a class for themes it is told about, so the
+    // toggle and the provider have to agree or the option does nothing.
+    expect(fs.readFileSync(path.join(SRC, 'components/layout/theme-toggle.tsx'), 'utf8'))
+      .toMatch(/value: 'terminal'/);
+    expect(fs.readFileSync(path.join(SRC, 'app/layout.tsx'), 'utf8')).toMatch(
+      /themes=\{\[[^\]]*'terminal'/,
+    );
+  });
+});
+
+describe('the Bloomberg theme', () => {
+  it('is registered with the provider and offered by the toggle', () => {
+    // Completeness and palette are covered generically above; what is specific
+    // to a theme is that the toggle and the provider agree it exists, since
+    // next-themes only applies a class for themes it has been told about.
+    expect(fs.readFileSync(path.join(SRC, 'components/layout/theme-toggle.tsx'), 'utf8'))
+      .toMatch(/value: 'bloomberg'/);
+    expect(fs.readFileSync(path.join(SRC, 'app/layout.tsx'), 'utf8')).toMatch(
+      /themes=\{\[[^\]]*'bloomberg'/,
+    );
   });
 });

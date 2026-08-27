@@ -2,13 +2,14 @@
 
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
-import { ArrowRight, Briefcase, GitCompare, LineChart, Play, Sparkles } from 'lucide-react';
+import { ArrowRight, Briefcase, Calculator, GitCompare, LineChart, Play, Sparkles, Waves } from 'lucide-react';
 import { PageBody, PageHeader } from '@/components/layout/app-shell';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { EmptyState } from '@/components/ui/empty-state';
 import { AllocationBar } from '@/components/builder/allocation-bar';
+import { SavingsFlow } from '@/components/planner/savings-flow';
 import { useHydrated } from '@/hooks/use-hydrated';
 import { useWorkspace } from '@/store/workspace';
 import { PRESETS } from '@/lib/presets';
@@ -36,8 +37,8 @@ export function DashboardHome() {
   return (
     <>
       <PageHeader
-        title="Dashboard"
-        description="Construct a portfolio, test it against real market history, and see what actually drove the result."
+        title="Overview"
+        description="Work out what your next dollar is really worth, decide where it goes, then test that decision against real market history."
         actions={
           <Button asChild size="lg">
             <Link href="/backtest">
@@ -49,6 +50,63 @@ export function DashboardHome() {
       />
 
       <PageBody className="space-y-6">
+        {/*
+          The allocation answer first, the way CanPath originally opened.
+          A launchpad of links put the one question the product exists to
+          answer behind a click; this asks three things and answers it.
+        */}
+        <SavingsFlow />
+
+        {/*
+          The journey, stated once.
+          The nav groups these but does not explain how they connect, and a
+          landing page that opened straight into presets made the Canadian half
+          of the product invisible to anyone who had not already found it.
+        */}
+        <div className="grid gap-3 sm:grid-cols-3">
+          {(
+            [
+              {
+                href: '/planner',
+                icon: Calculator,
+                step: 'Plan',
+                title: 'What your next dollar costs',
+                body: 'Your real marginal rate once benefit clawback is counted, and which account this year’s savings belong in.',
+              },
+              {
+                href: '/backtest',
+                icon: LineChart,
+                step: 'Build',
+                title: 'What it would have done',
+                body: 'Run an allocation against real market history, with dividends, splits, fees and currency handled properly.',
+              },
+              {
+                href: '/simulator',
+                icon: Waves,
+                step: 'Analyse',
+                title: 'What it might do next',
+                body: 'Take that behaviour forward, or replace any assumption and see what it costs.',
+              },
+            ] as const
+          ).map(({ href, icon: Icon, step, title, body }) => (
+            <Link
+              key={href}
+              href={href}
+              className="group rounded-lg border border-border bg-card p-4 transition-colors hover:border-primary/40 hover:bg-accent/40 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+            >
+              <div className="flex items-center gap-2 text-2xs font-medium uppercase tracking-wider text-muted-foreground">
+                <Icon className="h-3.5 w-3.5 text-primary" />
+                {step}
+              </div>
+              <div className="mt-1.5 flex items-center gap-1 text-sm font-medium">
+                {title}
+                <ArrowRight className="h-3.5 w-3.5 opacity-0 transition-opacity group-hover:opacity-60" />
+              </div>
+              <p className="mt-1 text-xs leading-relaxed text-muted-foreground">{body}</p>
+            </Link>
+          ))}
+        </div>
+
         {/* Current draft ------------------------------------------------ */}
         {hydrated && draft.positions.length > 0 && (
           <Card>

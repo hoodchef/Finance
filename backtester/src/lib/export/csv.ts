@@ -285,3 +285,116 @@ export function safeFilename(name: string): string {
     .replace(/[.\-_]+$/, '');
   return cleaned || 'portfolio';
 }
+
+/* ------------------------------------------------------------------ */
+/* Analysis exports                                                    */
+/* ------------------------------------------------------------------ */
+
+/**
+ * Simulations and optimisations produced numbers that could not leave the app.
+ *
+ * These matter more than the backtest export, not less: a backtest can be
+ * reproduced by re-running it, but a simulation depends on a seed, a method
+ * and a set of assumptions that are easy to forget and impossible to recover
+ * from the chart. Every export below leads with the parameters that produced
+ * it, so a file found later can be read for what it actually says.
+ */
+
+export interface SimulationExport {
+  method: string;
+  paths: number;
+  years: number;
+  parameters: {
+    expectedReturn: number;
+    volatility: number;
+    expectedReturnSource: string;
+    volatilitySource: string;
+    inflation: number;
+  };
+  terminal: { p5: number; p25: number; median: number; p75: number; p95: number };
+  terminalReal: { p5: number; median: number; p95: number };
+  successRate: number;
+  medianRuinYear: number | null;
+  bands: Array<{ year: number; p5: number; median: number; p95: number; contributed: number }>;
+  historical?: { start: string; end: string; cagr: number; volatility: number };
+}
+
+export function buildSimulationCsv(sim: SimulationExport): string {
+  const rows: Array<Array<string | number | null>> = [
+    ['Simulation parameters'],
+    ['Method', sim.method],
+    ['Paths', sim.paths],
+    ['Horizon (years)', sim.years],
+    // Whether each number was measured or asserted travels with the file. A
+    // column of outcomes with no provenance is the thing this project exists
+    // not to produce.
+    ['Expected return (annual)', sim.parameters.expectedReturn, sim.parameters.expectedReturnSource],
+    ['Volatility (annual)', sim.parameters.volatility, sim.parameters.volatilitySource],
+    ['Inflation (annual)', sim.parameters.inflation, 'assumed'],
+  ];
+
+  if (sim.historical) {
+    rows.push(
+      [],
+      ['Grounded in a backtest of'],
+      ['Start', sim.historical.start],
+      ['End', sim.historical.end],
+      ['Realised CAGR', sim.historical.cagr],
+      ['Realised volatility', sim.historical.volatility],
+    );
+  }
+
+  rows.push(
+    [],
+    ['Terminal outcome', 'Nominal', "Today's dollars"],
+    ['5th percentile', sim.terminal.p5, sim.terminalReal.p5],
+    ['25th percentile', sim.terminal.p25, null],
+    ['Median', sim.terminal.median, sim.terminalReal.median],
+    ['75th percentile', sim.terminal.p75, null],
+    ['95th percentile', sim.terminal.p95, sim.terminalReal.p95],
+    [],
+    ['Money lasts (fraction of paths)', sim.successRate],
+    ['Median year of depletion', sim.medianRuinYear],
+    [],
+    ['Year', '5th percentile', 'Median', '95th percentile', 'Contributed'],
+    ...sim.bands.map((b) => [b.year, b.p5, b.median, b.p95, b.contributed]),
+  );
+
+  return toCsv(rows);
+}
+
+export interface OptimisationExport {
+  symbols: string[];
+  current: number[] | null;
+  portfolios: Record<string, { weights: number[]; expectedReturn: number; volatility: number; sharpe: number; concentration: number }>;
+  frontier: Array<{ volatility: number; expectedReturn: number; sharpe: number }>;
+  estimate: { observations: number; shrinkage: number; from: string; to: string };
+}
+
+export function buildOptimisationCsv(data: OptimisationExport): string {
+  const rows: Array<Array<string | number | null>> = [
+    ['Estimated from'],
+    ['Start', data.estimate.from],
+    ['End', data.estimate.to],
+    ['Observations', data.estimate.observations],
+    ['Shrinkage intensity', data.estimate.shrinkage],
+    [],
+    ['Allocation', ...data.symbols, 'Expected return', 'Volatility', 'Sharpe', 'Concentration'],
+  ];
+
+  if (data.current) {
+    rows.push(['Current', ...data.current, null, null, null, null]);
+  }
+  for (const [name, p] of Object.entries(data.portfolios)) {
+    rows.push([name, ...p.weights, p.expectedReturn, p.volatility, p.sharpe, p.concentration]);
+  }
+
+  rows.push(
+    [],
+    ['Efficient frontier'],
+    ['Volatility', 'Expected return', 'Sharpe'],
+    ...data.frontier.map((p) => [p.volatility, p.expectedReturn, p.sharpe]),
+  );
+
+  return toCsv(rows);
+}

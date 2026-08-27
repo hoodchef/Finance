@@ -11,9 +11,10 @@ import {
   XAxis,
   YAxis,
 } from 'recharts';
-import { AlertCircle, Play, RefreshCw, Waves } from 'lucide-react';
+import { AlertCircle, Download, Play, RefreshCw, Waves } from 'lucide-react';
 import type { MonteCarloResult, SimMethod } from '@/lib/analysis/montecarlo';
 import { PageBody, PageHeader } from '@/components/layout/app-shell';
+import { ContextBar } from '@/components/layout/context-bar';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
@@ -31,6 +32,9 @@ import {
 } from '@/components/ui/select';
 import { AXIS_PROPS, ChartFrame, GRID_PROPS } from '@/components/charts/chart-chrome';
 import { formatCurrency, formatCurrencyCompact, formatPercent } from '@/lib/format';
+import { buildSimulationCsv, downloadCsv, safeFilename } from '@/lib/export/csv';
+import { CorrelationGrid } from '@/components/results/correlation-grid';
+import { useJob } from '@/hooks/use-job';
 import { useWorkspace } from '@/store/workspace';
 import { cn } from '@/lib/utils';
 
@@ -44,6 +48,42 @@ interface Response {
     maxDrawdown: number;
     observations: number;
   };
+}
+
+interface CorrelatedResponse {
+  simulation: {
+    symbols: string[];
+    paths: number;
+    years: number;
+    rebalanceEvery: number;
+    ridge: number;
+    terminal: { p5: number; p25: number; median: number; p75: number; p95: number };
+    annualised: { p5: number; median: number; p95: number };
+    worstDrawdown: { median: number; p95: number };
+    realisedCorrelation: number[][];
+    inputCorrelation: number[][];
+    endingWeights: number[];
+    regimeUsed: {
+      stressFrequency: number;
+      calmCorrelation: number;
+      stressedCorrelation: number;
+      realisedStressShare: number;
+    } | null;
+    bands: Array<{ year: number; p5: number; median: number; p95: number }>;
+  };
+  estimate: {
+    symbols: string[];
+    correlation: number[][];
+    annualVolatility: number[];
+    observations: number;
+    shrinkage: number;
+    averageCorrelation: number;
+    from: string;
+    to: string;
+  };
+  targetWeights: number[];
+  regimeNote: string | null;
+  glidepath: { to: number[] } | null;
 }
 
 const METHOD_LABEL: Record<SimMethod, string> = {
@@ -71,6 +111,7 @@ function NumField({
   suffix,
   placeholder,
   hint,
+  vector = false,
 }: {
   label: string;
   value: string;
@@ -78,6 +119,8 @@ function NumField({
   suffix?: string;
   placeholder?: string;
   hint?: string;
+  /** Accepts a separated list ("20/70/10") rather than a single number. */
+  vector?: boolean;
 }) {
   return (
     <div className="space-y-1">
@@ -90,7 +133,10 @@ function NumField({
           placeholder={placeholder}
           onChange={(e) => {
             const raw = e.target.value;
-            if (raw !== '' && !/^-?\d*\.?\d*$/.test(raw)) return;
+            // Separators are admitted only for a vector field; letting every
+            // numeric input take "20/70" would make Horizon accept nonsense.
+            const ok = vector ? /^[\d./,\s]*$/ : /^-?\d*\.?\d*$/;
+            if (raw !== '' && !ok.test(raw)) return;
             onChange(raw);
           }}
           className={cn('h-8 text-xs', suffix && 'pr-6')}
@@ -117,6 +163,13 @@ export function SimulatorView() {
   const draft = useWorkspace((s) => s.draft);
   const config = useWorkspace((s) => s.config);
 
+  const [mode, setMode] = React.useState<'portfolio' | 'assets'>('portfolio');
+  const [rebalance, setRebalance] = React.useState('annual');
+  const [shrink, setShrink] = React.useState(true);
+  const [regimeAware, setRegimeAware] = React.useState(true);
+  const [glideTo, setGlideTo] = React.useState('');
+  const correlated = useJob<CorrelatedResponse>();
+
   const [method, setMethod] = React.useState<SimMethod>('block');
   const [years, setYears] = React.useState('30');
   const [paths, setPaths] = React.useState('2000');
@@ -137,7 +190,27 @@ export function SimulatorView() {
 
   const pct = (v: string): number | null => (v.trim() === '' ? null : Number(v) / 100);
 
+  async function runCorrelated() {
+    await correlated.start('/api/correlated', {
+      portfolio: { id: draft.id, name: draft.name, positions: draft.positions },
+      config,
+      years: Number(years) || 30,
+      paths: Number(paths) || 2000,
+      initialInvestment: Number(initial) || 0,
+      contributionAmount: Number(contribution) || 0,
+      contributionFrequency,
+      rebalance,
+      shrink,
+      regimeAware,
+      // "60/40" or "60,40" — a weight per holding, in the order they are listed.
+      glidepathTo: glideTo.trim()
+        ? glideTo.split(/[\/,\s]+/).map(Number).filter((v) => Number.isFinite(v))
+        : undefined,
+    });
+  }
+
   async function run() {
+    if (mode === 'assets') return runCorrelated();
     controller.current?.abort();
     const ac = new AbortController();
     controller.current = ac;
@@ -177,7 +250,57 @@ export function SimulatorView() {
 
   React.useEffect(() => () => controller.current?.abort(), []);
 
+  /**
+   * Run on arrival.
+   *
+   * Landing on an analysis page to be told nothing has been analysed, beside a
+   * button whose only possible use is to analyse it, is a step that exists for
+   * no one. The shared result cache makes the first run cheap when another
+   * surface has already asked the same question.
+   *
+   * Once only: re-running on every settings change would fire a job per
+   * keystroke.
+   */
+  const autoRan = React.useRef(false);
+  React.useEffect(() => {
+    if (autoRan.current) return;
+    if (!draft.positions.some((p) => p.symbol.trim())) return;
+    autoRan.current = true;
+    void run();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [draft.id]);
+
   const sim = data?.simulation;
+
+  /**
+   * A simulation depends on a seed, a method and a set of assumptions that are
+   * easy to forget and impossible to recover from the chart. The export leads
+   * with all of them, so a file found later can be read for what it says.
+   */
+  function exportCsv() {
+    if (!sim || !data) return;
+    downloadCsv(
+      `${safeFilename(draft.name || 'portfolio')}-simulation.csv`,
+      buildSimulationCsv({
+        method: sim.method,
+        paths: sim.paths,
+        years: sim.years,
+        parameters: sim.parameters,
+        terminal: sim.terminal,
+        terminalReal: sim.terminalReal,
+        successRate: sim.successRate,
+        medianRuinYear: sim.medianRuinYear,
+        bands: sim.bands,
+        historical: data.historical,
+      }),
+    );
+  }
+
+  const corr = correlated.result;
+  const busy = mode === 'assets' ? correlated.status === 'queued' || correlated.status === 'running' : pending;
+  const busyElapsed = mode === 'assets' ? correlated.elapsedSeconds : 0;
+  const hasResult = mode === 'assets' ? Boolean(corr) : Boolean(data);
+  const activeError = mode === 'assets' ? correlated.error : error;
   const parametric = method === 'normal' || method === 'student-t';
   const withdrawing = (Number(withdrawal) || 0) > 0;
 
@@ -200,26 +323,115 @@ export function SimulatorView() {
         title="Simulator"
         description="Take this portfolio's measured behaviour forward, or replace any part of it with an assumption and see what that costs."
         actions={
-          <Button onClick={run} disabled={pending}>
-            {pending ? (
+          <>
+            {sim && (
+              <Button variant="outline" onClick={exportCsv}>
+                <Download />
+                Export
+              </Button>
+            )}
+            <Button onClick={run} disabled={busy}>
+            {busy ? (
               <>
                 <span className="h-3.5 w-3.5 animate-spin rounded-full border-2 border-current border-t-transparent" />
-                Running…
+                {correlated.status === 'queued' && correlated.queuePosition
+                  ? `Queued #${correlated.queuePosition}`
+                  : busyElapsed
+                    ? `Running ${busyElapsed}s`
+                    : 'Running…'}
               </>
             ) : (
               <>
-                {data ? <RefreshCw /> : <Play />}
-                {data ? 'Rerun' : 'Simulate'}
+                {hasResult ? <RefreshCw /> : <Play />}
+                {hasResult ? 'Rerun' : 'Simulate'}
               </>
             )}
-          </Button>
+            </Button>
+          </>
         }
       />
+
+      <ContextBar />
 
       <PageBody className="grid gap-4 lg:grid-cols-[19rem_minmax(0,1fr)]">
         {/* ---- controls ---- */}
         <div className="space-y-4">
           <Card>
+            <CardHeader className="pb-2">
+              <CardTitle className="text-sm">What to simulate</CardTitle>
+            </CardHeader>
+            <CardContent className="space-y-3">
+              <Select value={mode} onValueChange={(v) => setMode(v as 'portfolio' | 'assets')}>
+                <SelectTrigger className="h-8 text-xs">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="portfolio">The portfolio as one series</SelectItem>
+                  <SelectItem value="assets">Each holding, correlated</SelectItem>
+                </SelectContent>
+              </Select>
+              <p className="text-2xs leading-relaxed text-muted-foreground">
+                {mode === 'portfolio'
+                  ? 'Resamples the portfolio’s own realised return. Cheap and assumption-free, but it bakes in the weights the backtest held — it cannot see the holdings, so it cannot tell you what rebalancing is worth.'
+                  : 'Fits a covariance to the holdings’ joint history and simulates them together, so weights drift and rebalancing does something. Needs at least two priced holdings.'}
+              </p>
+              {mode === 'assets' && (
+                <>
+                  <div className="space-y-1">
+                    <Label className="text-xs">Rebalance</Label>
+                    <Select value={rebalance} onValueChange={setRebalance}>
+                      <SelectTrigger className="h-8 text-xs">
+                        <SelectValue />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="never">Never — let it drift</SelectItem>
+                        <SelectItem value="annual">Annually</SelectItem>
+                        <SelectItem value="quarterly">Quarterly</SelectItem>
+                        <SelectItem value="monthly">Monthly</SelectItem>
+                      </SelectContent>
+                    </Select>
+                  </div>
+                  <label className="flex items-start gap-2 text-2xs leading-relaxed text-muted-foreground">
+                    <input
+                      type="checkbox"
+                      checked={shrink}
+                      onChange={(e) => setShrink(e.target.checked)}
+                      className="mt-0.5"
+                    />
+                    <span>
+                      Shrink the covariance (Ledoit&ndash;Wolf). Sample correlations are biased
+                      outward &mdash; the extreme ones are extreme partly by luck. Leave this on
+                      unless you have decades of history for every holding.
+                    </span>
+                  </label>
+                  <label className="flex items-start gap-2 text-2xs leading-relaxed text-muted-foreground">
+                    <input
+                      type="checkbox"
+                      checked={regimeAware}
+                      onChange={(e) => setRegimeAware(e.target.checked)}
+                      className="mt-0.5"
+                    />
+                    <span>
+                      Model calm and stressed regimes separately. Correlations rise in falls, so
+                      one blended covariance reports a downside that is too narrow for the reason
+                      that matters most. Both regimes are measured from your own history, not
+                      assumed.
+                    </span>
+                  </label>
+                  <NumField
+                    label="Glide to"
+                    vector
+                    value={glideTo}
+                    onChange={setGlideTo}
+                    placeholder="e.g. 20/70/10"
+                    hint="Optional. Ending weights to drift toward across the horizon, one per holding in the order listed. Blank holds the target mix."
+                  />
+                </>
+              )}
+            </CardContent>
+          </Card>
+
+          <Card className={cn(mode === 'assets' && 'opacity-50')}>
             <CardHeader className="pb-2">
               <CardTitle className="text-sm">Method</CardTitle>
             </CardHeader>
@@ -325,16 +537,16 @@ export function SimulatorView() {
 
         {/* ---- results ---- */}
         <div className="space-y-4">
-          {error && (
+          {activeError && (
             <div className="flex items-start gap-2 rounded-md border border-destructive/40 bg-destructive/8 p-3 text-xs">
               <AlertCircle className="mt-0.5 h-4 w-4 shrink-0 text-destructive" />
-              <p className="leading-relaxed">{error}</p>
+              <p className="leading-relaxed">{activeError}</p>
             </div>
           )}
 
-          {pending && !sim && <Skeleton className="h-96 w-full" />}
+          {busy && !hasResult && <Skeleton className="h-96 w-full" />}
 
-          {!sim && !pending && !error && (
+          {!hasResult && !busy && !activeError && (
             <Card>
               <CardContent>
                 <EmptyState
@@ -347,7 +559,7 @@ export function SimulatorView() {
             </Card>
           )}
 
-          {sim && data && (
+          {mode === 'portfolio' && sim && data && (
             <>
               <div className="grid grid-cols-2 gap-px overflow-hidden rounded-lg border border-border bg-border sm:grid-cols-4">
                 <Stat
@@ -591,6 +803,215 @@ export function SimulatorView() {
                     survives on a knife edge is not the same as one that survives comfortably.
                   </p>
                 )}
+              </div>
+            </>
+          )}
+          {mode === 'assets' && corr && (
+            <>
+              <div className="grid grid-cols-2 gap-px overflow-hidden rounded-lg border border-border bg-border sm:grid-cols-4">
+                <Stat
+                  className="bg-card"
+                  label="Median outcome"
+                  value={formatCurrencyCompact(corr.simulation.terminal.median)}
+                  sub={`${formatPercent(corr.simulation.annualised.median)} a year`}
+                />
+                <Stat
+                  className="bg-card"
+                  label="Poor outcome (5th)"
+                  tone="negative"
+                  value={formatCurrencyCompact(corr.simulation.terminal.p5)}
+                  sub={`${formatPercent(corr.simulation.annualised.p5)} a year`}
+                />
+                <Stat
+                  className="bg-card"
+                  label="Good outcome (95th)"
+                  tone="positive"
+                  value={formatCurrencyCompact(corr.simulation.terminal.p95)}
+                  sub={`${formatPercent(corr.simulation.annualised.p95)} a year`}
+                />
+                <Stat
+                  className="bg-card"
+                  label="Deepest fall"
+                  tone="negative"
+                  value={formatPercent(corr.simulation.worstDrawdown.median, 1)}
+                  sub={`tail ${formatPercent(corr.simulation.worstDrawdown.p95, 1)}`}
+                />
+              </div>
+
+              <Card>
+                <CardHeader className="pb-2">
+                  <CardTitle className="flex flex-wrap items-center gap-2 text-sm">
+                    How the holdings move together
+                    <Badge variant="outline">
+                      {corr.estimate.observations.toLocaleString()} days
+                    </Badge>
+                    {corr.estimate.shrinkage > 0.01 && (
+                      <Badge variant="warning">
+                        shrunk {formatPercent(corr.estimate.shrinkage, 0)}
+                      </Badge>
+                    )}
+                  </CardTitle>
+                </CardHeader>
+                <CardContent className="space-y-3">
+                  <CorrelationGrid
+                    symbols={corr.estimate.symbols}
+                    matrix={corr.estimate.correlation}
+                  />
+                  <div className="overflow-x-auto">
+                    <table className="w-full min-w-[26rem] text-xs">
+                      <thead>
+                        <tr className="border-b border-border text-left text-muted-foreground">
+                          <th className="py-1.5 pr-3 font-medium">Holding</th>
+                          <th className="py-1.5 pr-3 text-right font-medium">Annual vol</th>
+                          <th className="py-1.5 pr-3 text-right font-medium">Target</th>
+                          <th className="py-1.5 text-right font-medium">Ends at</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {corr.estimate.symbols.map((sym, i) => (
+                          <tr key={sym} className="border-b border-border/50 last:border-0">
+                            <td className="py-1.5 pr-3 font-medium">{sym}</td>
+                            <td className="numeric py-1.5 pr-3 text-right">
+                              {formatPercent(corr.estimate.annualVolatility[i], 1)}
+                            </td>
+                            <td className="numeric py-1.5 pr-3 text-right text-muted-foreground">
+                              {formatPercent(corr.targetWeights[i], 1)}
+                            </td>
+                            <td className="numeric py-1.5 text-right">
+                              {formatPercent(corr.simulation.endingWeights[i], 1)}
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                  <p className="text-2xs leading-relaxed text-muted-foreground">
+                    Estimated over{' '}
+                    <span className="numeric text-foreground">
+                      {corr.estimate.from} – {corr.estimate.to}
+                    </span>
+                    .{' '}
+                    {corr.simulation.rebalanceEvery > 0
+                      ? 'The gap between target and ending weight is the drift that accumulates between rebalances.'
+                      : 'Nothing was rebalanced, so the ending weights are wherever compounding carried them — which is the point of running it this way.'}
+                    {corr.estimate.shrinkage > 0.01 && (
+                      <>
+                        {' '}
+                        Correlations were pulled{' '}
+                        {formatPercent(corr.estimate.shrinkage, 0)} toward their average of{' '}
+                        <span className="numeric text-foreground">
+                          {corr.estimate.averageCorrelation.toFixed(2)}
+                        </span>
+                        , because {corr.estimate.symbols.length} holdings need{' '}
+                        {(corr.estimate.symbols.length * (corr.estimate.symbols.length - 1)) / 2}{' '}
+                        correlations estimated and the extreme ones are extreme partly by luck.
+                      </>
+                    )}
+                    {corr.simulation.ridge > 0 && (
+                      <> A small ridge was added to make the matrix factorisable; two holdings are
+                      close to collinear.</>
+                    )}
+                  </p>
+
+                  {corr.simulation.regimeUsed && (
+                    <div className="rounded-md border border-border bg-muted/40 p-2.5 text-2xs leading-relaxed">
+                      <p className="font-medium text-foreground">
+                        Correlation in calm and stressed markets
+                      </p>
+                      <p className="mt-1 text-muted-foreground">
+                        On the calmest {formatPercent(1 - corr.simulation.regimeUsed.stressFrequency, 0)}{' '}
+                        of days these holdings correlated{' '}
+                        <span className="numeric text-foreground">
+                          {corr.simulation.regimeUsed.calmCorrelation.toFixed(2)}
+                        </span>{' '}
+                        on average. On the worst{' '}
+                        {formatPercent(corr.simulation.regimeUsed.stressFrequency, 0)} they
+                        correlated{' '}
+                        <span className="numeric text-foreground">
+                          {corr.simulation.regimeUsed.stressedCorrelation.toFixed(2)}
+                        </span>
+                        {corr.simulation.regimeUsed.stressedCorrelation >
+                        corr.simulation.regimeUsed.calmCorrelation
+                          ? ' — diversification was weakest exactly when it was needed, and the simulation reproduces that rather than averaging it away.'
+                          : ' — unusually, these held their independence through the falls in this window.'}
+                      </p>
+                      <p className="mt-1 text-muted-foreground">
+                        Both regimes are measured from your own history and drawn at the frequency
+                        they occurred, so the mixture still averages back to the same long-run
+                        return. What changes is the shape of the downside.
+                      </p>
+                    </div>
+                  )}
+
+                  {corr.regimeNote && (
+                    <div className="rounded-md border border-[hsl(var(--warning))]/40 bg-[hsl(var(--warning))]/8 p-2.5 text-2xs leading-relaxed">
+                      <span className="font-medium">Regimes not modelled.</span>{' '}
+                      <span className="text-muted-foreground">{corr.regimeNote}</span>
+                    </div>
+                  )}
+
+                  {corr.glidepath && (
+                    <p className="text-2xs leading-relaxed text-muted-foreground">
+                      Gliding from{' '}
+                      {corr.targetWeights.map((w) => formatPercent(w, 0)).join(' / ')} to{' '}
+                      {corr.glidepath.to.map((w) => formatPercent(w, 0)).join(' / ')} across{' '}
+                      {corr.simulation.years} years, applied at each rebalance.
+                    </p>
+                  )}
+                </CardContent>
+              </Card>
+
+              <ChartFrame
+                title="Range of outcomes"
+                description="Shaded band spans the 5th to 95th percentile of simulated paths."
+                footer="Dashed, and deliberately unlike the historical charts: these are modelled outcomes, not observations."
+              >
+                <ResponsiveContainer width="100%" height={340}>
+                  <ComposedChart
+                    data={corr.simulation.bands.map((b) => ({
+                      year: b.year,
+                      band: [b.p5, b.p95] as [number, number],
+                      median: b.median,
+                    }))}
+                    margin={{ top: 8, right: 8, bottom: 4, left: 4 }}
+                  >
+                    <defs>
+                      <linearGradient id="corrBand" x1="0" y1="0" x2="0" y2="1">
+                        <stop offset="0%" stopColor="hsl(var(--chart-4))" stopOpacity={0.28} />
+                        <stop offset="100%" stopColor="hsl(var(--chart-4))" stopOpacity={0.06} />
+                      </linearGradient>
+                    </defs>
+                    <CartesianGrid {...GRID_PROPS} />
+                    <XAxis
+                      {...AXIS_PROPS}
+                      dataKey="year"
+                      tickFormatter={(v) => `${v}y`}
+                      type="number"
+                      domain={[0, 'dataMax']}
+                    />
+                    <YAxis {...AXIS_PROPS} tickFormatter={(v) => formatCurrencyCompact(Number(v))} />
+                    <Area dataKey="band" stroke="none" fill="url(#corrBand)" isAnimationActive={false} />
+                    <Line
+                      dataKey="median"
+                      stroke="hsl(var(--chart-4))"
+                      strokeWidth={2}
+                      strokeDasharray="5 3"
+                      dot={false}
+                      isAnimationActive={false}
+                    />
+                  </ComposedChart>
+                </ResponsiveContainer>
+              </ChartFrame>
+
+              <div className="rounded-md border border-[hsl(var(--warning))]/40 bg-[hsl(var(--warning))]/8 p-3 text-xs leading-relaxed">
+                <p className="font-medium">Reading this honestly</p>
+                <p className="mt-1 text-muted-foreground">
+                  {corr.simulation.paths.toLocaleString()} paths over {corr.simulation.years} years,
+                  drawn from a multivariate normal fitted to the joint history.{' '}
+                  {corr.simulation.regimeUsed
+                    ? 'Two regimes are modelled, so correlation breakdown in falls is reproduced rather than averaged away. What is still assumed is that regimes arrive independently — real stress clusters, and a run of bad months is more likely than this makes it look.'
+                    : 'Correlations are held fixed for the whole horizon — real ones move, and they rise toward one in exactly the falls where diversification was supposed to help. Turn on regimes above, or treat the downside band as optimistic.'}
+                </p>
               </div>
             </>
           )}

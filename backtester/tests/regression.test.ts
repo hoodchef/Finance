@@ -5,6 +5,7 @@ import {
   RegressionError,
   defaultLags,
   regress,
+  rollingRegression,
   tDistTwoSided,
 } from '../src/lib/analysis/regression';
 
@@ -140,5 +141,89 @@ describe('the t distribution', () => {
     expect(tDistTwoSided(1.5, 40)).toBeCloseTo(tDistTwoSided(-1.5, 40), 15);
     expect(tDistTwoSided(0, 40)).toBeCloseTo(1, 12);
     expect(tDistTwoSided(3, 40)).toBeLessThan(tDistTwoSided(2, 40));
+  });
+});
+
+describe('rolling regression', () => {
+  /**
+   * Builds a series whose market beta CHANGES halfway through. A single
+   * full-sample fit reports the average of the two, which describes neither
+   * half — the whole reason to roll the window.
+   */
+  function regimeChange(n: number, betaEarly: number, betaLate: number) {
+    let a = 12345 >>> 0;
+    const rand = () => {
+      a = (a + 0x6d2b79f5) >>> 0;
+      let t = Math.imul(a ^ (a >>> 15), 1 | a);
+      t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t;
+      return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+    };
+    const norm = () => {
+      let u = 0;
+      while (u <= 0) u = rand();
+      return Math.sqrt(-2 * Math.log(u)) * Math.cos(2 * Math.PI * rand());
+    };
+    const mkt: number[] = [];
+    const y: number[] = [];
+    for (let i = 0; i < n; i++) {
+      const m = 0.01 * norm();
+      const beta = i < n / 2 ? betaEarly : betaLate;
+      mkt.push(m);
+      y.push(beta * m + 0.002 * norm());
+    }
+    return { y, x: { Mkt: mkt } };
+  }
+
+  it('finds a beta change a single fit would average away', () => {
+    const data = regimeChange(2000, 1.5, 0.5);
+    const whole = regress({ ...data, periodsPerYear: 252 });
+    // The full-sample answer lands between the two and matches neither.
+    expect(whole.betas[0].estimate).toBeGreaterThan(0.8);
+    expect(whole.betas[0].estimate).toBeLessThan(1.2);
+
+    const rolling = rollingRegression({ ...data, periodsPerYear: 252, window: 250, step: 50 });
+    const first = rolling[0].betas.Mkt;
+    const last = rolling[rolling.length - 1].betas.Mkt;
+    expect(first).toBeCloseTo(1.5, 1);
+    expect(last).toBeCloseTo(0.5, 1);
+  });
+
+  it('produces windows in order, each ending later than the last', () => {
+    const data = regimeChange(1200, 1, 1);
+    const rolling = rollingRegression({ ...data, periodsPerYear: 252, window: 200, step: 40 });
+    expect(rolling.length).toBeGreaterThan(5);
+    for (let i = 1; i < rolling.length; i++) {
+      expect(rolling[i].endIndex).toBeGreaterThan(rolling[i - 1].endIndex);
+    }
+    // Every window is a real fit, not a placeholder.
+    for (const w of rolling) {
+      expect(Number.isFinite(w.betas.Mkt)).toBe(true);
+      expect(w.rSquared).toBeGreaterThan(0);
+    }
+  });
+
+  it('refuses a window longer than the history', () => {
+    const data = regimeChange(120, 1, 1);
+    expect(() =>
+      rollingRegression({ ...data, periodsPerYear: 252, window: 500 }),
+    ).toThrow(RegressionError);
+  });
+
+  it('skips a collinear window rather than fabricating a loading', () => {
+    // A factor that does not move within a window cannot have its loading
+    // identified there, even though the full sample identifies it fine.
+    const n = 600;
+    const mkt = Array.from({ length: n }, (_, i) => (i < 300 ? 0 : 0.01 * Math.sin(i)));
+    const flat = new Array<number>(n).fill(0);
+    const y = mkt.map((m, i) => m + flat[i]);
+    const rolling = rollingRegression({
+      y,
+      x: { Mkt: mkt, Dead: flat },
+      periodsPerYear: 252,
+      window: 200,
+      step: 100,
+    });
+    // Some windows drop out; the ones returned are all genuine fits.
+    for (const w of rolling) expect(Number.isFinite(w.betas.Mkt)).toBe(true);
   });
 });

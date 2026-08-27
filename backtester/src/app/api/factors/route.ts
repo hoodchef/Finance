@@ -1,6 +1,6 @@
 import { NextResponse } from 'next/server';
 import { computeDailyReturns, runBacktest } from '@/lib/backtest';
-import { regress } from '@/lib/analysis/regression';
+import { regress, rollingRegression } from '@/lib/analysis/regression';
 import {
   FACTOR_SETS,
   alignToFactors,
@@ -8,6 +8,7 @@ import {
   type FactorSetId,
 } from '@/lib/market-data/factors';
 import { getProvider } from '@/lib/market-data';
+import { sharedBacktest } from '@/lib/backtest-shared';
 import { errorResponse } from '@/lib/api-errors';
 import { parseConfig, parsePortfolio, ValidationError } from '@/lib/validate';
 
@@ -31,8 +32,8 @@ export async function POST(request: Request) {
     const model: FactorSetId = body.model === 'ff5' ? 'ff5' : 'ff3';
     const withMomentum = body.momentum === true;
 
-    const [historical, { returns, dates, periodsPerYear }] = await Promise.all([
-      runBacktest({ portfolio, config, provider, includeAssetAnalysis: false }),
+    const [{ result: historical, cached }, { returns, dates, periodsPerYear }] = await Promise.all([
+      sharedBacktest({ portfolio, config, includeAssetAnalysis: false }),
       computeDailyReturns({ portfolio, config, provider }),
     ]);
 
@@ -57,7 +58,28 @@ export async function POST(request: Request) {
       periodsPerYear,
     });
 
+    // A single fit reports one loading for the whole history. Rolling shows
+    // whether that number described the period or averaged two different ones.
+    let rolling: Array<{ date: string; betas: Record<string, number>; alpha: number }> = [];
+    try {
+      const windowLength = Math.max(126, Math.round(periodsPerYear));
+      rolling = rollingRegression({
+        y: aligned.excess,
+        x: aligned.factors,
+        periodsPerYear,
+        window: windowLength,
+        step: Math.max(5, Math.round(windowLength / 24)),
+      }).map((w) => ({
+        date: aligned.dates[w.endIndex],
+        betas: w.betas,
+        alpha: w.alphaAnnualised,
+      }));
+    } catch {
+      // Too short to roll. The single fit above still stands.
+    }
+
     return NextResponse.json({
+      rolling,
       model: {
         id: model,
         label: FACTOR_SETS[model].label,

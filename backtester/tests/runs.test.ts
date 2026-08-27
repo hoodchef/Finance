@@ -3,9 +3,12 @@ import {
   createRun,
   fingerprintPositions,
   groupByFingerprint,
+  runIncoherence,
   runProvenance,
   snapshotPortfolio,
+  type SavedRun,
 } from '../src/lib/runs';
+import { defaultConfig } from '../src/lib/defaults';
 import { runBacktest } from '../src/lib/backtest';
 import { DemoDataProvider } from '../src/lib/market-data/demo';
 import { testConfig } from './helpers';
@@ -180,5 +183,75 @@ describe('grouping', () => {
     const groups = groupByFingerprint([a, b, different]);
     expect(groups.size).toBe(2);
     expect(groups.get(a.snapshot.fingerprint)).toHaveLength(2);
+  });
+});
+
+describe('a stored run that contradicts itself', () => {
+  /**
+   * Runs live in browser storage and outlive the code that produced them. A
+   * snapshot written before a bug was fixed still deserializes cleanly and
+   * renders as a result. The engine refuses to produce these today; this
+   * catches the ones already on disk.
+   */
+  const base: SavedRun = {
+    runId: 'r1',
+    label: 'Test',
+    savedAt: '2026-08-26T00:00:00.000Z',
+    snapshot: { sourceId: 'p', name: 'P', positions: [], fingerprint: 'f' },
+    config: defaultConfig(),
+    engineVersion: '1.0.0',
+    summary: {
+      start: '2020-01-02',
+      end: '2024-12-31',
+      finalValue: 15_000,
+      totalReturn: 0.5,
+      cagr: 0.084,
+      volatility: 0.15,
+      maxDrawdown: -0.2,
+      sharpe: 0.5,
+      synthetic: false,
+    },
+  };
+
+  const withSummary = (patch: Partial<SavedRun['summary']>): SavedRun => ({
+    ...base,
+    summary: { ...base.summary, ...patch },
+  });
+
+  it('accepts a coherent run', () => {
+    expect(runIncoherence(base)).toBeNull();
+  });
+
+  it('rejects a zero-length window', () => {
+    expect(runIncoherence(withSummary({ start: '2016-08-23', end: '2016-08-23' }))).toMatch(
+      /same day/i,
+    );
+  });
+
+  it('rejects any return other than a total loss against a zero balance', () => {
+    // The real case on disk was finalValue 0 with cagr 0 — the money neither
+    // grew nor shrank, and is also gone. A first pass caught only cagr > 0 and
+    // let that through.
+    expect(runIncoherence(withSummary({ finalValue: 0, cagr: 0 }))).toMatch(/total loss/i);
+    expect(runIncoherence(withSummary({ finalValue: 0, cagr: 0.088 }))).toMatch(/total loss/i);
+    expect(runIncoherence(withSummary({ finalValue: -5, cagr: 0.02 }))).toMatch(/total loss/i);
+  });
+
+  it('allows a total loss reported honestly', () => {
+    // Zero final value with a negative CAGR is a wipeout, not a contradiction.
+    expect(runIncoherence(withSummary({ finalValue: 0, cagr: -1 }))).toBeNull();
+  });
+
+  it('rejects non-finite figures', () => {
+    expect(runIncoherence(withSummary({ cagr: Number.NaN }))).toMatch(/not a number/i);
+    expect(runIncoherence(withSummary({ finalValue: Number.POSITIVE_INFINITY }))).toMatch(
+      /not a number/i,
+    );
+  });
+
+  it('rejects impossible risk figures', () => {
+    expect(runIncoherence(withSummary({ volatility: -0.1 }))).toMatch(/negative/i);
+    // A drawdown is a fall; a positive one is a sign error somewhere upstream.
+    expect(runIncoherence(withSummary({ maxDrawdown: 0.2 }))).toMatch(/positive/i);
   });
 });

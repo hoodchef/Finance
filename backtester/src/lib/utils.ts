@@ -10,12 +10,18 @@ export function uid(prefix = 'id'): string {
   return `${prefix}_${Math.random().toString(36).slice(2, 10)}${Date.now().toString(36).slice(-4)}`;
 }
 
-/** Deterministic colour per symbol so a ticker keeps its colour everywhere. */
-const SERIES_COLORS = [
-  '#38bdf8', '#a78bfa', '#34d399', '#fbbf24', '#fb7185',
-  '#22d3ee', '#c084fc', '#4ade80', '#f97316', '#f472b6',
-  '#60a5fa', '#2dd4bf', '#facc15', '#e879f9', '#94a3b8',
-];
+/**
+ * Deterministic colour per symbol, so a ticker keeps its colour everywhere.
+ *
+ * CSS variables rather than literals, because the palette has to follow the
+ * theme. They were hardcoded hex, which meant every chart stayed the same cool
+ * blue and violet whatever the surface underneath — obvious the moment an
+ * amber terminal theme existed, and wrong before that too: the light theme was
+ * showing colours mixed for a dark background.
+ *
+ * SVG fill and stroke resolve var() normally, so Recharts needs no change.
+ */
+const SERIES_COLORS = Array.from({ length: 15 }, (_, i) => `var(--series-${i})`);
 
 export function seriesColor(key: string, index?: number): string {
   if (index != null) return SERIES_COLORS[index % SERIES_COLORS.length];

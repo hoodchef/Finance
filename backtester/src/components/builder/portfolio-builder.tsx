@@ -36,6 +36,7 @@ import { EmptyState } from '@/components/ui/empty-state';
 import { AllocationBar } from './allocation-bar';
 import { HoldingRow } from './holding-row';
 import { TickerSearch } from './ticker-search';
+import { AskPanel } from './ask-panel';
 
 export function PortfolioBuilder() {
   const draft = useWorkspace((s) => s.draft);
@@ -205,6 +206,9 @@ export function PortfolioBuilder() {
         )}
 
         <div className="space-y-2 border-t border-border pt-3">
+          {/* Renders nothing unless a local model is answering. */}
+          <AskPanel />
+
           <TickerSearch
             onSelect={(meta) =>
               addPosition({

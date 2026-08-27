@@ -43,6 +43,22 @@
     --ring: 205 88% 44%;
     --grid: 220 14% 92%;
 
+    --series-0: #0284c7;
+    --series-1: #7c3aed;
+    --series-2: #059669;
+    --series-3: #d97706;
+    --series-4: #e11d48;
+    --series-5: #0891b2;
+    --series-6: #9333ea;
+    --series-7: #16a34a;
+    --series-8: #ea580c;
+    --series-9: #db2777;
+    --series-10: #2563eb;
+    --series-11: #0d9488;
+    --series-12: #ca8a04;
+    --series-13: #c026d3;
+    --series-14: #64748b;
+
     --radius: 0.5rem;
   }
 
@@ -80,12 +96,236 @@
     --input: 220 13% 20%;
     --ring: 199 88% 56%;
     --grid: 220 13% 16%;
+
+    --series-0: #38bdf8;
+    --series-1: #a78bfa;
+    --series-2: #34d399;
+    --series-3: #fbbf24;
+    --series-4: #fb7185;
+    --series-5: #22d3ee;
+    --series-6: #c084fc;
+    --series-7: #4ade80;
+    --series-8: #f97316;
+    --series-9: #f472b6;
+    --series-10: #60a5fa;
+    --series-11: #2dd4bf;
+    --series-12: #facc15;
+    --series-13: #e879f9;
+    --series-14: #94a3b8;
+  }
+
+  /**
+   * Terminal.
+   *
+   * Amber-on-black, the way a monochrome monitor rendered numbers before
+   * colour was assumed. It is not a novelty: this application is almost
+   * entirely figures, and a single-hue palette on a near-black ground removes
+   * every colour cue that is not carrying information.
+   *
+   * Amber over the more obvious green because green is already load-bearing
+   * here — it means a gain. Building the chrome from the same hue as one of
+   * the two signals that matter would make a rising portfolio invisible
+   * against its own frame.
+   *
+   * Gains and losses therefore keep a green and a red, pushed toward the
+   * phosphor end and kept far enough apart in lightness to survive on a
+   * black background and in monochrome.
+   */
+  .terminal {
+    --background: 30 12% 4%;
+    --foreground: 39 65% 78%;
+
+    --card: 30 12% 6.5%;
+    --card-foreground: 39 65% 78%;
+
+    --popover: 30 12% 8%;
+    --popover-foreground: 39 65% 80%;
+
+    --primary: 38 96% 58%;
+    --primary-foreground: 30 20% 6%;
+    --primary-muted: 38 40% 14%;
+
+    --secondary: 34 14% 13%;
+    --secondary-foreground: 39 60% 82%;
+
+    --muted: 34 12% 11%;
+    --muted-foreground: 38 22% 55%;
+
+    --accent: 34 16% 15%;
+    --accent-foreground: 39 65% 84%;
+
+    --destructive: 4 78% 56%;
+    --destructive-foreground: 30 20% 6%;
+
+    --positive: 128 62% 52%;
+    --negative: 4 82% 62%;
+    --warning: 45 96% 58%;
+
+    --border: 36 16% 16%;
+    --input: 36 16% 19%;
+    --ring: 38 96% 58%;
+    --grid: 36 14% 12%;
+
+    --series-0: #f5a623;
+    --series-1: #8ae234;
+    --series-2: #7fd1e8;
+    --series-3: #ffd479;
+    --series-4: #c8e6a0;
+    --series-5: #e8b04b;
+    --series-6: #5fb336;
+    --series-7: #a8d8ea;
+    --series-8: #ffe9b0;
+    --series-9: #9dc46a;
+    --series-10: #d99a2b;
+    --series-11: #6ecf3f;
+    --series-12: #bfe3f0;
+    --series-13: #f0c674;
+    --series-14: #8a8578;
+  }
+
+  /**
+   * Bloomberg.
+   *
+   * The terminal theme is one hue on black; this is the other convention a
+   * trading desk knows — black ground, ORANGE for labels and chrome, CYAN for
+   * data, and hard green and red for direction.
+   *
+   * The split is the point and it is not decoration: on a Bloomberg screen the
+   * colour tells you what KIND of thing you are looking at before you read it.
+   * Labels are orange, figures are cyan, and anything green or red is a
+   * movement. That is a different job from the terminal theme, where a single
+   * phosphor means every distinction has to come from position and weight.
+   *
+   * Denser than the other themes too — a desk display is read at a glance
+   * across a lot of numbers, not scrolled.
+   */
+  .bloomberg {
+    --background: 0 0% 0%;
+    --foreground: 190 75% 76%;
+
+    --card: 220 20% 5%;
+    --card-foreground: 190 75% 76%;
+
+    --popover: 220 20% 7%;
+    --popover-foreground: 190 75% 78%;
+
+    --primary: 33 100% 55%;
+    --primary-foreground: 0 0% 4%;
+    --primary-muted: 33 60% 13%;
+
+    --secondary: 220 18% 12%;
+    --secondary-foreground: 33 90% 62%;
+
+    --muted: 220 16% 10%;
+    /* Muted text is dimmed ORANGE, not grey: on this ground grey reads as
+       disabled, and these are labels. */
+    --muted-foreground: 33 45% 58%;
+
+    --accent: 220 18% 14%;
+    --accent-foreground: 33 95% 66%;
+
+    --destructive: 0 85% 55%;
+    --destructive-foreground: 0 0% 100%;
+
+    --positive: 130 75% 48%;
+    --negative: 0 90% 60%;
+    --warning: 45 100% 55%;
+
+    --border: 215 22% 16%;
+    --input: 215 22% 20%;
+    --ring: 33 100% 55%;
+    --grid: 215 20% 12%;
+
+    --series-0: #ff9e1b;
+    --series-1: #4fc3f7;
+    --series-2: #66bb6a;
+    --series-3: #ef5350;
+    --series-4: #ba68c8;
+    --series-5: #ffd54f;
+    --series-6: #4dd0e1;
+    --series-7: #aed581;
+    --series-8: #ff8a65;
+    --series-9: #f06292;
+    --series-10: #7986cb;
+    --series-11: #4db6ac;
+    --series-12: #dce775;
+    --series-13: #9575cd;
+    --series-14: #90a4ae;
   }
 }
 
 @layer base {
   * {
     @apply border-border;
+  }
+
+  /* The whole surface in one face, with tabular figures so columns line up. */
+  .terminal body,
+  .terminal button,
+  .terminal input,
+  .terminal select,
+  .terminal textarea,
+  .bloomberg body,
+  .bloomberg button,
+  .bloomberg input,
+  .bloomberg select,
+  .bloomberg textarea {
+    font-family: var(--font-mono);
+    font-variant-numeric: tabular-nums;
+    letter-spacing: -0.01em;
+  }
+
+  /* A faint scanline, well under the threshold where it costs legibility. */
+  .terminal body::before {
+    content: '';
+    position: fixed;
+    inset: 0;
+    z-index: 50;
+    pointer-events: none;
+    background: repeating-linear-gradient(
+      to bottom,
+      hsl(38 96% 58% / 0.022) 0px,
+      hsl(38 96% 58% / 0.022) 1px,
+      transparent 1px,
+      transparent 3px
+    );
+  }
+
+  /*
+   * The colour convention, applied structurally rather than per component:
+   * anything tabular-numeric is DATA and reads cyan; table headers and small
+   * caps labels are CHROME and read orange. Components did not need changing
+   * for this, which is the test of whether the token set was right.
+   *
+   * Toned figures are excluded. A blanket rule on .numeric out-specified the
+   * app's existing positive/negative colouring and turned every gain cyan —
+   * flattening the one distinction a trading palette exists to make, and doing
+   * it on a screen where green and red are the fastest thing to read.
+   */
+  .bloomberg .numeric:not(.text-positive):not(.text-negative):not([class*='--positive']):not([class*='--negative']) {
+    color: hsl(190 80% 72%);
+  }
+
+  .bloomberg th {
+    color: hsl(33 90% 60%);
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+  }
+
+  /* Headings are chrome, so they take the label colour like everything else
+     that names a thing rather than being one. Applying it to h1 alone left
+     section headings reading as data. */
+  .bloomberg h1,
+  .bloomberg h2,
+  .bloomberg h3 {
+    color: hsl(33 95% 62%);
+  }
+
+  /* Anyone who has asked for less motion has also asked for less of this. */
+  @media (prefers-reduced-motion: reduce) {
+    .terminal body::before {
+      display: none;
+    }
   }
 
   html {

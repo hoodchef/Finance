@@ -519,6 +519,114 @@ The engine ignores them at runtime — it works from the raw side — but
 `tests/parity-tiingo.test.ts` checks one against the other, which is the
 strongest parity anchor in the repo.
 
+### Company fundamentals, from the filings
+
+`/research` takes a ticker and reads that company's XBRL facts from **SEC
+EDGAR** — the filings themselves, not a vendor's transcription of them.
+
+Chosen over the alternatives on three grounds, in order of weight:
+
+1. **It is the primary source.** A vendor's fundamentals database is a copy of
+   this with its own errors and its own lag.
+2. **Public domain.** US government work carries no licence, which makes it the
+   only fundamentals source surveyed that a commercial product may show to its
+   users. Alpha Vantage's are personal-use, and its free tier allows 25 requests
+   a day against the five this page needs per company.
+3. **No key**, and a published limit of ten requests a second rather than a
+   daily quota.
+
+Covered: revenue and growth, EPS and growth, gross/operating/net margins, free
+cash flow, the balance sheet, cash and debt, P/E, P/S, P/B, EV/EBITDA, FCF
+yield, dividend yield and payout, ROE, ROIC, share count and dilution, and up to
+nineteen years of history.
+
+**Four bugs that only live data revealed**, each of which produced confident,
+plausible, wrong output:
+
+| Symptom | Cause | Fix |
+| --- | --- | --- |
+| Three different years of Apple revenue labelled 2025 | `fy` is the fiscal year of the FILING, not the period; a 10-K stamps its comparatives with its own year | Label by counting back from the newest period, whose original filing is the only one reliably retained |
+| NVIDIA shown at a quarter of its size, ending 2022 | It switched revenue tags in 2022; taking the first concept with any data dropped every year since | Merge the whole concept chain, resolving per period by latest filing |
+| Apple diluting shareholders 186% while buying back stock | SEC share counts are as-reported and not split-adjusted | Treat a jump over 40% as a split, measure after it, and say so |
+| Apple's market cap as "$4631B" | The compact formatter had no trillion tier | Added one |
+
+**What it does not do.** US filers only — a TSX-only listing files with SEDAR
+and is reported as unsupported rather than shown empty. Valuation is on the last
+full fiscal year, stated on screen, rather than trailing twelve months. And
+there are **no analyst estimates or forward metrics**: no free source surveyed
+licenses them for display, and a fabricated consensus would be worse than an
+absent one.
+
+Where a company did not report something the cell is a dash, never a zero. A
+page that substitutes zero for missing debt reports a flattering EV/EBITDA and
+looks entirely normal doing it.
+
+### Options data: evaluated, none usable
+
+Surveyed August 2026, and the answer is the price-data finding in sharper
+form. A free options feed good enough to build on exists; none of it may be
+shown to anyone else.
+
+| Source | What it gives | Why it is not used |
+| --- | --- | --- |
+| **Cboe delayed-quotes CDN** | The best free data found: 13,288 SPY contracts, 32 expiries to 2028, bid/ask and sizes, IV, open interest, volume, full greeks and a theoretical price. Current to the session close, no key. | Cboe's content policy requires advance written approval and an executed licence before any website data is used. An open endpoint is not a licence. |
+| **Alpha Vantage options** | Historical and realtime option chains. | Both premium. `REALTIME_OPTIONS` returns a populated, parseable payload on the free tier that is labelled *in the response* as artificial illustrative data — an integration written against it would invent option chains. |
+| **marketdata.app** | 100 credits/day, 24-hour delayed, one year of history. | Free and mid tiers are "Internal Use" only; redistribution is top-plan-only at custom pricing. |
+
+Recorded in `lib/market-data/licence.ts` as `OPTIONS_SOURCES_EVALUATED`, with a
+test asserting every entry carries a blocker — so the search is not repeated,
+and so nothing gets integrated without the terms being read.
+
+### Describing a portfolio to a local model
+
+Optional, off unless a local Ollama daemon answers on `127.0.0.1:11434`. It
+turns *"a 60/40 with a gold sleeve, tested since 2010"* into a proposed
+portfolio and configuration.
+
+**Local specifically, not incidentally.** The proposition of this product is
+that a user's income, province and net worth never leave their machine.
+A hosted model would break the one property nothing else here breaks.
+
+```bash
+ollama pull llama3.2        # OLLAMA_MODEL to use another
+```
+
+**Input only, and the boundary is the whole safety argument.** The model
+chooses tickers and weights; it never produces a figure that reaches a result
+and never writes prose about one. Its answer is treated exactly like a shared
+link — hostile until parsed — and goes through `parsePositions` and
+`parseConfig`, the same functions a typed request uses. A hallucinated
+allocation cannot reach the engine by a route a typed one could not.
+
+What it will *not* do is narrate a backtest. Every figure in this application
+traces to a computation, and a model writing commentary is a fabrication engine
+aimed precisely at that. The failure has a shape already seen here: Alpha
+Vantage's free options endpoint returns a populated, parseable payload the
+response itself labels artificial. Plausible output with nothing behind it is
+the hazard, and no validator catches it — so there is no code path to one.
+
+Three things happen that a form does not need:
+
+- **Every symbol is checked against the local 13,000-symbol universe.** A model
+  will confidently invent a plausible ticker, and an invented ticker otherwise
+  fails much later as a provider error that reads like an outage. Unrecognised
+  symbols are flagged on the review screen instead.
+- **Weights that do not sum to 100 are reported, not normalised.** Silently
+  rescaling would hide that the request was misread.
+- **Nothing is applied.** The proposal is rendered for review, with every
+  defaulted field named and the model's own stated uncertainty shown, and the
+  user presses Use. A misread request produces a wrong screen, not a wrong
+  portfolio.
+
+**The live path is unverified.** Ollama was not installed on the machine this
+was written on. Every branch of the client is tested against a stubbed daemon —
+absence, a daemon missing the model, a refusal, and the three ways a small
+model returns something other than the JSON it was asked for — and the
+interpretation boundary is tested against invented tickers, unbalanced weights,
+numbers as strings, dates as prose and negative weights. What has not been
+confirmed is that a real model produces usable JSON often enough to be pleasant.
+A smaller model may not.
+
 ### Parity fixtures are not redistributable
 
 The Tiingo recordings that back `tests/parity-tiingo.test.ts` are gitignored.
@@ -631,7 +739,7 @@ Yahoo throttles without warning, so this is routine rather than exceptional.
 ### Demo mode (synthetic)
 
 ```bash
-npm run dev:demo     # http://localhost:3101
+npm run dev:demo     # same port, synthetic data (stop the real one first)
 ```
 
 A seeded random walk for offline exploration. **It is not market data**, and
@@ -748,7 +856,7 @@ de-duplicated into one fetch.
 ```bash
 npm install
 npm run dev          # port 3100, live Yahoo data
-npm run dev:demo     # port 3101, synthetic data
+npm run dev:demo     # synthetic data, same port — one server at a time
 npm run build && npm start
 npm test             # 621 tests across 29 files
 npm run typecheck
@@ -820,6 +928,36 @@ node scripts/record-fixtures.mjs
 ```
 
 ---
+
+## Accounts and server storage
+
+Off by default. With no `DATABASE_URL` the app keeps portfolios in the browser,
+needs no account, and nothing leaves the machine. Setting `DATABASE_URL` enables
+server-side storage under one local owner; accounts additionally require
+`NEXTAUTH_SECRET`. **A database without a secret is not authentication** and the
+app treats it as still off, rather than signing sessions with nothing.
+
+Sessions are database-backed, not JWT: a JWT cannot be revoked before it
+expires, and for a product holding someone's financial planning, ending a
+session server-side is worth the extra query.
+
+```bash
+npm run db:generate      # Prisma clients, Postgres and the SQLite mirror
+npm run db:migrate       # apply prisma/migrations to DATABASE_URL
+npm run db:push:test     # local SQLite, for the repository tests
+```
+
+**The migration has not been run against a live Postgres.** It is generated
+from the schema by `prisma migrate diff` and checked in, and tests assert it
+creates every model, cascades deletes from the owner, carries the uniqueness
+Auth.js depends on, and stores weights as `DECIMAL` rather than a float. That is
+a weaker claim than "it runs", and is the honest one: no Postgres was reachable
+from the machine that wrote it. The repository itself IS exercised against a
+real database — SQLite, from a schema generated off the Postgres one so the
+models cannot drift.
+
+OAuth providers register only when both halves of a credential pair are present.
+No live OAuth flow has been run either.
 
 ## Persistence
 

@@ -1,5 +1,14 @@
 import { beforeEach, describe, expect, it } from 'vitest';
-import { QueueFullError, __resetQueue, enqueue, getJob, queueStats } from '../src/lib/jobs/queue';
+import fs from 'node:fs';
+import path from 'node:path';
+import {
+  QueueFullError,
+  __reloadQueue,
+  __resetQueue,
+  enqueue,
+  getJob,
+  queueStats,
+} from '../src/lib/jobs/queue';
 
 const tick = (ms = 5) => new Promise((r) => setTimeout(r, ms));
 /** Waits for a job to leave the running state, or gives up. */
@@ -96,5 +105,101 @@ describe('the job queue', () => {
 
   it('returns undefined for an id it does not know', () => {
     expect(getJob('nope')).toBeUndefined();
+  });
+});
+
+describe('surviving a restart', () => {
+  const store = path.join(process.cwd(), '.cache', 'market-data', 'jobs.json');
+
+  beforeEach(() => {
+    try {
+      fs.unlinkSync(store);
+    } catch {
+      /* absent is fine */
+    }
+    __resetQueue();
+  });
+
+  it('serves a completed result after the process is gone', async () => {
+    const job = enqueue('test', async () => ({ answer: 42 }));
+    await settle(job.id);
+
+    // Simulate a restart: the map and every closure in it are gone.
+    __reloadQueue();
+
+    const after = getJob<{ answer: number }>(job.id);
+    expect(after?.status).toBe('done');
+    // A twenty-second computation should not be thrown away by a dev-server
+    // reload, which is the whole point.
+    expect(after?.result).toEqual({ answer: 42 });
+  });
+
+  it('does not resurrect a job as still running', async () => {
+    // A job with no worker behind it would be polled forever against a promise
+    // nobody is keeping.
+    const job = enqueue('test', async () => 'value');
+    await settle(job.id);
+    fs.writeFileSync(
+      store,
+      JSON.stringify([
+        {
+          id: 'ghost',
+          kind: 'test',
+          status: 'running',
+          createdAt: Date.now(),
+          startedAt: Date.now(),
+          finishedAt: null,
+          result: null,
+          error: null,
+          queuePosition: null,
+        },
+      ]),
+    );
+    __reloadQueue();
+
+    const ghost = getJob('ghost');
+    expect(ghost?.status).toBe('failed');
+    expect(ghost?.error).toMatch(/restart/i);
+  });
+
+  it('drops results older than the retention window', async () => {
+    fs.writeFileSync(
+      store,
+      JSON.stringify([
+        {
+          id: 'ancient',
+          kind: 'test',
+          status: 'done',
+          createdAt: 0,
+          startedAt: 0,
+          finishedAt: 1,
+          result: 'stale',
+          error: null,
+          queuePosition: null,
+        },
+      ]),
+    );
+    __reloadQueue();
+    expect(getJob('ancient')).toBeUndefined();
+  });
+
+  it('starts clean when the store is corrupt rather than failing', async () => {
+    // A half-written file must cost the results in it, not the queue itself.
+    fs.mkdirSync(path.dirname(store), { recursive: true });
+    fs.writeFileSync(store, '{"not":"an array"');
+    __reloadQueue();
+    const job = enqueue('test', async () => 'fine');
+    await settle(job.id);
+    expect(getJob<string>(job.id)?.result).toBe('fine');
+  });
+
+  it('never persists an unsettled job', async () => {
+    const release: Array<() => void> = [];
+    const job = enqueue('test', () => new Promise<string>((r) => release.push(() => r('done'))));
+    // Nothing on disk yet: it has not finished.
+    expect(fs.existsSync(store)).toBe(false);
+    release.forEach((fn) => fn());
+    await settle(job.id);
+    expect(JSON.parse(fs.readFileSync(store, 'utf8'))).toHaveLength(1);
   });
 });

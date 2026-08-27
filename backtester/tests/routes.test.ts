@@ -38,6 +38,30 @@ describe('every navigation target is a real route', () => {
     }
   });
 
+  /**
+   * The heading a route renders must be the label that led there.
+   *
+   * Six of ten drifted apart when the nav was regrouped and the pages were not
+   * touched with it: clicking "Studies" landed on a page headed "Analytics",
+   * "Holdings" on one headed "Assets". Nothing fails, nothing logs, and the
+   * product feels like parts bolted together — which is exactly what a nav
+   * rename is supposed to stop it feeling like.
+   */
+  it.each(NAV_ITEMS.map((i) => [i.href, i.label]))(
+    '%s renders the heading "%s" that the nav promises',
+    (href, label) => {
+      const dir = href === '/' ? APP : path.join(APP, href.replace(/^\//, ''));
+      const files = fs
+        .readdirSync(dir)
+        .filter((f) => f.endsWith('.tsx'))
+        .map((f) => fs.readFileSync(path.join(dir, f), 'utf8'));
+      // `&` is escaped in JSX, so compare against both forms.
+      const wanted = [`title="${label}"`, `title="${label.replace(/&/g, '&amp;')}"`];
+      const found = files.some((body) => wanted.some((w) => body.includes(w)));
+      expect(found, `${href} has no PageHeader titled "${label}"`).toBe(true);
+    },
+  );
+
   it('gives every destination a distinct path and label', () => {
     expect(new Set(NAV_ITEMS.map((i) => i.href)).size).toBe(NAV_ITEMS.length);
     expect(new Set(NAV_ITEMS.map((i) => i.label)).size).toBe(NAV_ITEMS.length);

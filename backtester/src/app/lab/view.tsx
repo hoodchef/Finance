@@ -3,6 +3,7 @@
 import * as React from 'react';
 import { AlertCircle, CheckCircle2, FlaskConical, Play, XCircle } from 'lucide-react';
 import { PageBody, PageHeader } from '@/components/layout/app-shell';
+import { ContextBar } from '@/components/layout/context-bar';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
@@ -38,6 +39,7 @@ interface LabResponse {
     symbols: Array<{ symbol: string; source: string; synthetic: boolean }>;
   };
   universe: { count: number; source: string } | null;
+  queue: { active: number; queued: number; retained: number; maxConcurrent: number };
 }
 
 /** One assertion the Lab checks and reports rather than hiding in a test file. */
@@ -142,6 +144,16 @@ export function LabView() {
 
   React.useEffect(() => () => controller.current?.abort(), []);
 
+  // Inspect on arrival; see the note in the Simulator. Once only.
+  const autoRan = React.useRef(false);
+  React.useEffect(() => {
+    if (autoRan.current) return;
+    if (!draft.positions.some((p) => p.symbol.trim())) return;
+    autoRan.current = true;
+    void run();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [draft.id]);
+
   const checks = data ? buildChecks(data) : [];
   const failing = checks.filter((c) => !c.passed);
 
@@ -166,6 +178,8 @@ export function LabView() {
           </Button>
         }
       />
+
+      <ContextBar />
 
       <PageBody className="space-y-4">
         {error && (
@@ -318,6 +332,38 @@ export function LabView() {
                     ))}
                   </tbody>
                 </table>
+              </CardContent>
+            </Card>
+
+            <Card>
+              <CardHeader className="pb-2">
+                <CardTitle className="text-sm">Job queue</CardTitle>
+              </CardHeader>
+              <CardContent className="space-y-2 text-xs">
+                <div className="grid grid-cols-2 gap-px overflow-hidden rounded-md border border-border bg-border sm:grid-cols-4">
+                  {(
+                    [
+                      ['Running', data.queue.active, `of ${data.queue.maxConcurrent} slots`],
+                      ['Waiting', data.queue.queued, 'ahead in line'],
+                      ['Retained', data.queue.retained, 'results still readable'],
+                      ['Concurrency', data.queue.maxConcurrent, 'hard cap'],
+                    ] as const
+                  ).map(([label, value, sub]) => (
+                    <div key={label} className="bg-card px-3 py-2">
+                      <div className="text-2xs uppercase tracking-wide text-muted-foreground">
+                        {label}
+                      </div>
+                      <div className="numeric mt-0.5 text-base font-semibold">{value}</div>
+                      <div className="text-2xs text-muted-foreground">{sub}</div>
+                    </div>
+                  ))}
+                </div>
+                <p className="text-2xs leading-relaxed text-muted-foreground">
+                  Simulations and correlated runs are queued rather than held open on the request.
+                  Finished results are written to disk, so a restart no longer discards a
+                  computation that took twenty seconds. What this still does not do is share work:
+                  a second server instance has its own store and its own memory.
+                </p>
               </CardContent>
             </Card>
 
