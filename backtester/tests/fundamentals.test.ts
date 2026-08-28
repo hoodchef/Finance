@@ -276,3 +276,231 @@ describe('dilution across a split', () => {
     expect(d.changePct).toBeLessThan(0);
   });
 });
+
+describe('placeholder zeros in balance-sheet totals', () => {
+  /**
+   * Regression: Coca-Cola's research page reported 2007 shareholders' equity as
+   * $0. EDGAR really does carry that fact — value 0 at 2006-12-31 and
+   * 2007-12-31 for StockholdersEquityIncludingPortionAttributableToNoncontroll-
+   * ingInterest, both filed with the 2009 10-K, with the first real figure
+   * (20,862,000,000) at 2008-12-31. They come from the statement of shareowners'
+   * equity tagging comparative years the statement does not actually present.
+   *
+   * A company that filed a 10-K does not have equity of exactly nil to the
+   * dollar, so the figure is absent rather than zero. A missing figure and a
+   * figure of zero say very different things, and only one of them is true.
+   */
+  const instant = (endYear: number, val: number): Point => ({
+    end: `${endYear}-09-30`,
+    val,
+    fy: 2009,
+    fp: 'FY',
+    form: '10-K',
+    filed: '2010-02-26',
+  });
+
+  const revenues = [year(2007, 28857, 2009, '2010-02-26'), year(2008, 31944, 2009, '2010-02-26')];
+
+  it('omits an equity figure of exactly zero rather than reporting $0', () => {
+    const { rows } = buildAnnualRows(
+      facts({
+        Revenues: revenues,
+        StockholdersEquityIncludingPortionAttributableToNoncontrollingInterest: [
+          instant(2007, 0),
+          instant(2008, 20862000000),
+        ],
+      }),
+    );
+    expect(rows.find((r) => r.end === '2007-09-30')?.equity).toBeNull();
+    expect(rows.find((r) => r.end === '2008-09-30')?.equity).toBe(20862000000);
+  });
+
+  it('does not report a return on equity built on the placeholder', () => {
+    // The divide-by-zero guard already blanked ROE, but the $0 equity itself
+    // still rendered, which was the visible falsehood.
+    const { rows } = buildAnnualRows(
+      facts({
+        Revenues: revenues,
+        NetIncomeLoss: [year(2007, 5981, 2009, '2010-02-26')],
+        StockholdersEquity: [instant(2007, 0), instant(2008, 20862000000)],
+      }),
+    );
+    const y = rows.find((r) => r.end === '2007-09-30');
+    expect(y?.equity).toBeNull();
+    expect(y?.roe).toBeNull();
+  });
+
+  it('drops placeholder zeros in total assets too', () => {
+    const { rows } = buildAnnualRows(
+      facts({ Revenues: revenues, Assets: [instant(2007, 0), instant(2008, 40519000000)] }),
+    );
+    expect(rows.find((r) => r.end === '2007-09-30')?.assets).toBeNull();
+    expect(rows.find((r) => r.end === '2008-09-30')?.assets).toBe(40519000000);
+  });
+
+  it('keeps a genuine zero debt balance, which is a real thing to report', () => {
+    // A debt-free company is meaningful and must not be blanked out by the same
+    // rule that removes balance-sheet placeholders.
+    const { rows } = buildAnnualRows(
+      facts({ Revenues: revenues, LongTermDebtNoncurrent: [instant(2008, 0)] }),
+    );
+    expect(rows.find((r) => r.end === '2008-09-30')?.totalDebt).toBe(0);
+  });
+});
+
+describe('a balance sheet that adds up', () => {
+  /**
+   * Both cases below are real, and both produced a balance sheet on screen
+   * whose liabilities plus equity exceeded its total assets — which nothing
+   * legitimate causes. Noncontrolling and mezzanine interests make assets
+   * exceed liabilities-plus-equity; nothing makes it go the other way.
+   */
+  const instant = (end: string, val: number, filed: string, form = '10-K'): Point => ({
+    end,
+    val,
+    fy: Number(end.slice(0, 4)),
+    fp: 'FY',
+    form,
+    filed,
+  });
+
+  it('honours a restatement filed as a 10-K/A', () => {
+    // Apple restated fiscal 2008 in a 10-K/A filed 2010-01-25, cutting total
+    // liabilities from 18,542 to 13,874. Excluding amendments kept the
+    // superseded figure while assets and equity moved on.
+    const s = annualSeries(
+      facts({
+        Liabilities: [
+          instant('2008-09-27', 18542, '2009-10-27'),
+          instant('2008-09-27', 13874, '2010-01-25', '10-K/A'),
+        ],
+      }),
+      ['Liabilities'],
+      { instant: true },
+    );
+    expect(s).toHaveLength(1);
+    expect(s[0].value).toBe(13874);
+  });
+
+  it('does not take equity from a filing newer than the balance sheet it sits on', () => {
+    // Microsoft's equity at 2016-06-30 was restated to 83,090 in the fiscal
+    // 2018 10-K. That filing never re-reported assets or liabilities for the
+    // date — the equity statement runs three years where the balance sheet
+    // runs two — so the restated figure had no balance sheet to belong to.
+    const { rows } = buildAnnualRows(
+      facts({
+        Revenues: [year(2016, 91154, 2016, '2016-07-28')],
+        Assets: [
+          instant('2016-09-30', 193694, '2016-07-28'),
+          instant('2016-09-30', 193468, '2017-08-02'),
+        ],
+        Liabilities: [
+          instant('2016-09-30', 121697, '2016-07-28'),
+          instant('2016-09-30', 121471, '2017-08-02'),
+        ],
+        StockholdersEquity: [
+          instant('2016-09-30', 71997, '2016-07-28'),
+          instant('2016-09-30', 71997, '2017-08-02'),
+          instant('2016-09-30', 83090, '2018-08-03'),
+        ],
+      }),
+    );
+    const r = rows[0];
+    expect(r.equity).toBe(71997);
+    expect(r.assets).toBe(193468);
+    expect(r.liabilities! + r.equity!).toBe(r.assets);
+  });
+
+  it('still uses a line whose newest filing is older than the balance sheet', () => {
+    // The cap is a ceiling, not a requirement to match. Apple's restated
+    // liabilities were never re-reported after the 10-K/A, and that figure is
+    // current — nothing has restated it since.
+    const { rows } = buildAnnualRows(
+      facts({
+        Revenues: [year(2008, 37491, 2008, '2009-10-27')],
+        Assets: [
+          instant('2008-09-30', 39572, '2009-10-27'),
+          instant('2008-09-30', 36171, '2010-10-27'),
+        ],
+        Liabilities: [
+          instant('2008-09-30', 18542, '2009-10-27'),
+          instant('2008-09-30', 13874, '2010-01-25', '10-K/A'),
+        ],
+        StockholdersEquity: [
+          instant('2008-09-30', 21030, '2009-10-27'),
+          instant('2008-09-30', 22297, '2010-10-27'),
+        ],
+      }),
+    );
+    const r = rows[0];
+    expect(r.liabilities).toBe(13874);
+    expect(r.equity).toBe(22297);
+    expect(r.liabilities! + r.equity!).toBe(r.assets);
+  });
+
+  it('leaves the balance sheet alone when total assets are not reported', () => {
+    // With no anchor there is no cap, and the figures resolve as before rather
+    // than disappearing.
+    const { rows } = buildAnnualRows(
+      facts({
+        Revenues: [year(2016, 91154, 2016, '2016-07-28')],
+        StockholdersEquity: [instant('2016-09-30', 83090, '2018-08-03')],
+      }),
+    );
+    expect(rows[0].equity).toBe(83090);
+    expect(rows[0].assets).toBeNull();
+  });
+});
+
+describe('share counts filed at the wrong scale', () => {
+  /**
+   * Merck's 2010 diluted share count is 3,120 in EDGAR, between 2,273,000,000
+   * in 2009 and 3,094,000,000 in 2011 — filed in millions where its neighbours
+   * are absolute. NVIDIA's 2008 and 2009 are in thousands. Rendered literally,
+   * Merck reported three thousand diluted shares.
+   */
+  const build = (ni: number, eps: number, shares: number) =>
+    buildAnnualRows(
+      facts({
+        Revenues: [year(2010, 45987, 2010, '2011-02-28')],
+        NetIncomeLoss: [year(2010, ni, 2010, '2011-02-28')],
+        EarningsPerShareDiluted: [year(2010, eps, 2010, '2011-02-28')],
+        WeightedAverageNumberOfDilutedSharesOutstanding: [
+          year(2010, shares, 2010, '2011-02-28'),
+        ],
+      }),
+    ).rows[0];
+
+  it('drops a count filed in millions', () => {
+    // Merck: 861,000,000 / (0.28 x 3,120) = 985,126, a whisker off a million.
+    expect(build(861_000_000, 0.28, 3_120).sharesDiluted).toBeNull();
+  });
+
+  it('drops a count filed in thousands', () => {
+    // NVIDIA: 797,645,000 / (1.31 x 606,732) = 1,004.
+    expect(build(797_645_000, 1.31, 606_732).sharesDiluted).toBeNull();
+  });
+
+  it('keeps a count that simply disagrees with EPS because of preferred dividends', () => {
+    // Bank of America 2011: net income 1,446,000,000 against 102,548,240 of
+    // income available to common, a ratio of 14. Real, and not a power of a
+    // thousand — EPS is struck after preferred dividends and net income is not.
+    expect(build(1_446_000_000, 0.01, 10_254_824_000).sharesDiluted).toBe(10_254_824_000);
+  });
+
+  it('keeps an ordinary count where the arithmetic agrees', () => {
+    expect(build(861_000_000, 0.28, 3_120_000_000).sharesDiluted).toBe(3_120_000_000);
+  });
+
+  it('leaves the count alone when there is no EPS to check it against', () => {
+    // Without both figures there is no arithmetic, and a suspicion is not
+    // grounds for removing data.
+    const r = buildAnnualRows(
+      facts({
+        Revenues: [year(2010, 45987, 2010, '2011-02-28')],
+        WeightedAverageNumberOfDilutedSharesOutstanding: [year(2010, 3_120, 2010, '2011-02-28')],
+      }),
+    ).rows[0];
+    expect(r.sharesDiluted).toBe(3_120);
+  });
+});

@@ -117,16 +117,77 @@ export interface ConceptUse {
   concept: string;
 }
 
+/**
+ * Drops a diluted share count that was filed at the wrong scale.
+ *
+ * Early XBRL filings sometimes tagged share counts in thousands or millions
+ * while the surrounding years used absolute counts. Merck's 2010 count is
+ * 3,120 where 2009 is 2,273,000,000 and 2011 is 3,094,000,000; NVIDIA's 2008
+ * and 2009 are in thousands. Rendered literally, Merck reported a diluted
+ * share count of three thousand.
+ *
+ * Detection is not an outlier test — a company really can change its share
+ * count sharply, and a reverse split really can divide it by a hundred. It is
+ * an arithmetic one: diluted EPS times diluted shares is income available to
+ * common shareholders, so the ratio between that product and net income is
+ * near one for most companies, and further from one for a company paying large
+ * preferred dividends — Bank of America's 2011 ratio is 14. A scale error is a
+ * different animal: it lands within a whisker of a power of a thousand, 985,126
+ * for Merck and 1,004 for NVIDIA, because that is what a units mistake does.
+ * So only ratios close to 1,000, a million or a billion are treated as one.
+ *
+ * The count is dropped rather than multiplied back. Inferring the intended
+ * scale from EPS is convincing enough to disbelieve the figure and not enough
+ * to publish a number the filer did not file, and dilution already skips years
+ * with no count — which is better than the alternative it faced before, where
+ * the jump back to billions read as a stock split.
+ */
+function withoutMisscaledShares(row: YearRow): YearRow {
+  const { netIncome: ni, epsDiluted: eps, sharesDiluted: shares } = row;
+  if (ni == null || eps == null || shares == null) return row;
+  if (ni <= 0 || eps <= 0 || shares <= 0) return row;
+
+  const ratio = ni / (eps * shares);
+  const misscaled = [1e3, 1e6, 1e9].some((scale) => Math.abs(ratio / scale - 1) < 0.2);
+  return misscaled ? { ...row, sharesDiluted: null } : row;
+}
+
 export function buildAnnualRows(facts: CompanyFacts): {
   rows: YearRow[];
   conceptsUsed: ConceptUse[];
 } {
   const conceptsUsed: ConceptUse[] = [];
-  const series = (field: string, concepts: readonly string[], instant = false) => {
-    const s = annualSeries(facts, [...concepts], { instant });
+  const series = (
+    field: string,
+    concepts: readonly string[],
+    instant = false,
+    filedCap?: Map<string, string>,
+  ) => {
+    const s = annualSeries(facts, [...concepts], { instant, filedCap });
     if (s.length) conceptsUsed.push({ field, concept: s[0].concept });
     return s;
   };
+
+  /**
+   * Drops balance-sheet totals reported as exactly zero.
+   *
+   * A company that filed a 10-K does not have zero total assets, zero total
+   * liabilities, or equity of exactly nil to the dollar. Those zeros come from
+   * the statement of shareowners' equity, where a roll-forward line is tagged
+   * for comparative years that the statement does not actually present —
+   * Coca-Cola carries `StockholdersEquityIncludingPortionAttributableToNon-
+   * controllingInterest` of 0 at both 2006-12-31 and 2007-12-31, filed with the
+   * 2009 10-K, and then 20,862,000,000 at 2008-12-31 where the real balance
+   * sheet begins. Rendered literally, the research page reported Coca-Cola's
+   * 2007 equity as $0.
+   *
+   * A missing figure and a figure of zero say very different things, and only
+   * one of them is true here, so the placeholder becomes "not reported".
+   *
+   * Deliberately NOT applied to debt or cash: a company with no debt is a real
+   * and important thing to be able to see, and zeroing it out would hide it.
+   */
+  const withoutPlaceholderZeros = (points: AnnualPoint[]) => points.filter((p) => p.value !== 0);
 
   const revenue = series('revenue', C.revenue);
   const grossProfit = series('grossProfit', C.grossProfit);
@@ -138,12 +199,23 @@ export function buildAnnualRows(facts: CompanyFacts): {
   const dividends = series('dividendsPaid', C.dividendsPaid);
   const sharesD = series('sharesDiluted', C.sharesDiluted);
 
-  const assets = series('assets', C.assets, true);
-  const liabilities = series('liabilities', C.liabilities, true);
-  const equity = series('equity', C.equity, true);
-  const cash = series('cash', C.cash, true);
-  const ltDebt = series('longTermDebt', C.longTermDebt, true);
-  const stDebt = series('shortTermDebt', C.shortTermDebt, true);
+  /*
+   * Total assets dates the balance sheet.
+   *
+   * It is the one line every balance sheet reports, so the filing that most
+   * recently stated it is the most recent reading of the statement as a whole.
+   * The other lines are then taken as of that reading: each still resolves to
+   * its own newest value, but none may come from a later filing than the one
+   * total assets came from. See the note on `filedCap` in sec.ts.
+   */
+  const assets = withoutPlaceholderZeros(series('assets', C.assets, true));
+  const asOf = new Map(assets.map((p) => [p.end, p.filed]));
+
+  const liabilities = withoutPlaceholderZeros(series('liabilities', C.liabilities, true, asOf));
+  const equity = withoutPlaceholderZeros(series('equity', C.equity, true, asOf));
+  const cash = series('cash', C.cash, true, asOf);
+  const ltDebt = series('longTermDebt', C.longTermDebt, true, asOf);
+  const stDebt = series('shortTermDebt', C.shortTermDebt, true, asOf);
 
   const maps = {
     revenue: byEnd(revenue),
@@ -219,7 +291,7 @@ export function buildAnnualRows(facts: CompanyFacts): {
     rows[i].epsGrowth = growth(rows[i].epsDiluted, rows[i - 1].epsDiluted);
   }
 
-  return { rows, conceptsUsed };
+  return { rows: rows.map(withoutMisscaledShares), conceptsUsed };
 }
 
 /* ------------------------------------------------------------------ */

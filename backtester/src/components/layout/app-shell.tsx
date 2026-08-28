@@ -2,84 +2,38 @@
 
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
-import { TrendingUp } from 'lucide-react';
-import { MOBILE_NAV, NAV_GROUPS } from './nav';
-import { ThemeToggle } from './theme-toggle';
+import { MOBILE_NAV } from './nav';
+import { NavBar } from './nav-bar';
 import { cn } from '@/lib/utils';
 
 function isActive(pathname: string, href: string): boolean {
   return href === '/' ? pathname === '/' : pathname.startsWith(href);
 }
 
+/**
+ * The application frame.
+ *
+ * Navigation is a bar across the top rather than a column down the side. The
+ * groups and their order are unchanged — the sidebar's reading of the product
+ * was right — but a bar shows the four questions and opens the destinations
+ * under one on demand, and gives the page back the width the sidebar held.
+ *
+ * The mobile bottom bar stays. It carries the five destinations that make up
+ * the journey end to end, at thumb size, and no dropdown beats that for the
+ * routes people take constantly; the bar's own menu covers the other seven.
+ */
 export function AppShell({ children }: { children: React.ReactNode }) {
   const pathname = usePathname();
 
   return (
-    <div className="flex min-h-dvh flex-col lg:flex-row">
-      {/* Desktop sidebar */}
-      <aside className="sticky top-0 z-30 hidden h-dvh w-56 shrink-0 flex-col border-r border-border bg-card lg:flex">
-        <div className="flex h-14 items-center gap-2 border-b border-border px-4">
-          <div className="flex h-7 w-7 items-center justify-center rounded bg-primary/12 text-primary">
-            <TrendingUp className="h-4 w-4" />
-          </div>
-          <div className="leading-none">
-            <div className="text-sm font-semibold">CanPath</div>
-            <div className="mt-0.5 text-2xs text-muted-foreground">Plan · Build · Analyse</div>
-          </div>
-        </div>
-
-        <nav className="flex-1 overflow-y-auto p-2" aria-label="Primary">
-          {NAV_GROUPS.map((group) => (
-            <div key={group.id} className="mb-3 last:mb-0">
-              <div className="px-2.5 pb-1 pt-2 text-2xs font-medium uppercase tracking-wider text-muted-foreground/70">
-                {group.label}
-              </div>
-              <div className="space-y-0.5">
-                {group.items.map(({ href, label, icon: Icon, hint }) => {
-                  const active = isActive(pathname, href);
-                  return (
-                    <Link
-                      key={href}
-                      href={href}
-                      aria-current={active ? 'page' : undefined}
-                      title={hint}
-                      className={cn(
-                        'flex items-center gap-2.5 rounded-md px-2.5 py-1.5 text-sm transition-colors',
-                        'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring',
-                        active
-                          ? 'bg-secondary font-medium text-foreground'
-                          : 'text-muted-foreground hover:bg-accent hover:text-foreground',
-                      )}
-                    >
-                      <Icon className={cn('h-4 w-4 shrink-0', active && 'text-primary')} />
-                      <span className="truncate">{label}</span>
-                    </Link>
-                  );
-                })}
-              </div>
-            </div>
-          ))}
-        </nav>
-
-        <div className="border-t border-border p-3">
-          <ThemeToggle />
-        </div>
-      </aside>
-
-      {/* Mobile header */}
-      <header className="sticky top-0 z-30 flex h-12 items-center justify-between border-b border-border bg-card/95 px-4 backdrop-blur lg:hidden">
-        <Link href="/" className="flex items-center gap-2">
-          <TrendingUp className="h-4 w-4 text-primary" />
-          <span className="text-sm font-semibold">CanPath</span>
-        </Link>
-        <ThemeToggle />
-      </header>
+    <div className="flex min-h-dvh flex-col">
+      <NavBar />
 
       <main className="min-w-0 flex-1 pb-16 lg:pb-0">{children}</main>
 
       {/* Mobile bottom navigation */}
       <nav
-        aria-label="Primary"
+        aria-label="Frequent destinations"
         className="fixed inset-x-0 bottom-0 z-30 grid grid-cols-5 border-t border-border bg-card/95 backdrop-blur lg:hidden"
         style={{ paddingBottom: 'env(safe-area-inset-bottom)' }}
       >

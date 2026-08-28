@@ -35,6 +35,12 @@ function userAgent(): string {
   return process.env.SEC_USER_AGENT?.trim() || 'CanPath fundamentals research (contact via repo)';
 }
 
+/** Exported so the filings feed reaches EDGAR the same way, with the same
+ * contact header SEC asks for and the same error mapping. */
+export async function secGetJson<T>(url: string, timeoutMs = 20_000): Promise<T> {
+  return getJson<T>(url, timeoutMs);
+}
+
 async function getJson<T>(url: string, timeoutMs = 20_000): Promise<T> {
   const ac = new AbortController();
   const timer = setTimeout(() => ac.abort(), timeoutMs);
@@ -199,10 +205,38 @@ function spanDays(start: string, end: string): number {
  * appear several times; the newest filing is the company's current position on
  * what happened.
  */
+/**
+ * The forms an annual figure may come from. Amendments included: see the note
+ * in the pooling loop below.
+ */
+const ANNUAL_FORMS = new Set(['10-K', '10-K/A']);
+
 export function annualSeries(
   facts: CompanyFacts,
   concepts: string[],
-  options: { instant?: boolean; taxonomy?: string } = {},
+  options: {
+    instant?: boolean;
+    taxonomy?: string;
+    /**
+     * Per period end, the latest filing date a fact may come from.
+     *
+     * A balance sheet is one statement, and its lines have to date from one
+     * reading of it. They do not have to come from the same filing — a line
+     * nothing has restated since is still current — but a line from a filing
+     * NEWER than the statement's own belongs to a balance sheet whose other
+     * lines are not available, and standing it beside them produces a total
+     * that does not add up.
+     *
+     * This happens systematically rather than rarely. The statement of
+     * stockholders' equity presents three years where the balance sheet
+     * presents two, so the oldest year's equity gets re-reported in a filing
+     * that never re-reports assets or liabilities for that date. Microsoft's
+     * equity at 2016-06-30 was restated to 83,090 in the fiscal 2018 10-K
+     * while assets and liabilities stayed at their fiscal 2017 values, and the
+     * balance sheet on screen overshot total assets by $11bn.
+     */
+    filedCap?: Map<string, string>;
+  } = {},
 ): AnnualPoint[] {
   const taxonomy = options.taxonomy ?? 'us-gaap';
   const bucket = facts.facts?.[taxonomy];
@@ -230,7 +264,17 @@ export function annualSeries(
     const entry = bucket[concept];
     if (!entry) continue;
     for (const point of Object.values(entry.units).flat()) {
-      if (point.form !== '10-K' || point.fp !== 'FY') continue;
+      // Amendments count. A 10-K/A is the company's corrected annual report,
+      // and excluding it discards precisely the restatements this function
+      // says it honours. Apple restated fiscal 2008 in a 10-K/A filed
+      // 2010-01-25: total liabilities went from 18,542 to 13,874. Because
+      // later plain 10-Ks happened to re-report assets and equity but not
+      // liabilities, dropping the amendment left the three lines of the
+      // balance sheet from three different filings, and it did not foot —
+      // liabilities plus equity exceeded total assets by $4.7bn.
+      if (!ANNUAL_FORMS.has(point.form ?? '') || point.fp !== 'FY') continue;
+      const cap = options.filedCap?.get(point.end);
+      if (cap && (point.filed ?? '') > cap) continue;
       if (options.instant) {
         if (point.start !== undefined) continue;
       } else {
