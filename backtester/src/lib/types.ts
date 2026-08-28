@@ -153,6 +153,59 @@ export interface Portfolio {
 /* Backtest configuration                                              */
 /* ------------------------------------------------------------------ */
 
+/* ------------------------------------------------------------------ */
+/* Strategy                                                            */
+/* ------------------------------------------------------------------ */
+
+/**
+ * A rule for deciding target weights, stored as data rather than as a function.
+ *
+ * The engine's strategies are closures over their options, which is the right
+ * shape for the day loop and the wrong shape for everything around it: a
+ * config is JSON, saved to the database, shared by link, replayed from a URL
+ * and compared against other runs. A closure survives none of that. So the
+ * product stores a description of the strategy and `buildStrategy` turns it
+ * into the closure at the point of use.
+ *
+ * It also makes a strategy inspectable — a saved run can say what rule
+ * produced it, which matters more here than usual, because a portfolio's
+ * weights no longer tell you what it did.
+ */
+export type StrategySpec =
+  | { kind: 'fixed' }
+  | { kind: 'equal' }
+  | {
+      kind: 'glidepath';
+      /** Symbols forming the growth sleeve; the rest are defensive. */
+      growthSymbols: string[];
+      /** Growth allocation at the start and end, as percentages. */
+      startGrowthPct: number;
+      endGrowthPct: number;
+    }
+  | {
+      kind: 'momentum';
+      /** Trailing ranking window, in trading days. */
+      lookbackDays: number;
+      /** How many of the strongest holdings to hold. */
+      holdCount: number;
+      /** Holdings below this trailing return are left in cash. */
+      minimumReturnPct: number;
+    }
+  | {
+      kind: 'trend';
+      /** Moving-average window, in trading days. */
+      windowDays: number;
+    }
+  | {
+      kind: 'inverseVolatility';
+      /** Window over which volatility is measured, in trading days. */
+      lookbackDays: number;
+    };
+
+export type StrategyKind = StrategySpec['kind'];
+
+export const DEFAULT_STRATEGY: StrategySpec = { kind: 'fixed' };
+
 export type RebalanceFrequency =
   | 'never'
   | 'monthly'
@@ -268,6 +321,11 @@ export interface BacktestConfig {
   rebalance: RebalanceFrequency;
   /** Drift band in percentage points, used when `rebalance === 'threshold'`. */
   rebalanceThresholdPct: number;
+  /**
+   * Rule deciding target weights at each rebalance. Absent means the declared
+   * weights, which is what every run did before strategies were reachable.
+   */
+  strategy?: StrategySpec;
   dividends: DividendPolicy;
   fees: FeeConfig;
   inceptionPolicy: InceptionPolicy;

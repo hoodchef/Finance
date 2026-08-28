@@ -21,6 +21,7 @@ import {
 } from '@/components/ui/select';
 import { TickerSearch } from '@/components/builder/ticker-search';
 import { CashflowLegs } from './cashflow-legs';
+import { StrategyBuilder } from './strategy-builder';
 import { cn } from '@/lib/utils';
 
 function Section({
@@ -290,6 +291,16 @@ export function ConfigPanel() {
               </div>
             </Field>
           )}
+        </Section>
+
+        <Separator />
+
+        {/* ---------------------------------------------------------- */}
+        <Section
+          title="Strategy"
+          hint="How target weights are decided at each rebalance. Fixed weights uses what you typed; the other rules make the targets a function of what the market has done, which is the difference between a portfolio and a strategy."
+        >
+          <StrategyBuilder />
         </Section>
 
         <Separator />

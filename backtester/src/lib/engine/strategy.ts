@@ -196,3 +196,147 @@ export function makeContext(
     },
   };
 }
+
+/* ------------------------------------------------------------------ */
+/* Further rules                                                       */
+/* ------------------------------------------------------------------ */
+
+/**
+ * Equal weight across every declared holding.
+ *
+ * Worth having as a rule rather than as advice to retype the weights, because
+ * it stays equal: with contributions and drift, a portfolio typed as equal
+ * stops being equal within a year, and the difference between the two is
+ * exactly what a rebalancing study is trying to measure.
+ */
+export const equalWeight: TargetWeightStrategy = {
+  id: 'equal',
+  label: 'Equal weight',
+  targetWeights(ctx) {
+    const symbols = [...ctx.declaredWeights.keys()];
+    const out = new Map<string, number>();
+    if (!symbols.length) return out;
+    const each = 1 / symbols.length;
+    for (const s of symbols) out.set(s, each);
+    return out;
+  },
+};
+
+export interface TrendOptions {
+  /** Moving-average window, in trading days. */
+  windowDays: number;
+}
+
+/**
+ * A trend filter: hold a position while it is above its own moving average,
+ * and sit in cash while it is below.
+ *
+ * The weights of the holdings that pass are scaled up to fill the portfolio
+ * only if the others are absent — they are not. Each holding keeps its
+ * declared weight and a failing one goes to cash, so the rule answers "what
+ * would staying out of falling markets have done to this portfolio" rather
+ * than silently turning it into a concentrated bet on whatever is rising.
+ *
+ * The average is over closes up to and including the decision day, which is
+ * the only version of it that could have been computed at the time. Using the
+ * window centred on the day, or ending the day after, is the classic way this
+ * strategy backtests beautifully and cannot be traded.
+ */
+export function trendFilter(options: TrendOptions): TargetWeightStrategy {
+  const window = Math.max(2, Math.round(options.windowDays));
+  return {
+    id: 'trend',
+    label: `Trend filter (${window}d)`,
+    targetWeights(ctx) {
+      const out = new Map<string, number>();
+      for (const [symbol, weight] of ctx.declaredWeights) {
+        const today = ctx.priceAt(symbol, 0);
+        if (!Number.isFinite(today)) {
+          out.set(symbol, 0);
+          continue;
+        }
+        // Refuse to decide on a partial window rather than compare against an
+        // average of three days, which is not a trend.
+        if (ctx.index < window - 1) {
+          out.set(symbol, weight);
+          continue;
+        }
+        let sum = 0;
+        let n = 0;
+        for (let back = 0; back < window; back++) {
+          const p = ctx.priceAt(symbol, back);
+          if (Number.isFinite(p)) {
+            sum += p;
+            n++;
+          }
+        }
+        const average = n > 0 ? sum / n : Number.NaN;
+        out.set(symbol, Number.isFinite(average) && today > average ? weight : 0);
+      }
+      return out;
+    },
+  };
+}
+
+export interface InverseVolatilityOptions {
+  /** Window over which volatility is measured, in trading days. */
+  lookbackDays: number;
+}
+
+/**
+ * Weight inversely to trailing volatility, so each holding contributes a more
+ * even share of the portfolio's movement.
+ *
+ * This is the cheap cousin of risk parity: it equalises volatility
+ * contribution while ignoring correlation, where true risk parity solves for
+ * equal marginal contribution to portfolio risk. Ignoring correlation is a
+ * real approximation and it is named as one — two holdings that move together
+ * are treated as diversifying here, and are not.
+ *
+ * A holding with no measurable volatility gets nothing rather than infinite
+ * weight, which is what dividing by zero would otherwise buy.
+ */
+export function inverseVolatility(options: InverseVolatilityOptions): TargetWeightStrategy {
+  const lookback = Math.max(2, Math.round(options.lookbackDays));
+  return {
+    id: 'inverseVolatility',
+    label: `Inverse volatility (${lookback}d)`,
+    targetWeights(ctx) {
+      const out = new Map<string, number>();
+      const inverse = new Map<string, number>();
+      let total = 0;
+
+      for (const symbol of ctx.declaredWeights.keys()) {
+        out.set(symbol, 0);
+        if (ctx.index < lookback) continue;
+
+        // Daily log returns over the window, from closes available today.
+        const returns: number[] = [];
+        for (let back = 0; back < lookback; back++) {
+          const now = ctx.priceAt(symbol, back);
+          const prev = ctx.priceAt(symbol, back + 1);
+          if (Number.isFinite(now) && Number.isFinite(prev) && prev > 0 && now > 0) {
+            returns.push(Math.log(now / prev));
+          }
+        }
+        if (returns.length < 2) continue;
+
+        const mean = returns.reduce((a, b) => a + b, 0) / returns.length;
+        const variance =
+          returns.reduce((a, r) => a + (r - mean) * (r - mean), 0) / (returns.length - 1);
+        const vol = Math.sqrt(variance);
+        if (!Number.isFinite(vol) || vol <= 0) continue;
+
+        const inv = 1 / vol;
+        inverse.set(symbol, inv);
+        total += inv;
+      }
+
+      // Before the window is full, or where nothing could be measured, fall
+      // back to what the user declared rather than to an arbitrary split.
+      if (total <= 0) return new Map(ctx.declaredWeights);
+      for (const [symbol, inv] of inverse) out.set(symbol, inv / total);
+      return out;
+    },
+  };
+}

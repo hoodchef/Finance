@@ -12,6 +12,7 @@ import { daysBetween, minIso, todayIso } from '@/lib/market-data/dates';
 import type { MarketDataProvider } from '@/lib/market-data/provider';
 import { prepareData } from '@/lib/engine/prepare';
 import { runEngine } from '@/lib/engine/engine';
+import { buildStrategy } from '@/lib/engine/build-strategy';
 import type { EngineResult, PreparedData, SymbolLedger, Transaction } from '@/lib/engine/types';
 import type { LotSummary, RealisedByYear } from '@/lib/engine/lots';
 import {
@@ -366,7 +367,12 @@ export async function runBacktest({
 
   const t0 = Date.now();
 
-  const result = runEngine({ portfolio: { ...portfolio, positions }, config, data });
+  const result = runEngine({
+    portfolio: { ...portfolio, positions },
+    config,
+    data,
+    strategy: buildStrategy(config.strategy),
+  });
   const portfolioSeries = downsample(toSeries(result, data.deflator));
   const chartDates = new Set(portfolioSeries.map((p) => p.date));
 
@@ -712,7 +718,12 @@ export async function computeDailyReturns({
     (p) => p.symbol.trim() && Number.isFinite(p.weight),
   );
   const data = await prepareData({ symbols: positions, config, provider });
-  const result = runEngine({ portfolio: { ...portfolio, positions }, config, data });
+  const result = runEngine({
+    portfolio: { ...portfolio, positions },
+    config,
+    data,
+    strategy: buildStrategy(config.strategy),
+  });
 
   return {
     // Day zero is the entry cost rather than a market move, as everywhere else.

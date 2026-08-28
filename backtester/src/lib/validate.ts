@@ -12,6 +12,7 @@ import type {
   Position,
   RebalanceFrequency,
   RiskFreeSource,
+  StrategySpec,
 } from '@/lib/types';
 import { defaultConfig, MAX_HISTORY_START } from '@/lib/defaults';
 import { isValidIso, todayIso } from '@/lib/market-data/dates';
@@ -220,6 +221,7 @@ export function parseConfig(raw: unknown): BacktestConfig {
     contributionIsWithdrawal: Boolean(record.contributionIsWithdrawal),
     rebalance: oneOf(record.rebalance, REBALANCE, 'Rebalancing', d.rebalance),
     rebalanceThresholdPct,
+    strategy: parseStrategy(record.strategy),
     dividends: oneOf(record.dividends, DIVIDENDS, 'Dividend policy', d.dividends),
     fees: { managementFeePct, tradingCostBps, commissionPerTrade, defaultExpenseRatioPct },
     inceptionPolicy: oneOf(record.inceptionPolicy, INCEPTION, 'Inception policy', d.inceptionPolicy),
@@ -330,4 +332,87 @@ function parseCashflows(raw: unknown): CashflowLeg[] {
       adjustForInflation: Boolean(r.adjustForInflation),
     } satisfies CashflowLeg;
   });
+}
+
+/**
+ * Validates a strategy description arriving from a client.
+ *
+ * Bounds are here rather than in the engine because these numbers decide how
+ * much work the day loop does. A lookback of ten million days is not a
+ * strategy, it is a request to walk the calendar ten million times per
+ * rebalance, and the engine is the wrong place to discover that.
+ *
+ * An absent strategy is the declared weights, so `undefined` is a valid answer
+ * and not an error — every config written before strategies existed omits it.
+ */
+function parseStrategy(raw: unknown): StrategySpec | undefined {
+  if (raw == null) return undefined;
+  if (typeof raw !== 'object') {
+    throw new ValidationError('The strategy must be an object.', 'strategy');
+  }
+  const r = raw as Record<string, unknown>;
+  const kind = r.kind;
+
+  const days = (value: unknown, field: string, fallback: number): number => {
+    const n = num(value, field, fallback);
+    if (!Number.isFinite(n) || n < 2 || n > 2520) {
+      // Ten years of sessions is the outer edge of a usable window; beyond it
+      // the rule has less history to act on than it needs to measure.
+      throw new ValidationError(`${field} must be between 2 and 2520 trading days.`, 'strategy');
+    }
+    return Math.round(n);
+  };
+
+  switch (kind) {
+    case 'fixed':
+      return { kind: 'fixed' };
+
+    case 'equal':
+      return { kind: 'equal' };
+
+    case 'glidepath': {
+      const startGrowthPct = num(r.startGrowthPct, 'Starting growth allocation', 90);
+      const endGrowthPct = num(r.endGrowthPct, 'Ending growth allocation', 40);
+      for (const [v, label] of [
+        [startGrowthPct, 'Starting growth allocation'],
+        [endGrowthPct, 'Ending growth allocation'],
+      ] as const) {
+        if (v < 0 || v > 100) {
+          throw new ValidationError(`${label} must be between 0 and 100%.`, 'strategy');
+        }
+      }
+      const growthSymbols = Array.isArray(r.growthSymbols)
+        ? r.growthSymbols
+            .map((x) => String(x ?? '').trim().toUpperCase())
+            .filter(Boolean)
+            .slice(0, 100)
+        : [];
+      return { kind: 'glidepath', growthSymbols, startGrowthPct, endGrowthPct };
+    }
+
+    case 'momentum': {
+      const holdCount = num(r.holdCount, 'Holdings to keep', 1);
+      if (holdCount < 1 || holdCount > 100) {
+        throw new ValidationError('Holdings to keep must be between 1 and 100.', 'strategy');
+      }
+      return {
+        kind: 'momentum',
+        lookbackDays: days(r.lookbackDays, 'The ranking window', 126),
+        holdCount: Math.round(holdCount),
+        minimumReturnPct: num(r.minimumReturnPct, 'Minimum return', 0),
+      };
+    }
+
+    case 'trend':
+      return { kind: 'trend', windowDays: days(r.windowDays, 'The moving-average window', 200) };
+
+    case 'inverseVolatility':
+      return {
+        kind: 'inverseVolatility',
+        lookbackDays: days(r.lookbackDays, 'The volatility window', 63),
+      };
+
+    default:
+      throw new ValidationError(`Unknown strategy "${String(kind)}".`, 'strategy');
+  }
 }

@@ -1,10 +1,13 @@
 import { describe, expect, it } from 'vitest';
 import { runEngine } from '../src/lib/engine/engine';
 import {
+  equalWeight,
   fixedWeights,
   glidepath,
+  inverseVolatility,
   makeContext,
   momentum,
+  trendFilter,
 } from '../src/lib/engine/strategy';
 import { buildPrepared, flat, makeCalendar, ramp, testConfig } from './helpers';
 
@@ -203,5 +206,154 @@ describe('momentum', () => {
       const invested = Object.values(d.positionValues).reduce((s, v) => s + v, 0);
       expect(invested).toBeLessThanOrEqual(d.totalValue + 0.01);
     }
+  });
+});
+
+describe('equal weight', () => {
+  it('splits evenly regardless of what was declared', () => {
+    const cal = makeCalendar('2020-01-01', 30);
+    const assets = buildPrepared(cal, [
+      { symbol: 'A', prices: flat(100, 30), weight: 90 },
+      { symbol: 'B', prices: flat(100, 30), weight: 10 },
+    ]).assets;
+    const ctx = makeContext(10, cal, assets, new Map([['A', 0.9], ['B', 0.1]]), 1000);
+    expect(equalWeight.targetWeights(ctx)).toEqual(new Map([['A', 0.5], ['B', 0.5]]));
+  });
+
+  it('is a rule, not a one-off normalisation', () => {
+    // The point of it over retyping the weights: a portfolio typed as equal
+    // stops being equal as prices diverge, and this holds it there.
+    const cal = makeCalendar('2020-01-01', 400);
+    const run = (strategy?: Parameters<typeof runEngine>[0]['strategy']) =>
+      runEngine({
+        portfolio: portfolio([['A', 50], ['B', 50]]),
+        config: testConfig({ rebalance: 'monthly' }),
+        data: buildPrepared(cal, [
+          { symbol: 'A', prices: ramp(100, 400, 400), weight: 50 },
+          { symbol: 'B', prices: flat(100, 400), weight: 50 },
+        ]),
+        strategy,
+      });
+    // Same start, same rebalancing: equal weight tracks the declared 50/50.
+    const withRule = run(equalWeight).daily.at(-1)!.totalValue;
+    const declared = run().daily.at(-1)!.totalValue;
+    expect(withRule).toBeCloseTo(declared, 6);
+  });
+});
+
+describe('trend filter', () => {
+  const cal = makeCalendar('2020-01-01', 60);
+
+  it('holds while price is above its moving average', () => {
+    const assets = buildPrepared(cal, [
+      { symbol: 'A', prices: ramp(100, 200, 60), weight: 100 },
+    ]).assets;
+    const ctx = makeContext(59, cal, assets, new Map([['A', 1]]), 1000);
+    // A rising series is above its own trailing average.
+    expect(trendFilter({ windowDays: 20 }).targetWeights(ctx).get('A')).toBe(1);
+  });
+
+  it('goes to cash while price is below it', () => {
+    const assets = buildPrepared(cal, [
+      { symbol: 'A', prices: ramp(200, 100, 60), weight: 100 },
+    ]).assets;
+    const ctx = makeContext(59, cal, assets, new Map([['A', 1]]), 1000);
+    expect(trendFilter({ windowDays: 20 }).targetWeights(ctx).get('A')).toBe(0);
+  });
+
+  it('keeps each holding at its declared weight rather than concentrating', () => {
+    // A filtered-out holding must go to cash, not hand its weight to whatever
+    // is still rising — that would turn a defensive rule into a momentum bet.
+    const assets = buildPrepared(cal, [
+      { symbol: 'UP', prices: ramp(100, 200, 60), weight: 60 },
+      { symbol: 'DOWN', prices: ramp(200, 100, 60), weight: 40 },
+    ]).assets;
+    const ctx = makeContext(59, cal, assets, new Map([['UP', 0.6], ['DOWN', 0.4]]), 1000);
+    const w = trendFilter({ windowDays: 20 }).targetWeights(ctx);
+    expect(w.get('UP')).toBe(0.6);
+    expect(w.get('DOWN')).toBe(0);
+  });
+
+  it('holds the declared weight until the window is full', () => {
+    // Comparing against an average of three days is not a trend.
+    const assets = buildPrepared(cal, [
+      { symbol: 'A', prices: ramp(200, 100, 60), weight: 100 },
+    ]).assets;
+    const ctx = makeContext(3, cal, assets, new Map([['A', 1]]), 1000);
+    expect(trendFilter({ windowDays: 20 }).targetWeights(ctx).get('A')).toBe(1);
+  });
+
+  it('cannot see past the decision day', () => {
+    // Same history, different futures: the decision must be identical.
+    const rising = buildPrepared(cal, [
+      { symbol: 'A', prices: [...ramp(100, 150, 30), ...ramp(150, 400, 30)], weight: 100 },
+    ]).assets;
+    const falling = buildPrepared(cal, [
+      { symbol: 'A', prices: [...ramp(100, 150, 30), ...ramp(150, 10, 30)], weight: 100 },
+    ]).assets;
+    const at = (assets: typeof rising) =>
+      trendFilter({ windowDays: 20 })
+        .targetWeights(makeContext(29, cal, assets, new Map([['A', 1]]), 1000))
+        .get('A');
+    expect(at(rising)).toBe(at(falling));
+  });
+});
+
+describe('inverse volatility', () => {
+  const cal = makeCalendar('2020-01-01', 200);
+
+  /** A series alternating up and down by `pct` each day. */
+  const choppy = (start: number, n: number, pct: number) => {
+    const out: number[] = [];
+    let v = start;
+    for (let i = 0; i < n; i++) {
+      out.push(v);
+      v = i % 2 === 0 ? v * (1 + pct) : v / (1 + pct);
+    }
+    return out;
+  };
+
+  it('gives the calmer holding the larger weight', () => {
+    const assets = buildPrepared(cal, [
+      { symbol: 'CALM', prices: choppy(100, 200, 0.002), weight: 50 },
+      { symbol: 'WILD', prices: choppy(100, 200, 0.02), weight: 50 },
+    ]).assets;
+    const ctx = makeContext(150, cal, assets, new Map([['CALM', 0.5], ['WILD', 0.5]]), 1000);
+    const w = inverseVolatility({ lookbackDays: 60 }).targetWeights(ctx);
+    expect(w.get('CALM')!).toBeGreaterThan(w.get('WILD')!);
+    expect(w.get('CALM')! + w.get('WILD')!).toBeCloseTo(1, 9);
+  });
+
+  it('weights in inverse proportion to volatility', () => {
+    // Ten times the volatility should earn about a tenth of the weight.
+    const assets = buildPrepared(cal, [
+      { symbol: 'CALM', prices: choppy(100, 200, 0.002), weight: 50 },
+      { symbol: 'WILD', prices: choppy(100, 200, 0.02), weight: 50 },
+    ]).assets;
+    const ctx = makeContext(150, cal, assets, new Map([['CALM', 0.5], ['WILD', 0.5]]), 1000);
+    const w = inverseVolatility({ lookbackDays: 60 }).targetWeights(ctx);
+    expect(w.get('CALM')! / w.get('WILD')!).toBeGreaterThan(5);
+  });
+
+  it('falls back to the declared weights before the window is full', () => {
+    const assets = buildPrepared(cal, [
+      { symbol: 'A', prices: choppy(100, 200, 0.01), weight: 70 },
+      { symbol: 'B', prices: choppy(100, 200, 0.01), weight: 30 },
+    ]).assets;
+    const declared = new Map([['A', 0.7], ['B', 0.3]]);
+    const ctx = makeContext(5, cal, assets, declared, 1000);
+    expect(inverseVolatility({ lookbackDays: 60 }).targetWeights(ctx)).toEqual(declared);
+  });
+
+  it('gives a motionless holding nothing rather than infinite weight', () => {
+    const assets = buildPrepared(cal, [
+      { symbol: 'FLAT', prices: flat(100, 200), weight: 50 },
+      { symbol: 'MOVES', prices: choppy(100, 200, 0.01), weight: 50 },
+    ]).assets;
+    const ctx = makeContext(150, cal, assets, new Map([['FLAT', 0.5], ['MOVES', 0.5]]), 1000);
+    const w = inverseVolatility({ lookbackDays: 60 }).targetWeights(ctx);
+    expect(Number.isFinite(w.get('FLAT')!)).toBe(true);
+    expect(w.get('FLAT')).toBe(0);
+    expect(w.get('MOVES')).toBeCloseTo(1, 9);
   });
 });
