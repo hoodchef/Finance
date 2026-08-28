@@ -1,7 +1,7 @@
 'use client';
 
 import * as React from 'react';
-import { Plus, RotateCcw, X } from 'lucide-react';
+import { ChevronDown, Plus, RotateCcw, X } from 'lucide-react';
 import { MAX_HISTORY_START, RANGE_PRESETS } from '@/lib/defaults';
 import { addYears, todayIso } from '@/lib/market-data/dates';
 import { useWorkspace } from '@/store/workspace';
@@ -43,6 +43,43 @@ function Section({
       </h3>
       {children}
     </section>
+  );
+}
+
+/**
+ * The settings most people never touch, behind one click.
+ *
+ * The panel had twelve sections in a flat scroll, all at the same visual
+ * weight: the period and the strategy sat level with the cost-basis method and
+ * the risk-free source. Five of the twelve carry almost every run, and the
+ * other seven are answered once and then scrolled past forever.
+ *
+ * Collapsed rather than removed, and the summary names what is inside — a
+ * disclosure that hides its contents behind the word "Advanced" alone makes
+ * people open it every time to check, which is worse than leaving it open.
+ */
+function AdvancedSettings({ children }: { children: React.ReactNode }) {
+  const [open, setOpen] = React.useState(false);
+  return (
+    <div className="border-t border-border pt-4">
+      <button
+        type="button"
+        onClick={() => setOpen((v) => !v)}
+        aria-expanded={open}
+        className="flex w-full items-center justify-between gap-2 rounded text-left focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+      >
+        <span className="text-2xs font-semibold uppercase tracking-wide text-muted-foreground">
+          Cashflows, dividends, inflation, currency, cost basis, fees, risk-free
+        </span>
+        <ChevronDown
+          className={cn(
+            'h-3.5 w-3.5 shrink-0 text-muted-foreground transition-transform',
+            open && 'rotate-180',
+          )}
+        />
+      </button>
+      {open && <div className="mt-4 space-y-5">{children}</div>}
+    </div>
   );
 }
 
@@ -161,7 +198,6 @@ export function ConfigPanel() {
             </Select>
           </Field>
         </Section>
-
         <Separator />
 
         {/* ---------------------------------------------------------- */}
@@ -235,17 +271,6 @@ export function ConfigPanel() {
             </label>
           )}
         </Section>
-
-        <Separator />
-
-        {/* ---------------------------------------------------------- */}
-        <Section
-          title="Additional cashflows"
-          hint="Extra streams that run alongside the recurring contribution above. Several can overlap; flows landing on the same day are netted into one trade."
-        >
-          <CashflowLegs />
-        </Section>
-
         <Separator />
 
         {/* ---------------------------------------------------------- */}
@@ -292,7 +317,6 @@ export function ConfigPanel() {
             </Field>
           )}
         </Section>
-
         <Separator />
 
         {/* ---------------------------------------------------------- */}
@@ -302,7 +326,64 @@ export function ConfigPanel() {
         >
           <StrategyBuilder />
         </Section>
+        <Separator />
 
+        {/* ---------------------------------------------------------- */}
+        <Section
+          title="Benchmarks"
+          hint="Each benchmark runs through the same engine with the same contribution schedule, dividends reinvested, and no fees — an index is not a product and charges nothing. The first benchmark is the one used for beta, alpha and tracking error."
+        >
+          <div className="flex flex-wrap gap-1.5">
+            {config.benchmarks.map((b, i) => (
+              <Badge key={b} variant={i === 0 ? 'primary' : 'outline'} className="gap-1 py-1 pl-2">
+                <span className="numeric">{b}</span>
+                {i === 0 && <span className="text-2xs opacity-70">primary</span>}
+                <button
+                  type="button"
+                  aria-label={`Remove benchmark ${b}`}
+                  onClick={() => removeBenchmark(b)}
+                  className="rounded hover:text-negative focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
+                >
+                  <X className="h-3 w-3" />
+                </button>
+              </Badge>
+            ))}
+            {config.benchmarks.length === 0 && (
+              <span className="text-xs text-muted-foreground">No benchmarks selected.</span>
+            )}
+          </div>
+
+          {showBenchmarkSearch ? (
+            <TickerSearch
+              autoFocus
+              placeholder="Add a benchmark…"
+              onSelect={(meta) => {
+                addBenchmark(meta.symbol);
+                setShowBenchmarkSearch(false);
+              }}
+            />
+          ) : (
+            <Button
+              variant="outline"
+              size="sm"
+              className="w-full"
+              disabled={config.benchmarks.length >= 6}
+              onClick={() => setShowBenchmarkSearch(true)}
+            >
+              <Plus />
+              Add benchmark
+            </Button>
+          )}
+        </Section>
+
+        <AdvancedSettings>
+        {/* ---------------------------------------------------------- */}
+        <Section
+          title="Additional cashflows"
+          hint="Extra streams that run alongside the recurring contribution above. Several can overlap; flows landing on the same day are netted into one trade."
+        >
+          <CashflowLegs />
+        </Section>
         <Separator />
 
         {/* ---------------------------------------------------------- */}
@@ -344,7 +425,6 @@ export function ConfigPanel() {
             </Field>
           </div>
         </Section>
-
         <Separator />
 
         {/* ---------------------------------------------------------- */}
@@ -413,7 +493,6 @@ export function ConfigPanel() {
             </label>
           )}
         </Section>
-
         <Separator />
 
         {/* ---------------------------------------------------------- */}
@@ -435,7 +514,6 @@ export function ConfigPanel() {
             </SelectContent>
           </Select>
         </Section>
-
         <Separator />
 
         {/* ---------------------------------------------------------- */}
@@ -464,7 +542,6 @@ export function ConfigPanel() {
                 : 'The default in the absence of another election.'}
           </p>
         </Section>
-
         <Separator />
 
         {/* ---------------------------------------------------------- */}
@@ -534,7 +611,6 @@ export function ConfigPanel() {
             </Field>
           </div>
         </Section>
-
         <Separator />
 
         {/* ---------------------------------------------------------- */}
@@ -578,56 +654,7 @@ export function ConfigPanel() {
             </Field>
           )}
         </Section>
-
-        <Separator />
-
-        {/* ---------------------------------------------------------- */}
-        <Section
-          title="Benchmarks"
-          hint="Each benchmark runs through the same engine with the same contribution schedule, dividends reinvested, and no fees — an index is not a product and charges nothing. The first benchmark is the one used for beta, alpha and tracking error."
-        >
-          <div className="flex flex-wrap gap-1.5">
-            {config.benchmarks.map((b, i) => (
-              <Badge key={b} variant={i === 0 ? 'primary' : 'outline'} className="gap-1 py-1 pl-2">
-                <span className="numeric">{b}</span>
-                {i === 0 && <span className="text-2xs opacity-70">primary</span>}
-                <button
-                  type="button"
-                  aria-label={`Remove benchmark ${b}`}
-                  onClick={() => removeBenchmark(b)}
-                  className="rounded hover:text-negative focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
-                >
-                  <X className="h-3 w-3" />
-                </button>
-              </Badge>
-            ))}
-            {config.benchmarks.length === 0 && (
-              <span className="text-xs text-muted-foreground">No benchmarks selected.</span>
-            )}
-          </div>
-
-          {showBenchmarkSearch ? (
-            <TickerSearch
-              autoFocus
-              placeholder="Add a benchmark…"
-              onSelect={(meta) => {
-                addBenchmark(meta.symbol);
-                setShowBenchmarkSearch(false);
-              }}
-            />
-          ) : (
-            <Button
-              variant="outline"
-              size="sm"
-              className="w-full"
-              disabled={config.benchmarks.length >= 6}
-              onClick={() => setShowBenchmarkSearch(true)}
-            >
-              <Plus />
-              Add benchmark
-            </Button>
-          )}
-        </Section>
+        </AdvancedSettings>
       </CardContent>
     </Card>
   );

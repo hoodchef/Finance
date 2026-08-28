@@ -1,12 +1,18 @@
-import type { StrategySpec } from '@/lib/types';
+import type { StrategyBaseSpec, StrategyOverlaySpec, StrategySpec } from '@/lib/types';
 import {
+  capOverlay,
+  compose,
   equalWeight,
   fixedWeights,
   glidepath,
   inverseVolatility,
+  minimumVarianceStrategy,
   momentum,
-  trendFilter,
+  riskParityStrategy,
+  trendOverlay,
+  volatilityTargetOverlay,
   type TargetWeightStrategy,
+  type WeightOverlay,
 } from './strategy';
 
 /**
@@ -23,9 +29,40 @@ import {
  * throwing would make an old link unopenable, and guessing a nearby rule would
  * silently report a strategy nobody asked for.
  */
-export function buildStrategy(spec: StrategySpec | undefined | null): TargetWeightStrategy {
-  if (!spec || typeof spec !== 'object') return fixedWeights;
 
+const OVERLAY_KINDS = new Set(['trend', 'volatilityTarget', 'cap']);
+
+/**
+ * Flattens any accepted spec into a base and its overlays.
+ *
+ * A bare overlay — which is what a `trend` spec was before composition existed
+ * — becomes a fixed base under that overlay. That is not a reinterpretation:
+ * the old trend filter read the declared weights and zeroed the holdings below
+ * their average, which is precisely a fixed base with a trend overlay, so
+ * every config written against the old shape keeps its exact behaviour.
+ */
+export function normaliseStrategy(spec: StrategySpec | undefined | null): {
+  base: StrategyBaseSpec;
+  overlays: StrategyOverlaySpec[];
+} {
+  const fixed: StrategyBaseSpec = { kind: 'fixed' };
+  if (!spec || typeof spec !== 'object') return { base: fixed, overlays: [] };
+
+  if (spec.kind === 'composed') {
+    const overlays = Array.isArray(spec.overlays)
+      ? spec.overlays.filter((o) => o && OVERLAY_KINDS.has(o.kind))
+      : [];
+    return { base: spec.base ?? fixed, overlays };
+  }
+
+  if (OVERLAY_KINDS.has(spec.kind)) {
+    return { base: fixed, overlays: [spec as StrategyOverlaySpec] };
+  }
+
+  return { base: spec as StrategyBaseSpec, overlays: [] };
+}
+
+function buildBase(spec: StrategyBaseSpec, periodsPerYear: number): TargetWeightStrategy {
   switch (spec.kind) {
     case 'fixed':
       return fixedWeights;
@@ -45,22 +82,69 @@ export function buildStrategy(spec: StrategySpec | undefined | null): TargetWeig
       return momentum({
         lookbackDays: positiveInt(spec.lookbackDays, 126),
         holdCount: positiveInt(spec.holdCount, 1),
-        // Percentage at the boundary, fraction inside the engine. An absent
-        // floor means rank everything, rather than a floor of zero percent.
+        // An absent floor means rank everything, rather than a floor of zero.
         minimumReturn: Number.isFinite(spec.minimumReturnPct)
           ? spec.minimumReturnPct / 100
           : undefined,
       });
 
-    case 'trend':
-      return trendFilter({ windowDays: positiveInt(spec.windowDays, 200) });
-
     case 'inverseVolatility':
       return inverseVolatility({ lookbackDays: positiveInt(spec.lookbackDays, 63) });
+
+    case 'minimumVariance':
+      return minimumVarianceStrategy({
+        lookbackDays: positiveInt(spec.lookbackDays, 252),
+        periodsPerYear,
+        shrink: spec.shrink !== false,
+        maxWeight: clampFraction((spec.maxWeightPct ?? 100) / 100) || 1,
+      });
+
+    case 'riskParity':
+      return riskParityStrategy({
+        lookbackDays: positiveInt(spec.lookbackDays, 252),
+        periodsPerYear,
+        shrink: spec.shrink !== false,
+        maxWeight: clampFraction((spec.maxWeightPct ?? 100) / 100) || 1,
+      });
 
     default:
       return fixedWeights;
   }
+}
+
+function buildOverlay(
+  spec: StrategyOverlaySpec,
+  periodsPerYear: number,
+): WeightOverlay | null {
+  switch (spec.kind) {
+    case 'trend':
+      return trendOverlay({ windowDays: positiveInt(spec.windowDays, 200) });
+
+    case 'volatilityTarget':
+      return volatilityTargetOverlay({
+        targetVol: Math.max(0, (spec.targetVolPct ?? 10) / 100),
+        lookbackDays: positiveInt(spec.lookbackDays, 63),
+        periodsPerYear,
+      });
+
+    case 'cap':
+      return capOverlay(clampFraction((spec.maxWeightPct ?? 100) / 100));
+
+    default:
+      return null;
+  }
+}
+
+export function buildStrategy(
+  spec: StrategySpec | undefined | null,
+  /** Bars per year on the master calendar, for annualising. Daily by default. */
+  periodsPerYear = 252,
+): TargetWeightStrategy {
+  const { base, overlays } = normaliseStrategy(spec);
+  const built = overlays
+    .map((o) => buildOverlay(o, periodsPerYear))
+    .filter((o): o is WeightOverlay => o != null);
+  return compose(buildBase(base, periodsPerYear), built);
 }
 
 function clampFraction(v: number): number {
@@ -73,7 +157,12 @@ function positiveInt(v: number, fallback: number): number {
 
 /** One line describing what a spec does, for results and saved runs. */
 export function describeStrategy(spec: StrategySpec | undefined | null): string {
-  if (!spec) return 'Fixed weights';
+  const { base, overlays } = normaliseStrategy(spec);
+  const parts = [describeBase(base), ...overlays.map(describeOverlay)];
+  return parts.join(', then ');
+}
+
+function describeBase(spec: StrategyBaseSpec): string {
   switch (spec.kind) {
     case 'fixed':
       return 'Fixed weights';
@@ -84,16 +173,27 @@ export function describeStrategy(spec: StrategySpec | undefined | null): string 
         spec.endGrowthPct,
       )}% growth${spec.growthSymbols.length ? ` (${spec.growthSymbols.join(', ')})` : ''}`;
     case 'momentum':
-      return `Hold the strongest ${spec.holdCount} over ${spec.lookbackDays} days${
-        Number.isFinite(spec.minimumReturnPct) && spec.minimumReturnPct > Number.NEGATIVE_INFINITY
-          ? `, above ${spec.minimumReturnPct}%`
-          : ''
-      }`;
-    case 'trend':
-      return `Hold while above the ${spec.windowDays}-day moving average, else cash`;
+      return `hold the strongest ${spec.holdCount} over ${spec.lookbackDays} days`;
     case 'inverseVolatility':
-      return `Weight inversely to ${spec.lookbackDays}-day volatility`;
+      return `weight inversely to ${spec.lookbackDays}-day volatility`;
+    case 'minimumVariance':
+      return `minimum variance on ${spec.lookbackDays} days of covariance`;
+    case 'riskParity':
+      return `risk parity on ${spec.lookbackDays} days of covariance`;
     default:
       return 'Fixed weights';
+  }
+}
+
+function describeOverlay(spec: StrategyOverlaySpec): string {
+  switch (spec.kind) {
+    case 'trend':
+      return `hold only what is above its ${spec.windowDays}-day average`;
+    case 'volatilityTarget':
+      return `scale exposure toward ${spec.targetVolPct}% volatility`;
+    case 'cap':
+      return `cap any holding at ${spec.maxWeightPct}%`;
+    default:
+      return '';
   }
 }

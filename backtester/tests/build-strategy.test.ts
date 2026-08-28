@@ -51,7 +51,11 @@ describe('building a strategy from a stored spec', () => {
   });
 
   it('describes what a spec does in words', () => {
-    expect(describeStrategy({ kind: 'trend', windowDays: 200 })).toMatch(/200-day moving average/);
+    // A bare trend spec now reads as the fixed base plus the overlay it has
+    // always been, so the description names both layers.
+    expect(describeStrategy({ kind: 'trend', windowDays: 200 })).toBe(
+      'Fixed weights, then hold only what is above its 200-day average',
+    );
     expect(describeStrategy(undefined)).toBe('Fixed weights');
   });
 });

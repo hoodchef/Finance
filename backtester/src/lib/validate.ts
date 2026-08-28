@@ -12,6 +12,8 @@ import type {
   Position,
   RebalanceFrequency,
   RiskFreeSource,
+  StrategyBaseSpec,
+  StrategyOverlaySpec,
   StrategySpec,
 } from '@/lib/types';
 import { defaultConfig, MAX_HISTORY_START } from '@/lib/defaults';
@@ -345,25 +347,26 @@ function parseCashflows(raw: unknown): CashflowLeg[] {
  * An absent strategy is the declared weights, so `undefined` is a valid answer
  * and not an error — every config written before strategies existed omits it.
  */
-function parseStrategy(raw: unknown): StrategySpec | undefined {
-  if (raw == null) return undefined;
-  if (typeof raw !== 'object') {
-    throw new ValidationError('The strategy must be an object.', 'strategy');
+function days(value: unknown, field: string, fallback: number): number {
+  const n = num(value, field, fallback);
+  if (!Number.isFinite(n) || n < 2 || n > 2520) {
+    // Ten years of sessions is the outer edge of a usable window; beyond it
+    // the rule has less history to act on than it needs to measure.
+    throw new ValidationError(`${field} must be between 2 and 2520 trading days.`, 'strategy');
   }
-  const r = raw as Record<string, unknown>;
-  const kind = r.kind;
+  return Math.round(n);
+}
 
-  const days = (value: unknown, field: string, fallback: number): number => {
-    const n = num(value, field, fallback);
-    if (!Number.isFinite(n) || n < 2 || n > 2520) {
-      // Ten years of sessions is the outer edge of a usable window; beyond it
-      // the rule has less history to act on than it needs to measure.
-      throw new ValidationError(`${field} must be between 2 and 2520 trading days.`, 'strategy');
-    }
-    return Math.round(n);
-  };
+function pct(value: unknown, field: string, fallback: number, min = 0, max = 100): number {
+  const n = num(value, field, fallback);
+  if (!Number.isFinite(n) || n < min || n > max) {
+    throw new ValidationError(`${field} must be between ${min} and ${max}%.`, 'strategy');
+  }
+  return n;
+}
 
-  switch (kind) {
+function parseBase(r: Record<string, unknown>): StrategyBaseSpec {
+  switch (r.kind) {
     case 'fixed':
       return { kind: 'fixed' };
 
@@ -371,23 +374,18 @@ function parseStrategy(raw: unknown): StrategySpec | undefined {
       return { kind: 'equal' };
 
     case 'glidepath': {
-      const startGrowthPct = num(r.startGrowthPct, 'Starting growth allocation', 90);
-      const endGrowthPct = num(r.endGrowthPct, 'Ending growth allocation', 40);
-      for (const [v, label] of [
-        [startGrowthPct, 'Starting growth allocation'],
-        [endGrowthPct, 'Ending growth allocation'],
-      ] as const) {
-        if (v < 0 || v > 100) {
-          throw new ValidationError(`${label} must be between 0 and 100%.`, 'strategy');
-        }
-      }
       const growthSymbols = Array.isArray(r.growthSymbols)
         ? r.growthSymbols
             .map((x) => String(x ?? '').trim().toUpperCase())
             .filter(Boolean)
             .slice(0, 100)
         : [];
-      return { kind: 'glidepath', growthSymbols, startGrowthPct, endGrowthPct };
+      return {
+        kind: 'glidepath',
+        growthSymbols,
+        startGrowthPct: pct(r.startGrowthPct, 'Starting growth allocation', 90),
+        endGrowthPct: pct(r.endGrowthPct, 'Ending growth allocation', 40),
+      };
     }
 
     case 'momentum': {
@@ -403,16 +401,86 @@ function parseStrategy(raw: unknown): StrategySpec | undefined {
       };
     }
 
-    case 'trend':
-      return { kind: 'trend', windowDays: days(r.windowDays, 'The moving-average window', 200) };
-
     case 'inverseVolatility':
       return {
         kind: 'inverseVolatility',
         lookbackDays: days(r.lookbackDays, 'The volatility window', 63),
       };
 
+    case 'minimumVariance':
+    case 'riskParity': {
+      const lookbackDays = days(r.lookbackDays, 'The covariance window', 252);
+      // A covariance estimate needs materially more observations than assets.
+      // Thirty is the floor the estimator itself refuses below.
+      if (lookbackDays < 30) {
+        throw new ValidationError(
+          'A covariance window shorter than 30 days cannot support an estimate.',
+          'strategy',
+        );
+      }
+      return {
+        kind: r.kind,
+        lookbackDays,
+        shrink: r.shrink !== false,
+        maxWeightPct: pct(r.maxWeightPct, 'The per-holding cap', 100, 1, 100),
+      };
+    }
+
     default:
-      throw new ValidationError(`Unknown strategy "${String(kind)}".`, 'strategy');
+      throw new ValidationError(`Unknown strategy "${String(r.kind)}".`, 'strategy');
   }
+}
+
+function parseOverlay(raw: unknown): StrategyOverlaySpec {
+  if (!raw || typeof raw !== 'object') {
+    throw new ValidationError('Each overlay must be an object.', 'strategy');
+  }
+  const r = raw as Record<string, unknown>;
+  switch (r.kind) {
+    case 'trend':
+      return { kind: 'trend', windowDays: days(r.windowDays, 'The moving-average window', 200) };
+
+    case 'volatilityTarget':
+      return {
+        kind: 'volatilityTarget',
+        // Zero would mean "hold nothing", which is a way of asking for a bug.
+        targetVolPct: pct(r.targetVolPct, 'The volatility target', 10, 0.5, 100),
+        lookbackDays: days(r.lookbackDays, 'The volatility window', 63),
+      };
+
+    case 'cap':
+      return { kind: 'cap', maxWeightPct: pct(r.maxWeightPct, 'The per-holding cap', 100, 1, 100) };
+
+    default:
+      throw new ValidationError(`Unknown overlay "${String(r.kind)}".`, 'strategy');
+  }
+}
+
+function parseStrategy(raw: unknown): StrategySpec | undefined {
+  if (raw == null) return undefined;
+  if (typeof raw !== 'object') {
+    throw new ValidationError('The strategy must be an object.', 'strategy');
+  }
+  const r = raw as Record<string, unknown>;
+
+  if (r.kind === 'composed') {
+    const rawOverlays = Array.isArray(r.overlays) ? r.overlays : [];
+    // Bounded because each overlay is work inside the day loop, and a stack of
+    // fifty of them is a denial-of-service dressed as a strategy.
+    if (rawOverlays.length > 4) {
+      throw new ValidationError('A strategy may carry at most four overlays.', 'strategy');
+    }
+    const base =
+      r.base && typeof r.base === 'object'
+        ? parseBase(r.base as Record<string, unknown>)
+        : ({ kind: 'fixed' } as StrategyBaseSpec);
+    return { kind: 'composed', base, overlays: rawOverlays.map(parseOverlay) };
+  }
+
+  // A bare overlay is the pre-composition shape and stays valid.
+  if (r.kind === 'trend' || r.kind === 'volatilityTarget' || r.kind === 'cap') {
+    return parseOverlay(r);
+  }
+
+  return parseBase(r);
 }
