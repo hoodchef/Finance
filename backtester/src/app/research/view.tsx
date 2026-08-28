@@ -19,6 +19,7 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { EmptyState } from '@/components/ui/empty-state';
 import { TickerSearch } from '@/components/builder/ticker-search';
 import { CompanyNews } from '@/components/research/company-news';
+import { EarningsPanel } from '@/components/research/earnings-panel';
 import { Skeleton } from '@/components/ui/skeleton';
 import { Stat } from '@/components/ui/stat';
 import { AXIS_PROPS, ChartFrame, GRID_PROPS } from '@/components/charts/chart-chrome';
@@ -494,6 +495,10 @@ export function ResearchView() {
                 </table>
               </CardContent>
             </Card>
+
+            {/* Earnings. Before the news, because the next reporting date is
+                the thing most often being looked for. */}
+            <EarningsPanel key={`e-${data.company.ticker}`} ticker={data.company.ticker} />
 
             {/* News. Keyed on the ticker so switching companies remounts it
                 rather than showing the previous company's headlines while the

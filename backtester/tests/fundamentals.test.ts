@@ -451,3 +451,56 @@ describe('a balance sheet that adds up', () => {
     expect(rows[0].assets).toBeNull();
   });
 });
+
+describe('share counts filed at the wrong scale', () => {
+  /**
+   * Merck's 2010 diluted share count is 3,120 in EDGAR, between 2,273,000,000
+   * in 2009 and 3,094,000,000 in 2011 — filed in millions where its neighbours
+   * are absolute. NVIDIA's 2008 and 2009 are in thousands. Rendered literally,
+   * Merck reported three thousand diluted shares.
+   */
+  const build = (ni: number, eps: number, shares: number) =>
+    buildAnnualRows(
+      facts({
+        Revenues: [year(2010, 45987, 2010, '2011-02-28')],
+        NetIncomeLoss: [year(2010, ni, 2010, '2011-02-28')],
+        EarningsPerShareDiluted: [year(2010, eps, 2010, '2011-02-28')],
+        WeightedAverageNumberOfDilutedSharesOutstanding: [
+          year(2010, shares, 2010, '2011-02-28'),
+        ],
+      }),
+    ).rows[0];
+
+  it('drops a count filed in millions', () => {
+    // Merck: 861,000,000 / (0.28 x 3,120) = 985,126, a whisker off a million.
+    expect(build(861_000_000, 0.28, 3_120).sharesDiluted).toBeNull();
+  });
+
+  it('drops a count filed in thousands', () => {
+    // NVIDIA: 797,645,000 / (1.31 x 606,732) = 1,004.
+    expect(build(797_645_000, 1.31, 606_732).sharesDiluted).toBeNull();
+  });
+
+  it('keeps a count that simply disagrees with EPS because of preferred dividends', () => {
+    // Bank of America 2011: net income 1,446,000,000 against 102,548,240 of
+    // income available to common, a ratio of 14. Real, and not a power of a
+    // thousand — EPS is struck after preferred dividends and net income is not.
+    expect(build(1_446_000_000, 0.01, 10_254_824_000).sharesDiluted).toBe(10_254_824_000);
+  });
+
+  it('keeps an ordinary count where the arithmetic agrees', () => {
+    expect(build(861_000_000, 0.28, 3_120_000_000).sharesDiluted).toBe(3_120_000_000);
+  });
+
+  it('leaves the count alone when there is no EPS to check it against', () => {
+    // Without both figures there is no arithmetic, and a suspicion is not
+    // grounds for removing data.
+    const r = buildAnnualRows(
+      facts({
+        Revenues: [year(2010, 45987, 2010, '2011-02-28')],
+        WeightedAverageNumberOfDilutedSharesOutstanding: [year(2010, 3_120, 2010, '2011-02-28')],
+      }),
+    ).rows[0];
+    expect(r.sharesDiluted).toBe(3_120);
+  });
+});

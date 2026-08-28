@@ -117,6 +117,41 @@ export interface ConceptUse {
   concept: string;
 }
 
+/**
+ * Drops a diluted share count that was filed at the wrong scale.
+ *
+ * Early XBRL filings sometimes tagged share counts in thousands or millions
+ * while the surrounding years used absolute counts. Merck's 2010 count is
+ * 3,120 where 2009 is 2,273,000,000 and 2011 is 3,094,000,000; NVIDIA's 2008
+ * and 2009 are in thousands. Rendered literally, Merck reported a diluted
+ * share count of three thousand.
+ *
+ * Detection is not an outlier test — a company really can change its share
+ * count sharply, and a reverse split really can divide it by a hundred. It is
+ * an arithmetic one: diluted EPS times diluted shares is income available to
+ * common shareholders, so the ratio between that product and net income is
+ * near one for most companies, and further from one for a company paying large
+ * preferred dividends — Bank of America's 2011 ratio is 14. A scale error is a
+ * different animal: it lands within a whisker of a power of a thousand, 985,126
+ * for Merck and 1,004 for NVIDIA, because that is what a units mistake does.
+ * So only ratios close to 1,000, a million or a billion are treated as one.
+ *
+ * The count is dropped rather than multiplied back. Inferring the intended
+ * scale from EPS is convincing enough to disbelieve the figure and not enough
+ * to publish a number the filer did not file, and dilution already skips years
+ * with no count — which is better than the alternative it faced before, where
+ * the jump back to billions read as a stock split.
+ */
+function withoutMisscaledShares(row: YearRow): YearRow {
+  const { netIncome: ni, epsDiluted: eps, sharesDiluted: shares } = row;
+  if (ni == null || eps == null || shares == null) return row;
+  if (ni <= 0 || eps <= 0 || shares <= 0) return row;
+
+  const ratio = ni / (eps * shares);
+  const misscaled = [1e3, 1e6, 1e9].some((scale) => Math.abs(ratio / scale - 1) < 0.2);
+  return misscaled ? { ...row, sharesDiluted: null } : row;
+}
+
 export function buildAnnualRows(facts: CompanyFacts): {
   rows: YearRow[];
   conceptsUsed: ConceptUse[];
@@ -256,7 +291,7 @@ export function buildAnnualRows(facts: CompanyFacts): {
     rows[i].epsGrowth = growth(rows[i].epsDiluted, rows[i - 1].epsDiluted);
   }
 
-  return { rows, conceptsUsed };
+  return { rows: rows.map(withoutMisscaledShares), conceptsUsed };
 }
 
 /* ------------------------------------------------------------------ */
