@@ -46,6 +46,7 @@ import {
 } from '@/lib/options/analytics';
 import { applyPreset, emptyPosition, newLeg, PRESETS, type PresetId } from '@/lib/options/presets';
 import { perDay, perPoint } from '@/lib/options/pricing';
+import { OptimiserPanel } from '@/components/options/optimiser-panel';
 
 /**
  * The options strategy builder.
@@ -643,6 +644,7 @@ export function OptionsView() {
             <TabsTrigger value="probability">Probability</TabsTrigger>
             <TabsTrigger value="scenarios">Scenarios</TabsTrigger>
             <TabsTrigger value="montecarlo">Monte Carlo</TabsTrigger>
+            <TabsTrigger value="optimise">Optimiser</TabsTrigger>
             <TabsTrigger value="chain">Chain</TabsTrigger>
           </TabsList>
 
@@ -859,6 +861,19 @@ export function OptionsView() {
                 )}
               </CardContent>
             </Card>
+          </TabsContent>
+
+          <TabsContent value="optimise">
+            <OptimiserPanel
+              underlying={ticker}
+              spot={liveSpot}
+              asOf={asOf}
+              expiries={data?.chain?.expiries?.length ? data.chain.expiries : [nearExpiry, farExpiry]}
+              pricingVolatility={assumedVol}
+              riskFreeRate={position.riskFreeRate}
+              dividendYield={position.dividendYield}
+              onApply={(legs) => setPosition((p) => ({ ...p, legs, stock: null }))}
+            />
           </TabsContent>
 
           <TabsContent value="chain">

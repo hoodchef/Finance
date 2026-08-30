@@ -160,8 +160,15 @@ export function analysePositionProbability(
   // Integrate over the terminal lognormal using equal-probability slices, so
   // every sample carries the same weight and the tails are represented without
   // an arbitrary cut-off.
-  let expectedValue = 0;
+  let grossPayoff = 0;
   let probProfit = 0;
+  // The premium was paid today and the payoff arrives at expiry, so the two
+  // are only comparable once the payoff is discounted back. Left undiscounted
+  // this reports the interest on the premium as if it were edge.
+  const paid = position.legs.reduce(
+    (a, l) => a + (l.side === 'buy' ? 1 : -1) * l.entryPremium * l.contracts * l.multiplier,
+    0,
+  ) + (position.stock ? (position.stock.side === 'buy' ? 1 : -1) * position.stock.entryPrice * position.stock.shares : 0);
   const mu = Math.log(options.spot) +
     (position.riskFreeRate - position.dividendYield - 0.5 * options.volatility ** 2) * T;
   const sd = options.volatility * Math.sqrt(Math.max(T, 0));
@@ -171,9 +178,10 @@ export function analysePositionProbability(
     const z = normInv(p);
     const terminal = sd > 0 ? Math.exp(mu + sd * z) : options.spot;
     const profit = profitAtExpiry(position, terminal);
-    expectedValue += profit / steps;
+    grossPayoff += (profit + paid) / steps;
     if (profit > 0) probProfit += 1 / steps;
   }
+  const expectedValue = Math.exp(-position.riskFreeRate * T) * grossPayoff - paid;
 
   const legs = position.legs.map((l) => ({
     legId: l.id,
