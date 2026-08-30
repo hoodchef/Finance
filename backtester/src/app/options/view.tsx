@@ -47,6 +47,7 @@ import {
 import { applyPreset, emptyPosition, newLeg, PRESETS, type PresetId } from '@/lib/options/presets';
 import { perDay, perPoint } from '@/lib/options/pricing';
 import { OptimiserPanel } from '@/components/options/optimiser-panel';
+import { HedgePanel } from '@/components/options/hedge-panel';
 
 /**
  * The options strategy builder.
@@ -489,6 +490,23 @@ export function OptionsView() {
                 Add leg
               </Button>
 
+              {!position.stock && (
+                <Button
+                  size="sm"
+                  variant="outline"
+                  className="w-full"
+                  onClick={() =>
+                    setPosition((p) => ({
+                      ...p,
+                      stock: { side: 'buy', shares: 100, entryPrice: liveSpot },
+                    }))
+                  }
+                >
+                  <Plus className="h-3 w-3" />
+                  Add 100 shares
+                </Button>
+              )}
+
               {position.stock && (
                 <div className="rounded-md border border-border p-2 text-2xs">
                   <div className="mb-1 font-medium">Stock</div>
@@ -644,6 +662,7 @@ export function OptionsView() {
             <TabsTrigger value="probability">Probability</TabsTrigger>
             <TabsTrigger value="scenarios">Scenarios</TabsTrigger>
             <TabsTrigger value="montecarlo">Monte Carlo</TabsTrigger>
+            <TabsTrigger value="hedge">Hedge</TabsTrigger>
             <TabsTrigger value="optimise">Optimiser</TabsTrigger>
             <TabsTrigger value="chain">Chain</TabsTrigger>
           </TabsList>
@@ -861,6 +880,17 @@ export function OptionsView() {
                 )}
               </CardContent>
             </Card>
+          </TabsContent>
+
+          <TabsContent value="hedge">
+            <HedgePanel
+              position={position}
+              spot={liveSpot}
+              asOf={asOf}
+              volatility={assumedVol}
+              expiries={data?.chain?.expiries?.length ? data.chain.expiries : [nearExpiry, farExpiry]}
+              onApply={(legs, stock) => setPosition((p) => ({ ...p, legs, stock }))}
+            />
           </TabsContent>
 
           <TabsContent value="optimise">
