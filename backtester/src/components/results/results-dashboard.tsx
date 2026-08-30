@@ -36,6 +36,7 @@ import { TaxLotsPanel } from './tax-lots';
 import { RealSummaryStrip, RealTermsPanel } from './real-terms';
 import { CorrelationPanel } from './correlation-matrix';
 import { PeriodReturnsTable } from './period-returns';
+import { StrategySweep } from './strategy-sweep';
 
 /**
  * The results page. Everything visible here is computed by the engine from the
@@ -129,6 +130,10 @@ export function ResultsDashboard({ result }: { result: BacktestResult }) {
 
         <TabsContent value="insights" className="space-y-5">
           <InsightsPanel result={result} />
+          {/* Beside the insights rather than in its own tab: it answers "was
+              the rule worth it", which is the same question the rest of this
+              tab asks about the portfolio. */}
+          <StrategySweep />
         </TabsContent>
       </Tabs>
 
