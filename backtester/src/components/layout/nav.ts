@@ -9,6 +9,7 @@ import {
   LayoutDashboard,
   LineChart,
   Settings,
+  Sigma,
   Sparkles,
   Waves,
 } from 'lucide-react';
@@ -122,6 +123,13 @@ export const NAV_GROUPS: NavGroup[] = [
         icon: Waves,
         short: 'Sim',
         hint: 'What it might do next',
+      },
+      {
+        href: '/options',
+        label: 'Options',
+        icon: Sigma,
+        short: 'Opts',
+        hint: 'Multi-leg payoff, Greeks and risk',
       },
     ],
   },
