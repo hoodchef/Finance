@@ -534,7 +534,7 @@ export function ConfigPanel() {
               <SelectItem value="hifo">Highest cost first</SelectItem>
             </SelectContent>
           </Select>
-          <p className="text-2xs leading-relaxed text-muted-foreground">
+          <p className="text-xs leading-relaxed text-muted-foreground">
             {config.costBasisMethod === 'average'
               ? 'Required for Canadian taxable accounts. An averaged share has no individual holding period, so gains are not split into short and long term.'
               : config.costBasisMethod === 'hifo'

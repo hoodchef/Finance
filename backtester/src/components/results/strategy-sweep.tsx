@@ -251,7 +251,7 @@ export function StrategySweep() {
 
             <div className="mt-3 flex items-start gap-2 rounded-md border border-border bg-muted/40 p-2.5">
               <TriangleAlert className="mt-0.5 h-3.5 w-3.5 shrink-0 text-muted-foreground" />
-              <p className="text-2xs leading-relaxed text-muted-foreground">
+              <p className="text-xs leading-relaxed text-muted-foreground">
                 <span className="font-medium text-foreground">
                   Picking the best of these is not a result.
                 </span>{' '}

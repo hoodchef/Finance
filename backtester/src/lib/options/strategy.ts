@@ -307,11 +307,40 @@ export function summarise(position: OptionPosition): PositionSummary {
   const debit = netDebit(position);
 
   if (strikes.length === 0) {
+    /*
+     * No options: the payoff is a straight line in the spot, so its slope
+     * settles everything and there is nothing to scan for.
+     *
+     * Returning nulls here — as this did — meant "unbounded", and the panel
+     * renders that as UNLIMITED. An empty position therefore announced an
+     * unlimited maximum loss, and so did a plain long stock position, whose
+     * loss is bounded at the whole investment. Both are alarming and neither
+     * is true.
+     */
+    const shares = position.stock
+      ? (position.stock.side === 'buy' ? 1 : -1) * position.stock.shares
+      : 0;
+    if (shares === 0) {
+      // Nothing held: nothing to gain or lose.
+      return {
+        netDebit: debit,
+        maxProfit: 0,
+        maxLoss: 0,
+        breakevens: [],
+        capital: 0,
+        riskReward: null,
+      };
+    }
+    const atZero = profitAtExpiry(position, 0);
     return {
       netDebit: debit,
-      maxProfit: null,
-      maxLoss: null,
-      breakevens: [],
+      // Long stock rises without bound; short stock is capped at the shares
+      // going to zero.
+      maxProfit: shares > 0 ? null : atZero,
+      // Long stock cannot lose more than it cost; short stock can lose without
+      // bound as the price rises.
+      maxLoss: shares > 0 ? atZero : null,
+      breakevens: [position.stock ? position.stock.entryPrice : 0],
       capital: capitalRequired(position),
       riskReward: null,
     };

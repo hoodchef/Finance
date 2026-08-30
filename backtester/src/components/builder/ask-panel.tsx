@@ -124,17 +124,17 @@ export function AskPanel() {
         </Button>
       </div>
 
-      <p className="mt-1.5 text-2xs leading-relaxed text-muted-foreground">
+      <p className="mt-1.5 text-xs leading-relaxed text-muted-foreground">
         Runs on your machine and goes nowhere else. It picks tickers and weights; every number
         after that is still computed by the engine.
       </p>
 
       {modelWarning && (
-        <p className="mt-1.5 text-2xs leading-relaxed text-[hsl(var(--warning))]">{modelWarning}</p>
+        <p className="mt-1.5 text-xs leading-relaxed text-[hsl(var(--warning))]">{modelWarning}</p>
       )}
 
       {error && (
-        <div className="mt-2 flex items-start gap-1.5 rounded border border-destructive/40 bg-destructive/8 p-2 text-2xs leading-relaxed">
+        <div className="mt-2 flex items-start gap-1.5 rounded border border-destructive/40 bg-destructive/8 p-2 text-xs leading-relaxed">
           <AlertTriangle className="mt-0.5 h-3 w-3 shrink-0 text-destructive" />
           <span>{error}</span>
         </div>
@@ -181,19 +181,19 @@ export function AskPanel() {
           </div>
 
           {proposal.warnings.map((w) => (
-            <p key={w} className="mt-1.5 text-2xs leading-relaxed text-[hsl(var(--warning))]">
+            <p key={w} className="mt-1.5 text-xs leading-relaxed text-[hsl(var(--warning))]">
               {w}
             </p>
           ))}
 
           {proposal.defaulted.length > 0 && (
-            <p className="mt-1.5 text-2xs leading-relaxed text-muted-foreground">
+            <p className="mt-1.5 text-xs leading-relaxed text-muted-foreground">
               Not mentioned, so left at the default: {proposal.defaulted.join(', ')}.
             </p>
           )}
 
           {proposal.notes && (
-            <p className="mt-1.5 text-2xs leading-relaxed text-muted-foreground">
+            <p className="mt-1.5 text-xs leading-relaxed text-muted-foreground">
               It said: {proposal.notes}
             </p>
           )}

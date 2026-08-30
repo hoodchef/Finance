@@ -535,3 +535,35 @@ describe('capital required', () => {
     expect(capitalRequired(p)).toBeCloseTo(9300, 6);
   });
 });
+
+describe('positions with no options at all', () => {
+  /**
+   * The panel renders a null maximum loss as UNLIMITED, so returning null for
+   * "no strikes to scan" made an empty position — and a plain long stock
+   * position — announce an unlimited loss. Both are alarming and neither is
+   * true: nothing held risks nothing, and long stock risks what it cost.
+   */
+  it('reports nothing at risk for an empty position', () => {
+    const empty = position([]);
+    const s = summarise(empty);
+    expect(s.maxLoss).toBe(0);
+    expect(s.maxProfit).toBe(0);
+    expect(s.capital).toBe(0);
+  });
+
+  it('bounds the loss on long stock at what it cost', () => {
+    const long = position([], { stock: { side: 'buy', shares: 100, entryPrice: 50 } });
+    const s = summarise(long);
+    expect(s.maxLoss).toBeCloseTo(-5000, 6);
+    // Upside is genuinely unbounded, which is the one that should say so.
+    expect(s.maxProfit).toBeNull();
+    expect(s.breakevens).toEqual([50]);
+  });
+
+  it('leaves the loss unbounded on short stock, where it really is', () => {
+    const short = position([], { stock: { side: 'sell', shares: 100, entryPrice: 50 } });
+    const s = summarise(short);
+    expect(s.maxLoss).toBeNull();
+    expect(s.maxProfit).toBeCloseTo(5000, 6);
+  });
+});

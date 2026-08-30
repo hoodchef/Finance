@@ -131,7 +131,7 @@ export function CorrelationPanel({ result }: { result: BacktestResult }) {
         </div>
 
         {thin && (
-          <p className="text-2xs leading-relaxed text-muted-foreground">
+          <p className="text-xs leading-relaxed text-muted-foreground">
             Some pairs overlap for far fewer days than others, because a holding listed later or
             stopped trading. Hover a cell for its observation count — a coefficient from a short
             overlap is not comparable with one from the full period.

@@ -300,7 +300,7 @@ export function ScenarioPanel({
               </TableBody>
             </Table>
 
-            <p className="px-4 pb-4 text-2xs leading-relaxed text-muted-foreground sm:px-5">
+            <p className="px-4 pb-4 text-xs leading-relaxed text-muted-foreground sm:px-5">
               Periods come from the drawdowns of {analysis.reference.symbol} over its full
               available history, deepest first. The portfolio is run with your own rebalancing rule
               and fees, but without contributions — a scheduled deposit landing mid-crash would

@@ -99,14 +99,17 @@ function Stat({
   value,
   tone,
   hint,
+  bare,
 }: {
   label: string;
   value: string;
   tone?: 'positive' | 'negative' | 'warn';
   hint?: string;
+  /** Drops the row chrome so several can sit in a grid. */
+  bare?: boolean;
 }) {
   return (
-    <div className="border-b border-border/50 px-3 py-2 last:border-0">
+    <div className={bare ? '' : 'border-b border-border/50 px-3 py-2 last:border-0'}>
       <div className="text-2xs uppercase tracking-wide text-muted-foreground">{label}</div>
       <div
         className={cn(
@@ -368,7 +371,7 @@ export function OptionsView() {
             ) : (
               <div className="flex max-w-xl items-start gap-2 rounded-md border border-border bg-muted/40 p-2">
                 <AlertCircle className="mt-0.5 h-3.5 w-3.5 shrink-0 text-muted-foreground" />
-                <p className="text-2xs leading-relaxed text-muted-foreground">
+                <p className="text-xs leading-relaxed text-muted-foreground">
                   <span className="font-medium text-foreground">No live option chain.</span>{' '}
                   {data?.chainNote ??
                     'No chain provider is configured.'}{' '}
@@ -522,7 +525,7 @@ export function OptionsView() {
               )}
 
               {missingPremium && (
-                <p className="rounded-md border border-[hsl(var(--negative))]/40 bg-[hsl(var(--negative))]/10 p-2 text-2xs leading-relaxed">
+                <p className="rounded-md border border-[hsl(var(--negative))]/40 bg-[hsl(var(--negative))]/10 p-2 text-xs leading-relaxed">
                   One or more legs has no premium. Templates deliberately leave it at zero rather
                   than inventing a price — enter what you paid or received, or the P/L below is
                   measured against nothing.
@@ -596,7 +599,7 @@ export function OptionsView() {
                   </ResponsiveContainer>
                 </div>
               )}
-              <p className="mt-2 text-2xs leading-relaxed text-muted-foreground">
+              <p className="mt-2 text-xs leading-relaxed text-muted-foreground">
                 The filled line is profit at the final expiry; the thin line is the theoretical
                 value today, from the model. Dots mark breakevens, the dashed line the current
                 underlying, and the faint verticals the strikes.
@@ -609,47 +612,57 @@ export function OptionsView() {
             <CardHeader className="pb-2">
               <CardTitle className="text-sm">Position</CardTitle>
             </CardHeader>
-            <CardContent className="p-0">
-              <Stat
-                label={netDebit(position) >= 0 ? 'Net debit' : 'Net credit'}
-                value={formatCurrency(Math.abs(netDebit(position)))}
-              />
-              <Stat
-                label="Max profit"
-                value={summary.maxProfit == null ? 'Unlimited' : formatCurrency(summary.maxProfit)}
-                tone={summary.maxProfit == null ? 'positive' : undefined}
-              />
-              <Stat
-                label="Max loss"
-                value={summary.maxLoss == null ? 'UNLIMITED' : formatCurrency(summary.maxLoss)}
-                tone={summary.maxLoss == null ? 'warn' : 'negative'}
-                hint={summary.maxLoss == null ? 'This position can lose without bound.' : undefined}
-              />
-              <Stat
-                label="Breakevens"
-                value={summary.breakevens.length ? summary.breakevens.map((b) => b.toFixed(2)).join(', ') : '—'}
-              />
-              <Stat label="Capital (estimate)" value={formatCurrency(summary.capital)}
-                hint="Not your broker's margin number." />
-              <Stat
-                label="Current P/L"
-                value={formatCurrency(valuation.profit)}
-                tone={valuation.profit >= 0 ? 'positive' : 'negative'}
-              />
-              <Stat label="Delta" value={valuation.greeks.delta.toFixed(2)} hint="Share-equivalent" />
-              <Stat label="Gamma" value={valuation.greeks.gamma.toFixed(4)} />
-              <Stat label="Theta / day" value={formatCurrency(perDay(valuation.greeks.theta))} />
-              <Stat label="Vega / point" value={formatCurrency(perPoint(valuation.greeks.vega))} />
-              <Stat label="Rho / point" value={formatCurrency(perPoint(valuation.greeks.rho))} />
+            <CardContent className="space-y-3 p-4">
+              {/*
+                Grouped rather than stacked. Twelve full-width rows made a
+                column twice the height of the chart beside it, and reading it
+                meant scrolling past the answer to find the greeks.
+              */}
+              <div className="grid grid-cols-2 gap-x-4 gap-y-2.5">
+                <Stat bare
+                  label={netDebit(position) >= 0 ? 'Net debit' : 'Net credit'}
+                  value={formatCurrency(Math.abs(netDebit(position)))} />
+                <Stat bare
+                  label="Current P/L"
+                  value={formatCurrency(valuation.profit)}
+                  tone={valuation.profit >= 0 ? 'positive' : 'negative'} />
+              </div>
+
+              <div className="grid grid-cols-2 gap-x-4 gap-y-2.5 border-t border-border pt-3">
+                <Stat bare
+                  label="Max profit"
+                  value={summary.maxProfit == null ? 'Unlimited' : formatCurrency(summary.maxProfit)}
+                  tone={summary.maxProfit == null ? 'positive' : undefined} />
+                <Stat bare
+                  label="Max loss"
+                  value={summary.maxLoss == null ? 'Unlimited' : formatCurrency(summary.maxLoss)}
+                  tone={summary.maxLoss == null ? 'warn' : 'negative'}
+                  hint={summary.maxLoss == null ? 'Can lose without bound.' : undefined} />
+                <Stat bare
+                  label="Breakevens"
+                  value={summary.breakevens.length ? summary.breakevens.map((b) => b.toFixed(2)).join(', ') : '—'} />
+                <Stat bare
+                  label="Capital"
+                  value={formatCurrency(summary.capital)}
+                  hint="Estimate, not your broker's margin." />
+              </div>
+
+              <div className="grid grid-cols-2 gap-x-4 gap-y-2.5 border-t border-border pt-3">
+                <Stat bare label="Delta" value={valuation.greeks.delta.toFixed(2)} hint="Share-equivalent" />
+                <Stat bare label="Gamma" value={valuation.greeks.gamma.toFixed(4)} />
+                <Stat bare label="Theta / day" value={formatCurrency(perDay(valuation.greeks.theta))} />
+                <Stat bare label="Vega / pt" value={formatCurrency(perPoint(valuation.greeks.vega))} />
+                <Stat bare label="Rho / pt" value={formatCurrency(perPoint(valuation.greeks.rho))} />
+              </div>
+
               {probability && (
-                <>
-                  <Stat label="Probability of profit" value={formatPercent(probability.probabilityOfProfit, 1)} />
-                  <Stat
-                    label="Expected value"
+                <div className="grid grid-cols-2 gap-x-4 gap-y-2.5 border-t border-border pt-3">
+                  <Stat bare label="Prob. of profit"
+                    value={formatPercent(probability.probabilityOfProfit, 1)} />
+                  <Stat bare label="Expected value"
                     value={formatCurrency(probability.expectedValue)}
-                    tone={probability.expectedValue >= 0 ? 'positive' : 'negative'}
-                  />
-                </>
+                    tone={probability.expectedValue >= 0 ? 'positive' : 'negative'} />
+                </div>
               )}
             </CardContent>
           </Card>
@@ -778,7 +791,7 @@ export function OptionsView() {
                       </tbody>
                     </table>
 
-                    <p className="rounded-md border border-border bg-muted/40 p-2.5 text-2xs leading-relaxed text-muted-foreground">
+                    <p className="rounded-md border border-border bg-muted/40 p-2.5 text-xs leading-relaxed text-muted-foreground">
                       {probability.assumptions}
                     </p>
                   </>
@@ -871,7 +884,7 @@ export function OptionsView() {
                       </ResponsiveContainer>
                     </div>
 
-                    <p className="rounded-md border border-border bg-muted/40 p-2.5 text-2xs leading-relaxed text-muted-foreground">
+                    <p className="rounded-md border border-border bg-muted/40 p-2.5 text-xs leading-relaxed text-muted-foreground">
                       {simulation.assumptions}
                     </p>
                   </>
@@ -974,7 +987,7 @@ export function OptionsView() {
                       {data?.chainNote ?? 'No chain loaded.'}
                     </p>
                     {data?.needsConfiguration && (
-                      <p className="text-2xs leading-relaxed text-muted-foreground">
+                      <p className="text-xs leading-relaxed text-muted-foreground">
                         Alpaca serves OPRA option chains with implied volatility and Greeks,
                         licensed to the account holder rather than for redistribution. Add
                         <code className="mx-1 rounded bg-muted px-1">ALPACA_API_KEY_ID</code> and
@@ -990,7 +1003,7 @@ export function OptionsView() {
           </TabsContent>
         </Tabs>
 
-        <div className="rounded-md border border-border bg-muted/40 p-3 text-2xs leading-relaxed text-muted-foreground">
+        <div className="rounded-md border border-border bg-muted/40 p-3 text-xs leading-relaxed text-muted-foreground">
           <p>
             <span className="font-medium text-foreground">What is measured and what is modelled.</span>{' '}
             {data?.provenance.pricing} The underlying price and any chain quotes are market data;

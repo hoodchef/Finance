@@ -320,7 +320,7 @@ function RunCard({
         </div>
 
         {incoherent && (
-          <p className="mt-1.5 text-2xs leading-relaxed text-destructive">
+          <p className="mt-1.5 text-xs leading-relaxed text-destructive">
             {incoherent} It was most likely recorded by an older version; delete it and run again.
           </p>
         )}

@@ -305,7 +305,7 @@ export function EarningsPanel({ ticker }: { ticker: string }) {
           )}
 
           {data.unlisted.length > 0 && (
-            <p className="text-2xs leading-relaxed text-muted-foreground">
+            <p className="text-xs leading-relaxed text-muted-foreground">
               No date published for {data.unlisted.join(', ')}. Funds and ETFs do not report
               earnings at all, and the vendor&rsquo;s calendar does not cover every operating
               company either — so this means no date was found, not that nothing is scheduled.
@@ -384,7 +384,7 @@ export function EarningsPanel({ ticker }: { ticker: string }) {
         </CardContent>
       </Card>
 
-      <div className="rounded-md border border-border bg-muted/40 p-3 text-2xs leading-relaxed text-muted-foreground lg:col-span-2">
+      <div className="rounded-md border border-border bg-muted/40 p-3 text-xs leading-relaxed text-muted-foreground lg:col-span-2">
         <p>
           <span className="font-medium text-foreground">Past.</span> {data.provenance.history}{' '}
           {data.provenance.fourthQuarter}

@@ -485,7 +485,7 @@ export function PlannerView() {
                 </CardContent>
               </Card>
 
-              <p className="text-2xs leading-relaxed text-muted-foreground">
+              <p className="text-xs leading-relaxed text-muted-foreground">
                 Figures use the {data.taxYear} federal and {data.province} parameters, each recorded
                 with its source. This is a calculation, not tax advice, and it does not model every
                 credit or deduction that may apply to you.
@@ -717,7 +717,7 @@ function AllocationPanel({
                 <NumCell className="text-xs text-muted-foreground">
                   {formatPercent(amount / total, 0)}
                 </NumCell>
-                <TableCell className="max-w-[22rem] text-2xs leading-relaxed text-muted-foreground">
+                <TableCell className="max-w-[22rem] text-xs leading-relaxed text-muted-foreground">
                   {ACCOUNT_WHY[account]}
                 </TableCell>
               </TableRow>

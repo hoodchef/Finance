@@ -199,10 +199,10 @@ export function StrategyBuilder() {
         </SelectContent>
       </Select>
 
-      <p className="text-2xs leading-relaxed text-muted-foreground">{BASE_HINTS[base.kind]}</p>
+      <p className="text-xs leading-relaxed text-muted-foreground">{BASE_HINTS[base.kind]}</p>
 
       {inert && (
-        <p className="rounded-md border border-[hsl(var(--negative))]/40 bg-[hsl(var(--negative))]/10 p-2 text-2xs leading-relaxed">
+        <p className="rounded-md border border-[hsl(var(--negative))]/40 bg-[hsl(var(--negative))]/10 p-2 text-xs leading-relaxed">
           Rebalancing is set to never, so this decides the targets once at the start and nothing
           ever moves to them. Choose a rebalancing frequency above for it to do anything.
         </p>
@@ -345,7 +345,7 @@ export function StrategyBuilder() {
               onCheckedChange={(v) => setBase({ ...base, shrink: v })}
             />
           </div>
-          <p className="text-2xs leading-relaxed text-muted-foreground">
+          <p className="text-xs leading-relaxed text-muted-foreground">
             Shrinkage pulls the estimate toward a constant correlation, which costs a little
             accuracy when the sample is good and a great deal of nonsense when it is not.
             Optimisers concentrate into whatever the sample flattered by luck; this is the cheapest
@@ -375,7 +375,7 @@ export function StrategyBuilder() {
                 <X className="h-3 w-3" />
               </button>
             </div>
-            <p className="mb-2 text-2xs leading-relaxed text-muted-foreground">
+            <p className="mb-2 text-xs leading-relaxed text-muted-foreground">
               {OVERLAY_HINTS[o.kind]}
             </p>
 
@@ -454,7 +454,7 @@ export function StrategyBuilder() {
       </div>
 
       {configured && (
-        <p className="text-2xs leading-relaxed text-muted-foreground">
+        <p className="text-xs leading-relaxed text-muted-foreground">
           Benchmarks are unaffected — they stay buy-and-hold, so the comparison is against the
           market rather than against the same rule twice.
         </p>

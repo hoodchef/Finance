@@ -285,7 +285,7 @@ export function RetirementView() {
                       </tbody>
                     </table>
                   </div>
-                  <p className="text-2xs leading-relaxed text-muted-foreground">
+                  <p className="text-xs leading-relaxed text-muted-foreground">
                     Waiting pays more per year and fewer years. The overtake column is the age at
                     which the larger cheque catches up on total dollars received &mdash; before
                     that, starting earlier is ahead. Taking CPP early is not a mistake if you do
@@ -357,7 +357,7 @@ export function RetirementView() {
                       </tbody>
                     </table>
                   </div>
-                  <p className="text-2xs leading-relaxed text-muted-foreground">
+                  <p className="text-xs leading-relaxed text-muted-foreground">
                     The last column is the point: a dollar not saved early costs several dollars at
                     retirement, and the multiple shrinks the longer you leave it &mdash; which is
                     the argument for starting, not for having started.
@@ -365,7 +365,7 @@ export function RetirementView() {
                 </CardContent>
               </Card>
 
-              <div className="rounded-md border border-border bg-muted/40 p-3 text-2xs leading-relaxed text-muted-foreground">
+              <div className="rounded-md border border-border bg-muted/40 p-3 text-xs leading-relaxed text-muted-foreground">
                 CPP and OAS figures are 2026 parameters from Canada.ca, carried from CanPath&rsquo;s
                 Python reference and replayed against its fixtures on every build. CPP uses the
                 average payment rather than the maximum, since most people do not reach the

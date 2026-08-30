@@ -506,7 +506,7 @@ export function ResearchView() {
             <CompanyNews key={data.company.ticker} ticker={data.company.ticker} />
 
             {/* Provenance */}
-            <div className="rounded-md border border-border bg-muted/40 p-3 text-2xs leading-relaxed text-muted-foreground">
+            <div className="rounded-md border border-border bg-muted/40 p-3 text-xs leading-relaxed text-muted-foreground">
               <p>
                 <span className="font-medium text-foreground">Source.</span>{' '}
                 {data.provenance.financials}. CIK {data.company.cik}, most recent annual period

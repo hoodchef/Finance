@@ -252,7 +252,7 @@ export function HedgePanel({
 
             <div className="space-y-1.5">
               {result.notes.map((n) => (
-                <p key={n} className="rounded-md border border-border bg-muted/40 p-2.5 text-2xs leading-relaxed text-muted-foreground">
+                <p key={n} className="rounded-md border border-border bg-muted/40 p-2.5 text-xs leading-relaxed text-muted-foreground">
                   {n}
                 </p>
               ))}
