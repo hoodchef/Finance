@@ -9,7 +9,7 @@ import {
   normInv,
   normPdf,
   priceOption,
-  yearsBetween,
+  yearsToExpiry,
 } from '../src/lib/options/pricing';
 
 /**
@@ -312,10 +312,10 @@ describe('dividends and conversions', () => {
     expect(y).toBe(0);
   });
 
-  it('measures time in years on a 365-day calendar', () => {
-    expect(yearsBetween('2026-01-01', '2027-01-01')).toBeCloseTo(1, 6);
-    expect(yearsBetween('2026-01-01', '2026-01-31')).toBeCloseTo(30 / 365, 6);
+  it('measures time to expiry on ACT/365, not the 365.25 used for returns', () => {
+    expect(yearsToExpiry('2026-01-01', '2027-01-01')).toBeCloseTo(1, 6);
+    expect(yearsToExpiry('2026-01-01', '2026-01-31')).toBeCloseTo(30 / 365, 6);
     // Never negative: an expiry in the past is expired, not worth −0.2 years.
-    expect(yearsBetween('2026-06-01', '2026-01-01')).toBe(0);
+    expect(yearsToExpiry('2026-06-01', '2026-01-01')).toBe(0);
   });
 });

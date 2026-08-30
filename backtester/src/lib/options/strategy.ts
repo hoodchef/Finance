@@ -1,7 +1,7 @@
 import {
   intrinsicValue,
   priceOption,
-  yearsBetween,
+  yearsToExpiry,
   type ExerciseStyle,
   type Greeks,
   type OptionType,
@@ -135,7 +135,7 @@ export function valuePosition(
   const rate = position.riskFreeRate + (ctx.rateShift ?? 0);
 
   const legs: LegValuation[] = position.legs.map((leg) => {
-    const T = yearsBetween(ctx.asOf, leg.expiry);
+    const T = yearsToExpiry(ctx.asOf, leg.expiry);
     const exposure = sign(leg.side) * leg.contracts * leg.multiplier;
     const expired = !(T > 0);
 

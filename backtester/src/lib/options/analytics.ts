@@ -1,4 +1,4 @@
-import { normCdf, normInv, yearsBetween } from './pricing';
+import { normCdf, normInv, yearsToExpiry } from './pricing';
 import {
   profitAtExpiry,
   summarise,
@@ -144,7 +144,7 @@ export function analysePositionProbability(
 ): ProbabilityAnalysis {
   const expiryDates = expiries(position);
   const finalExpiry = expiryDates[expiryDates.length - 1] ?? options.asOf;
-  const T = yearsBetween(options.asOf, finalExpiry);
+  const T = yearsToExpiry(options.asOf, finalExpiry);
 
   const dist: DistributionInputs = {
     spot: options.spot,
@@ -189,8 +189,8 @@ export function analysePositionProbability(
     type: l.type,
     probabilityITM:
       l.type === 'call'
-        ? probabilityAbove(l.strike, { ...dist, timeToExpiry: yearsBetween(options.asOf, l.expiry) })
-        : probabilityBelow(l.strike, { ...dist, timeToExpiry: yearsBetween(options.asOf, l.expiry) }),
+        ? probabilityAbove(l.strike, { ...dist, timeToExpiry: yearsToExpiry(options.asOf, l.expiry) })
+        : probabilityBelow(l.strike, { ...dist, timeToExpiry: yearsToExpiry(options.asOf, l.expiry) }),
   }));
 
   return {
@@ -368,7 +368,7 @@ export function monteCarlo(
 ): MonteCarloResult {
   const expiryDates = expiries(position);
   const finalExpiry = expiryDates[expiryDates.length - 1] ?? options.asOf;
-  const T = yearsBetween(options.asOf, finalExpiry);
+  const T = yearsToExpiry(options.asOf, finalExpiry);
   const n = Math.max(100, Math.min(200_000, Math.round(options.paths)));
   const rand = mulberry32(options.seed ?? 12345);
 

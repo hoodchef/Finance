@@ -945,7 +945,8 @@ export function OptionsView() {
                     </p>
                     {data?.needsConfiguration && (
                       <p className="text-2xs leading-relaxed text-muted-foreground">
-                        Alpaca serves OPRA option chains with implied volatility and Greeks. Add
+                        Alpaca serves OPRA option chains with implied volatility and Greeks,
+                        licensed to the account holder rather than for redistribution. Add
                         <code className="mx-1 rounded bg-muted px-1">ALPACA_API_KEY_ID</code> and
                         <code className="mx-1 rounded bg-muted px-1">ALPACA_API_SECRET_KEY</code>
                         to <code className="rounded bg-muted px-1">.env.local</code> and reload.

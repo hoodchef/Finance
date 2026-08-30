@@ -571,8 +571,18 @@ export function perPoint(perUnit: number): number {
   return perUnit / 100;
 }
 
-/** Years between two dates, on a 365-day calendar. */
-export function yearsBetween(from: Date | string, to: Date | string): number {
+/**
+ * Years to expiry on an ACT/365 basis, the convention listed equity options
+ * are quoted on.
+ *
+ * Deliberately NOT called `yearsBetween`: `market-data/dates.ts` exports a
+ * function of that name using ACT/365.25, which is the right basis for
+ * annualising a multi-year return series and the wrong one for a contract
+ * whose expiry is a fixed calendar date. Two same-named functions with
+ * different denominators, one import away from each other, is a trap — the
+ * difference is small enough that nothing would look wrong.
+ */
+export function yearsToExpiry(from: Date | string, to: Date | string): number {
   const a = typeof from === 'string' ? Date.parse(`${from}T00:00:00Z`) : from.valueOf();
   const b = typeof to === 'string' ? Date.parse(`${to}T00:00:00Z`) : to.valueOf();
   if (!Number.isFinite(a) || !Number.isFinite(b)) return 0;

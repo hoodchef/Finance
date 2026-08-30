@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import fs from 'node:fs';
 import path from 'node:path';
 import { NAV_GROUPS, NAV_ITEMS, MOBILE_NAV } from '../src/components/layout/nav';
+import { PROVIDER_LICENCES } from '../src/lib/market-data/licence';
 
 const APP = path.join(__dirname, '..', 'src', 'app');
 
@@ -133,5 +134,99 @@ describe('the shell mounts the navigation bar', () => {
 
   it('keeps the bottom bar for phones only', () => {
     expect(shell).toContain('lg:hidden');
+  });
+});
+
+describe('one implementation per piece of arithmetic', () => {
+  /**
+   * A program-wide guard against the drift that produced it.
+   *
+   * Two functions of the same name with different conventions is the failure
+   * this catches: `market-data/dates.ts` measures years on ACT/365.25, which
+   * is right for annualising a return series, while an option's time to
+   * expiry is ACT/365. Both were called `yearsBetween`, sat one import apart,
+   * and differed by 0.07% — small enough that nothing would ever look wrong.
+   *
+   * The same applies to a numeric helper copied rather than imported: the copy
+   * does not get the next fix. The normal CDF here went from ~1e-7 accuracy to
+   * machine precision, and a second copy would still be carrying the old error.
+   */
+  const sourceFiles = (() => {
+    const out: string[] = [];
+    const walk = (dir: string) => {
+      for (const entry of fs.readdirSync(dir, { withFileTypes: true })) {
+        const full = path.join(dir, entry.name);
+        if (entry.isDirectory()) walk(full);
+        else if (entry.name.endsWith('.ts')) out.push(full);
+      }
+    };
+    walk(path.join(__dirname, '..', 'src', 'lib'));
+    return out;
+  })();
+
+  /** Numeric helpers that must have exactly one definition in src/lib. */
+  const SINGLETONS = [
+    'normCdf',
+    'normInv',
+    'normPdf',
+    'spanDays',
+    'yearsBetween',
+    'yearsToExpiry',
+    'intrinsicValue',
+    'blackScholes',
+  ];
+
+  it.each(SINGLETONS)('defines %s exactly once', (name) => {
+    const pattern = new RegExp(`function\\s+${name}\\s*\\(`);
+    const defining = sourceFiles.filter((f) => pattern.test(fs.readFileSync(f, 'utf8')));
+    expect(defining.map((f) => path.relative(process.cwd(), f))).toHaveLength(1);
+  });
+
+  it('keeps the two year conventions under distinct names', () => {
+    // Not a style point: they disagree, and both are correct in their domain.
+    const dates = fs.readFileSync(
+      path.join(__dirname, '..', 'src', 'lib', 'market-data', 'dates.ts'), 'utf8');
+    const pricing = fs.readFileSync(
+      path.join(__dirname, '..', 'src', 'lib', 'options', 'pricing.ts'), 'utf8');
+    expect(dates).toMatch(/yearsBetween[\s\S]*?365\.25/);
+    expect(pricing).toMatch(/yearsToExpiry/);
+    expect(pricing).not.toMatch(/function yearsBetween/);
+  });
+});
+
+describe('every data source is recorded in the licence registry', () => {
+  /**
+   * The registry exists so a licensing constraint is visible in the
+   * application rather than only in somebody's memory, and there is a guard
+   * asserting no options source is marked `permitted`. That guard cannot fire
+   * for a provider that was never registered — which is exactly what happened
+   * when Alpaca was integrated straight into `options/chain.ts`.
+   */
+  const providersInCode = () => {
+    const dir = path.join(__dirname, '..', 'src', 'lib');
+    const found = new Set<string>();
+    const walk = (d: string) => {
+      for (const e of fs.readdirSync(d, { withFileTypes: true })) {
+        const full = path.join(d, e.name);
+        if (e.isDirectory()) walk(full);
+        else if (e.name.endsWith('.ts')) {
+          const src = fs.readFileSync(full, 'utf8');
+          // A hostname is the tell that this module talks to a vendor.
+          for (const m of src.matchAll(/https:\/\/(?:[a-z0-9-]+\.)*([a-z0-9-]+)\.(?:com|markets|io|org)/g)) {
+            found.add(m[1].toLowerCase());
+          }
+        }
+      }
+    };
+    walk(dir);
+    return found;
+  };
+
+  it('registers every vendor the code actually calls', () => {
+    const known = new Set(Object.keys(PROVIDER_LICENCES));
+    // Hosts that are not paid data vendors: government, docs and self-links.
+    const exempt = new Set(['sec', 'stlouisfed', 'french', 'dartmouth', 'github', 'localhost', 'schema', 'w3']);
+    const unregistered = [...providersInCode()].filter((h) => !known.has(h) && !exempt.has(h));
+    expect(unregistered, `unregistered data hosts: ${unregistered.join(', ')}`).toEqual([]);
   });
 });

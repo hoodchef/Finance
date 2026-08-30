@@ -3,11 +3,17 @@ import { MarketDataError } from '@/lib/market-data/provider';
 /**
  * Option chains from Alpaca.
  * =============================================================================
- * Alpaca is the first options source surveyed that a product can actually use:
- * documented, key-authenticated, and it serves OPRA data with implied
- * volatility and Greeks already computed. Alpha Vantage's options endpoints
- * are premium-only, and Cboe's public files require written approval — both
- * recorded in `market-data/licence.ts`.
+ * Alpaca is the best options source surveyed that is documented,
+ * key-authenticated and returns a real chain: OPRA snapshots with implied
+ * volatility and greeks already computed. Alpha Vantage's options endpoints
+ * are premium-only and Cboe's public files require written approval.
+ *
+ * It is NOT unencumbered, and an earlier version of this comment overstated
+ * it. The data is licensed to the account holder; showing an OPRA-derived
+ * quote to another person makes you a redistributor, which needs an agreement
+ * with OPRA and the matching Alpaca plan. Usable by whoever holds the key,
+ * not shippable to users without that. Recorded in `market-data/licence.ts`
+ * alongside every other source evaluated.
  *
  * WHAT THIS WILL NOT DO
  *

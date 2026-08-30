@@ -77,6 +77,20 @@ export const PROVIDER_LICENCES: Record<string, ProviderLicence> = {
       'TIME_SERIES_WEEKLY_ADJUSTED carries an adjusted close and per-bar dividends. Splits are already folded into both close and adjusted close, verified against Tiingo across AAPL 2019-2021 (total return 393.5267% vs 393.5270%, agreeing to 6.9e-7).',
     verifiedOn: '2026-08-24',
   },
+  alpaca: {
+    providerId: 'alpaca',
+    label: 'Alpaca',
+    commercial: 'personal-only',
+    summary:
+      'Documented, key-authenticated API serving OPRA option chains with implied volatility and greeks. Data is licensed to the account holder; showing it to anyone else makes you a redistributor, which OPRA requires its own vendor agreement for.',
+    commercialPath:
+      'An OPRA vendor agreement and the corresponding Alpaca plan. The free tier is 15-minute delayed and internal-use only.',
+    freeTier: '15-minute delayed OPRA options and IEX equities, 200 requests/minute.',
+    corporateActions:
+      'Option contracts carry their own multiplier and deliverable; adjusted contracts are served as-is and must not be assumed to be 100-share.',
+    verifiedOn: '2026-08-30',
+  },
+
   demo: {
     providerId: 'demo',
     label: 'Demo (synthetic)',
@@ -112,6 +126,14 @@ export const OPTIONS_SOURCES_EVALUATED = [
     finding: 'Both are premium endpoints on the free key.',
     blocker:
       'REALTIME_OPTIONS returns a populated response on the free tier that parses cleanly and is labelled, in the payload itself, as artificial illustrative data. An integration written against it would produce plausible option chains from nothing. Treat any 200 from this endpoint as suspect.',
+    commercial: 'personal-only' as const,
+  },
+  {
+    provider: 'Alpaca (OPRA options snapshots)',
+    finding:
+      'The best source found that is documented, key-authenticated and returns a real chain: snapshots carry bid/ask, last trade, implied volatility and greeks, paged, for any listed underlying. Integrated at `lib/options/chain.ts`.',
+    blocker:
+      'Licensed to the account holder, not for redistribution. Showing an OPRA-derived quote to another person makes you a data vendor, which needs an agreement with OPRA and the matching Alpaca plan — the free tier is 15-minute delayed and internal use only. Usable by the person holding the key; not shippable to users without that agreement.',
     commercial: 'personal-only' as const,
   },
   {
