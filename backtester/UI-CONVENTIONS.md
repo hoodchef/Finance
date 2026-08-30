@@ -29,8 +29,8 @@ label, or a table micro-header. It is **never** correct for a sentence.
 | Section heading inside a card | `text-2xs font-semibold uppercase tracking-wide text-muted-foreground` |
 | Prose, hints, explanations | `text-xs leading-relaxed text-muted-foreground` |
 | Table body | `text-xs` |
-| Stat label | `text-2xs uppercase tracking-wide text-muted-foreground` |
-| Stat value | `numeric text-sm font-medium` — `text-lg` for a headline figure |
+| Stat label | `text-2xs font-medium uppercase tracking-wide text-muted-foreground` |
+| Stat value | `numeric font-semibold text-lg` — `text-2xl` for a headline figure |
 | Unit suffix, micro-note | `text-2xs text-muted-foreground` |
 
 Any element containing a figure meant to line up in a column carries
@@ -43,25 +43,39 @@ Tokens only. Never a hex value, never a Tailwind palette colour
 and bloomberg — and a hardcoded colour is invisible or illegible in at least
 one of them.
 
-- Gain / good: `text-[hsl(var(--positive))]`
-- Loss / warning: `text-[hsl(var(--negative))]`
+- Gain / good: `text-positive`
+- Loss / warning: `text-negative`
 - Secondary text: `text-muted-foreground`
 - Borders: `border-border`, dividers `border-border/50`
 - Quiet fill: `bg-muted/40`
 - Chart series: `hsl(var(--series-0))` … `hsl(var(--series-14))`
 
+Use the shorthand utilities, defined in `globals.css`. The verbose
+`text-[hsl(var(--positive))]` form works but is the minority spelling, and the
+bloomberg theme's numeric override is written against those class names — keep
+them recognisable.
+
 ## Stats
 
-Label above value. Grouped in a grid, never a long single column — a stack of
-twelve full-width rows makes a panel twice the height of the chart beside it
-and pushes everything else off the screen.
+Use the shared `Stat` from `@/components/ui/stat`. It already carries the
+label, value, optional sub-line, sign colouring and info tip at the right type
+scale — do not hand-roll a local one, and do not restyle its internals.
+
+The house grouping is a hairline-separated tile strip, which reads as one
+block and stays legible from two columns up to five:
 
 ```tsx
-<div className="grid grid-cols-2 gap-x-4 gap-y-2.5">…</div>
-<div className="grid grid-cols-2 gap-x-4 gap-y-2.5 border-t border-border pt-3">…</div>
+<div className="grid grid-cols-2 gap-px overflow-hidden rounded-lg border border-border bg-border sm:grid-cols-3 lg:grid-cols-5">
+  <Stat className="bg-card" size="lg" label="CAGR" value={…} tone={toneOf(x)} />
 ```
 
-Related groups are separated by `border-t border-border pt-3`, not by headings.
+In a narrow sidebar column where a tile strip cannot breathe, a plain
+`grid grid-cols-2 gap-x-4 gap-y-2.5` with groups separated by
+`border-t border-border pt-3` is the fallback.
+
+Either way the rule is the same: **never a long single column of full-width
+stat rows.** Twelve of those made a panel twice the height of the chart beside
+it and pushed the page's controls off the screen.
 
 ## Tables
 

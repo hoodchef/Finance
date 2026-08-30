@@ -300,23 +300,38 @@ export function ResearchView() {
               </CardContent>
             </Card>
 
-            {/* Profitability */}
-            <div className="grid grid-cols-2 gap-px overflow-hidden rounded-lg border border-border bg-border sm:grid-cols-4 lg:grid-cols-8">
-              <Stat className="bg-card" label="Revenue" value={money(last.revenue)} sub={pct(last.revenueGrowth)} />
-              <Stat className="bg-card" label="Net income" value={money(last.netIncome)} sub={`EPS ${last.epsDiluted?.toFixed(2) ?? '—'}`} />
-              <Stat className="bg-card" label="Gross margin" value={pct(last.grossMargin)} />
-              <Stat className="bg-card" label="Operating margin" value={pct(last.operatingMargin)} />
-              <Stat className="bg-card" label="Net margin" value={pct(last.netMargin)} />
-              <Stat className="bg-card" label="ROE" value={pct(last.roe)} hint="Net income over shareholders' equity. Very high figures usually mean equity shrunk through buybacks, not that returns improved." />
-              <Stat className="bg-card" label="ROIC" value={pct(last.roic)} hint="Operating income over equity plus debt — the capital the business actually employs." />
-              <Stat
-                className="bg-card"
-                label="Free cash flow"
-                value={money(last.freeCashFlow)}
-                sub={last.fcfMargin != null ? `${pct(last.fcfMargin)} of revenue` : undefined}
-                hint="Operating cash flow less capital expenditure — what the business generated after paying to keep itself running."
-              />
-            </div>
+            {/* Profitability. Titled, like the valuation strip above it: two
+                unlabelled eight-tile rows read as one sixteen-tile block, and
+                nothing said that the second row is one fiscal year while the
+                first is priced off today's market. */}
+            <Card>
+              <CardHeader className="pb-2">
+                <CardTitle className="text-sm">
+                  Profitability and returns
+                  <span className="ml-2 text-2xs font-normal text-muted-foreground">
+                    fiscal {last.fiscalYear}, as reported
+                  </span>
+                </CardTitle>
+              </CardHeader>
+              <CardContent>
+                <div className="grid grid-cols-2 gap-px overflow-hidden rounded-md border border-border bg-border sm:grid-cols-4 lg:grid-cols-8">
+                  <Stat className="bg-card" label="Revenue" value={money(last.revenue)} sub={pct(last.revenueGrowth)} />
+                  <Stat className="bg-card" label="Net income" value={money(last.netIncome)} sub={`EPS ${last.epsDiluted?.toFixed(2) ?? '—'}`} />
+                  <Stat className="bg-card" label="Gross margin" value={pct(last.grossMargin)} />
+                  <Stat className="bg-card" label="Operating margin" value={pct(last.operatingMargin)} />
+                  <Stat className="bg-card" label="Net margin" value={pct(last.netMargin)} />
+                  <Stat className="bg-card" label="ROE" value={pct(last.roe)} hint="Net income over shareholders' equity. Very high figures usually mean equity shrunk through buybacks, not that returns improved." />
+                  <Stat className="bg-card" label="ROIC" value={pct(last.roic)} hint="Operating income over equity plus debt — the capital the business actually employs." />
+                  <Stat
+                    className="bg-card"
+                    label="Free cash flow"
+                    value={money(last.freeCashFlow)}
+                    sub={last.fcfMargin != null ? `${pct(last.fcfMargin)} of revenue` : undefined}
+                    hint="Operating cash flow less capital expenditure — what the business generated after paying to keep itself running."
+                  />
+                </div>
+              </CardContent>
+            </Card>
 
             <ChartFrame
               title="Revenue and growth"
@@ -375,6 +390,9 @@ export function ResearchView() {
                   <CardTitle className="text-sm">Balance sheet</CardTitle>
                 </CardHeader>
                 <CardContent>
+                  {/* Net cash is the derived figure, not a sixth line item.
+                      Sitting in the run of rows it read as another input; it
+                      is what the other five are read to find out. */}
                   <table className="w-full text-xs">
                     <tbody>
                       {([
@@ -383,7 +401,6 @@ export function ResearchView() {
                         ["Shareholders' equity", last.equity],
                         ['Cash and equivalents', last.cash],
                         ['Total debt', last.totalDebt],
-                        ['Net cash', last.cash != null && last.totalDebt != null ? last.cash - last.totalDebt : null],
                       ] as const).map(([label, value]) => (
                         <tr key={label} className="border-b border-border/50 last:border-0">
                           <td className="py-1.5 text-muted-foreground">{label}</td>
@@ -392,6 +409,21 @@ export function ResearchView() {
                       ))}
                     </tbody>
                   </table>
+                  <div className="mt-3 border-t border-border pt-3">
+                    <div className="text-2xs font-medium uppercase tracking-wide text-muted-foreground">
+                      Net cash
+                    </div>
+                    <div className="numeric text-lg font-medium">
+                      {money(
+                        last.cash != null && last.totalDebt != null
+                          ? last.cash - last.totalDebt
+                          : null,
+                      )}
+                    </div>
+                    <p className="text-xs leading-relaxed text-muted-foreground">
+                      Cash and equivalents less total debt. Negative is net debt.
+                    </p>
+                  </div>
                 </CardContent>
               </Card>
 
@@ -399,7 +431,32 @@ export function ResearchView() {
                 <CardHeader className="pb-2">
                   <CardTitle className="text-sm">Shares and dilution</CardTitle>
                 </CardHeader>
-                <CardContent className="space-y-2 text-xs">
+                <CardContent className="text-xs">
+                  {/* The direction of the share count is the answer here, and
+                      it was a percentage inside a sentence, at the same weight
+                      as the sentence. Lifted above the inputs that produced it. */}
+                  {data.dilution && (
+                    <div className="mb-3 border-b border-border pb-3">
+                      <div className="text-2xs font-medium uppercase tracking-wide text-muted-foreground">
+                        Share count, {data.dilution.years}-year change
+                      </div>
+                      <div
+                        className={cn(
+                          'numeric text-lg font-medium',
+                          (data.dilution.changePct ?? 0) < 0
+                            ? 'text-[hsl(var(--positive))]'
+                            : 'text-[hsl(var(--warning))]',
+                        )}
+                      >
+                        {pct(data.dilution.changePct)}
+                      </div>
+                      <p className="leading-relaxed text-muted-foreground">
+                        {(data.dilution.changePct ?? 0) < 0
+                          ? 'A buyback, so each remaining share owns more of the company.'
+                          : 'Dilution, so each existing share owns less.'}
+                      </p>
+                    </div>
+                  )}
                   <table className="w-full">
                     <tbody>
                       <tr className="border-b border-border/50">
@@ -418,27 +475,8 @@ export function ResearchView() {
                       </tr>
                     </tbody>
                   </table>
-                  {data.dilution && (
-                    <p className="leading-relaxed text-muted-foreground">
-                      Share count{' '}
-                      <span
-                        className={cn(
-                          'numeric font-medium',
-                          (data.dilution.changePct ?? 0) < 0
-                            ? 'text-[hsl(var(--positive))]'
-                            : 'text-[hsl(var(--warning))]',
-                        )}
-                      >
-                        {pct(data.dilution.changePct)}
-                      </span>{' '}
-                      over {data.dilution.years} years &mdash;{' '}
-                      {(data.dilution.changePct ?? 0) < 0
-                        ? 'a buyback, so each remaining share owns more of the company.'
-                        : 'dilution, so each existing share owns less.'}
-                    </p>
-                  )}
                   {data.dilution?.splitNote && (
-                    <p className="leading-relaxed text-[hsl(var(--warning))]">
+                    <p className="mt-3 rounded-md border border-border bg-muted/40 p-2.5 leading-relaxed text-[hsl(var(--warning))]">
                       {data.dilution.splitNote}
                     </p>
                   )}
@@ -452,8 +490,27 @@ export function ResearchView() {
                 <CardTitle className="text-sm">Reported history</CardTitle>
               </CardHeader>
               <CardContent className="overflow-x-auto">
-                <table className="w-full min-w-[52rem] text-xs">
+                {/*
+                  Nine columns, not ten, and 46rem rather than 52 — tied for the
+                  widest table in the product, and wide enough to scroll
+                  sideways on a narrow window or a split screen.
+
+                  Net margin was the column that did not earn its place: it is
+                  net income over revenue and both are columns in the same row,
+                  it is plotted in full above, and it stays in the CSV export
+                  and in the stat strip. The two margins left are grouped under
+                  a header, because "Gross" and "Operating" standing alone read
+                  as gross profit and operating income.
+                */}
+                <table className="w-full min-w-[46rem] text-xs">
                   <thead>
+                    <tr className="text-2xs uppercase tracking-wide text-muted-foreground">
+                      <td colSpan={5} />
+                      <th scope="colgroup" colSpan={2} className="pb-1 pr-3 text-right font-medium">
+                        Margin
+                      </th>
+                      <td colSpan={2} />
+                    </tr>
                     <tr className="border-b border-border text-left text-muted-foreground">
                       <th className="py-2 pr-3 font-medium">FY</th>
                       <th className="py-2 pr-3 text-right font-medium">Revenue</th>
@@ -462,7 +519,6 @@ export function ResearchView() {
                       <th className="py-2 pr-3 text-right font-medium">EPS</th>
                       <th className="py-2 pr-3 text-right font-medium">Gross</th>
                       <th className="py-2 pr-3 text-right font-medium">Operating</th>
-                      <th className="py-2 pr-3 text-right font-medium">Net</th>
                       <th className="py-2 pr-3 text-right font-medium">FCF</th>
                       <th className="py-2 text-right font-medium">ROE</th>
                     </tr>
@@ -486,7 +542,6 @@ export function ResearchView() {
                         </td>
                         <td className="numeric py-1.5 pr-3 text-right">{pct(r.grossMargin, 0)}</td>
                         <td className="numeric py-1.5 pr-3 text-right">{pct(r.operatingMargin, 0)}</td>
-                        <td className="numeric py-1.5 pr-3 text-right">{pct(r.netMargin, 0)}</td>
                         <td className="numeric py-1.5 pr-3 text-right">{money(r.freeCashFlow)}</td>
                         <td className="numeric py-1.5 text-right">{pct(r.roe, 0)}</td>
                       </tr>
@@ -506,7 +561,11 @@ export function ResearchView() {
             <CompanyNews key={data.company.ticker} ticker={data.company.ticker} />
 
             {/* Provenance */}
-            <div className="rounded-md border border-border bg-muted/40 p-3 text-xs leading-relaxed text-muted-foreground">
+            {/* Provenance. The tag list was a comma-run of XBRL concept names
+                inside a paragraph — the least readable text on the page and the
+                hardest to scan for one field. Same content, one chip per tag,
+                and the count of the ones the list does not show. */}
+            <div className="rounded-md border border-border bg-muted/40 p-2.5 text-xs leading-relaxed text-muted-foreground">
               <p>
                 <span className="font-medium text-foreground">Source.</span>{' '}
                 {data.provenance.financials}. CIK {data.company.cik}, most recent annual period
@@ -518,14 +577,24 @@ export function ResearchView() {
                 {data.provenance.estimatesNote}
               </p>
               <p className="mt-1.5">
-                <span className="font-medium text-foreground">Tags read.</span>{' '}
-                {data.provenance.conceptsUsed
-                  .slice(0, 6)
-                  .map((c) => `${c.field}=${c.concept}`)
-                  .join(', ')}
-                . Filers do not tag the same thing the same way, so which concept supplied each
-                figure is recorded rather than assumed.
+                <span className="font-medium text-foreground">Tags read.</span> Filers do not tag
+                the same thing the same way, so which concept supplied each figure is recorded
+                rather than assumed.
               </p>
+              <div className="mt-1.5 flex flex-wrap gap-1">
+                {data.provenance.conceptsUsed.slice(0, 6).map((c) => (
+                  <Badge key={c.field} variant="outline" className="font-normal">
+                    <span className="text-foreground">{c.field}</span>
+                    <span aria-hidden>=</span>
+                    <span>{c.concept}</span>
+                  </Badge>
+                ))}
+                {data.provenance.conceptsUsed.length > 6 && (
+                  <span className="self-center text-2xs">
+                    and {data.provenance.conceptsUsed.length - 6} more, in the CSV
+                  </span>
+                )}
+              </div>
             </div>
           </div>
         )}
