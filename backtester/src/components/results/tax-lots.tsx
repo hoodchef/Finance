@@ -287,7 +287,7 @@ export function TaxLotsPanel({ result }: { result: BacktestResult }) {
               })}
             </TableBody>
           </Table>
-          <p className="px-4 py-3 text-2xs leading-relaxed text-muted-foreground">
+          <p className="px-4 py-3 text-xs leading-relaxed text-muted-foreground">
             Purchase costs are capitalised into basis and sale costs netted out of proceeds. For
             every holding, realised plus unrealised plus dividends equals its total profit and loss
             — an identity the test suite asserts.

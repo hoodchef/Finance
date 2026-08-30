@@ -1,4 +1,4 @@
-import type { CompanyFacts } from '@/lib/fundamentals/sec';
+import { spanDays, type CompanyFacts } from '@/lib/fundamentals/sec';
 import type { Filing } from '@/lib/news/filings';
 
 /**
@@ -40,10 +40,6 @@ const MIN_DAYS = 80;
 const MAX_DAYS = 100;
 
 const QUARTER_FORMS = new Set(['10-Q', '10-Q/A', '10-K', '10-K/A']);
-
-function spanDays(start: string, end: string): number {
-  return Math.round((Date.parse(end) - Date.parse(start)) / 86_400_000);
-}
 
 /**
  * Quarterly values for one concept chain, resolved per period the same way the

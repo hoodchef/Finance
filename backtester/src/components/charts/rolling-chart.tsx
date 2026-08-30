@@ -268,7 +268,7 @@ export function RollingTable({ result }: { result: BacktestResult }) {
             ))}
           </TableBody>
         </Table>
-        <p className="px-4 py-3 text-2xs leading-relaxed text-muted-foreground">
+        <p className="px-4 py-3 text-xs leading-relaxed text-muted-foreground">
           {(() => {
             const longest = result.rolling[result.rolling.length - 1];
             const w = longest.summary.worstWindow;

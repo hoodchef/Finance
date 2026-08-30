@@ -66,7 +66,7 @@ export function CashflowLegs() {
       </Button>
 
       {legs.length === 0 && (
-        <p className="text-2xs leading-relaxed text-muted-foreground">
+        <p className="text-xs leading-relaxed text-muted-foreground">
           For a lump sum at a future date, a withdrawal that begins after saving stops, or a
           percentage drawdown rule.
         </p>
@@ -258,7 +258,7 @@ function LegEditor({
         </label>
       )}
 
-      <p className="border-t border-border pt-2 text-2xs leading-relaxed text-muted-foreground">
+      <p className="border-t border-border pt-2 text-xs leading-relaxed text-muted-foreground">
         {describeLeg(leg)}
       </p>
     </div>

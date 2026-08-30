@@ -370,7 +370,7 @@ export function SimulatorView() {
                   <SelectItem value="assets">Each holding, correlated</SelectItem>
                 </SelectContent>
               </Select>
-              <p className="text-2xs leading-relaxed text-muted-foreground">
+              <p className="text-xs leading-relaxed text-muted-foreground">
                 {mode === 'portfolio'
                   ? 'Resamples the portfolio’s own realised return. Cheap and assumption-free, but it bakes in the weights the backtest held — it cannot see the holdings, so it cannot tell you what rebalancing is worth.'
                   : 'Fits a covariance to the holdings’ joint history and simulates them together, so weights drift and rebalancing does something. Needs at least two priced holdings.'}
@@ -391,7 +391,7 @@ export function SimulatorView() {
                       </SelectContent>
                     </Select>
                   </div>
-                  <label className="flex items-start gap-2 text-2xs leading-relaxed text-muted-foreground">
+                  <label className="flex items-start gap-2 text-xs leading-relaxed text-muted-foreground">
                     <input
                       type="checkbox"
                       checked={shrink}
@@ -404,7 +404,7 @@ export function SimulatorView() {
                       unless you have decades of history for every holding.
                     </span>
                   </label>
-                  <label className="flex items-start gap-2 text-2xs leading-relaxed text-muted-foreground">
+                  <label className="flex items-start gap-2 text-xs leading-relaxed text-muted-foreground">
                     <input
                       type="checkbox"
                       checked={regimeAware}
@@ -448,7 +448,7 @@ export function SimulatorView() {
                   ))}
                 </SelectContent>
               </Select>
-              <p className="text-2xs leading-relaxed text-muted-foreground">{METHOD_NOTE[method]}</p>
+              <p className="text-xs leading-relaxed text-muted-foreground">{METHOD_NOTE[method]}</p>
               <div className="grid grid-cols-2 gap-2">
                 <NumField label="Horizon" value={years} onChange={setYears} suffix="yr" />
                 <NumField label="Paths" value={paths} onChange={setPaths} />
@@ -696,7 +696,7 @@ export function SimulatorView() {
                       </tbody>
                     </table>
                   </div>
-                  <p className="text-2xs leading-relaxed text-muted-foreground">
+                  <p className="text-xs leading-relaxed text-muted-foreground">
                     The arithmetic mean sits above the compound growth rate by roughly half the
                     variance &mdash; about{' '}
                     <span className="numeric text-foreground">
@@ -706,7 +706,7 @@ export function SimulatorView() {
                     optimistic thumb on the scale: a simulation compounds period by period, so it
                     is the arithmetic mean it must be given.
                   </p>
-                  <p className="text-2xs leading-relaxed text-muted-foreground">
+                  <p className="text-xs leading-relaxed text-muted-foreground">
                     Grounded in a real backtest over{' '}
                     <span className="numeric text-foreground">
                       {data.historical.start} – {data.historical.end}
@@ -885,7 +885,7 @@ export function SimulatorView() {
                       </tbody>
                     </table>
                   </div>
-                  <p className="text-2xs leading-relaxed text-muted-foreground">
+                  <p className="text-xs leading-relaxed text-muted-foreground">
                     Estimated over{' '}
                     <span className="numeric text-foreground">
                       {corr.estimate.from} – {corr.estimate.to}
@@ -914,7 +914,7 @@ export function SimulatorView() {
                   </p>
 
                   {corr.simulation.regimeUsed && (
-                    <div className="rounded-md border border-border bg-muted/40 p-2.5 text-2xs leading-relaxed">
+                    <div className="rounded-md border border-border bg-muted/40 p-2.5 text-xs leading-relaxed">
                       <p className="font-medium text-foreground">
                         Correlation in calm and stressed markets
                       </p>
@@ -944,14 +944,14 @@ export function SimulatorView() {
                   )}
 
                   {corr.regimeNote && (
-                    <div className="rounded-md border border-[hsl(var(--warning))]/40 bg-[hsl(var(--warning))]/8 p-2.5 text-2xs leading-relaxed">
+                    <div className="rounded-md border border-[hsl(var(--warning))]/40 bg-[hsl(var(--warning))]/8 p-2.5 text-xs leading-relaxed">
                       <span className="font-medium">Regimes not modelled.</span>{' '}
                       <span className="text-muted-foreground">{corr.regimeNote}</span>
                     </div>
                   )}
 
                   {corr.glidepath && (
-                    <p className="text-2xs leading-relaxed text-muted-foreground">
+                    <p className="text-xs leading-relaxed text-muted-foreground">
                       Gliding from{' '}
                       {corr.targetWeights.map((w) => formatPercent(w, 0)).join(' / ')} to{' '}
                       {corr.glidepath.to.map((w) => formatPercent(w, 0)).join(' / ')} across{' '}

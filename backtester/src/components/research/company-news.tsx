@@ -255,7 +255,7 @@ export function CompanyNews({ ticker }: { ticker: string }) {
       </Card>
 
       {/* Provenance, for both sources. */}
-      <div className="rounded-md border border-border bg-muted/40 p-3 text-2xs leading-relaxed text-muted-foreground lg:col-span-2">
+      <div className="rounded-md border border-border bg-muted/40 p-3 text-xs leading-relaxed text-muted-foreground lg:col-span-2">
         <p>
           <span className="font-medium text-foreground">Filings.</span> {data.provenance.filings}{' '}
           Insider transactions (Forms 3/4/5 and 144), prospectus supplements and investors&rsquo;

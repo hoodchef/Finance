@@ -222,7 +222,7 @@ function AssetDetailBody({ asset, result }: { asset: AssetAnalysis; result: Back
               <Detail label="Share of total gain" value={formatPercent(ledger.shareOfGain, 1)} />
             </dl>
             {metrics.ratios.correlation != null && (
-              <p className="mt-3 border-t border-border pt-3 text-2xs leading-relaxed text-muted-foreground">
+              <p className="mt-3 border-t border-border pt-3 text-xs leading-relaxed text-muted-foreground">
                 Correlation with the whole portfolio was{' '}
                 <span className="numeric text-foreground">
                   {formatNumber(metrics.ratios.correlation)}

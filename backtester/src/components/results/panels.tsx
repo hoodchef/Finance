@@ -367,7 +367,7 @@ export function MethodologyPanel({ result }: { result: BacktestResult }) {
               .join(' · ')}
           </p>
         )}
-        <p className="mt-2 text-2xs leading-relaxed text-muted-foreground">
+        <p className="mt-2 text-xs leading-relaxed text-muted-foreground">
           Past performance does not predict future results. A backtest applies today&rsquo;s choice
           of assets to yesterday&rsquo;s prices, which no investor could have made at the time.
         </p>

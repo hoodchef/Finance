@@ -358,7 +358,7 @@ export function LabView() {
                     </div>
                   ))}
                 </div>
-                <p className="text-2xs leading-relaxed text-muted-foreground">
+                <p className="text-xs leading-relaxed text-muted-foreground">
                   Simulations and correlated runs are queued rather than held open on the request.
                   Finished results are written to disk, so a restart no longer discards a
                   computation that took twenty seconds. What this still does not do is share work:

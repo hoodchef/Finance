@@ -307,7 +307,7 @@ function RebalancingAnalysis({
                 })}
               </TableBody>
             </Table>
-            <p className="px-4 py-3 text-2xs leading-relaxed text-muted-foreground">
+            <p className="px-4 py-3 text-xs leading-relaxed text-muted-foreground">
               Rebalancing is a risk-control decision before it is a return decision: it holds the
               portfolio near the weights you chose. Whether it also helped or hurt return in this
               particular window is a fact about this window, not a general property.

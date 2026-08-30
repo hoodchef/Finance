@@ -281,7 +281,7 @@ export function SavingsFlow({ compact = false }: { compact?: boolean }) {
                 )}
 
                 {alloc?.warnings?.slice(0, 1).map((w) => (
-                  <p key={w} className="mt-1.5 text-2xs leading-relaxed text-[hsl(var(--warning))]">
+                  <p key={w} className="mt-1.5 text-xs leading-relaxed text-[hsl(var(--warning))]">
                     {w}
                   </p>
                 ))}
@@ -293,7 +293,7 @@ export function SavingsFlow({ compact = false }: { compact?: boolean }) {
             )}
 
             {Number(children) > 0 && (
-              <p className="text-2xs leading-relaxed text-muted-foreground">
+              <p className="text-xs leading-relaxed text-muted-foreground">
                 Children are assumed to be school age. Under-6 attracts a higher Canada Child
                 Benefit, so exact ages change the clawback &mdash; set them in the Planner.
               </p>

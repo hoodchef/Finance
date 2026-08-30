@@ -181,7 +181,8 @@ export interface AnnualPoint {
 }
 
 /** Days between two ISO dates. */
-function spanDays(start: string, end: string): number {
+/** Exported so the earnings module measures a period the same way. */
+export function spanDays(start: string, end: string): number {
   return (Date.parse(end) - Date.parse(start)) / 86_400_000;
 }
 
