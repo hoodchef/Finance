@@ -18,11 +18,11 @@ import { cn } from '@/lib/utils';
 /**
  * The primary navigation bar.
  *
- * A horizontal bar of four menus rather than a column of twelve links. The
- * grouping is the one the sidebar already used — what is my situation, what
- * should I hold, what would it have done, what might it do — but a bar states
- * only the four questions and asks for a click to see the destinations under
- * one, where the sidebar had all twelve permanently on screen.
+ * A horizontal bar of four menus rather than a column of fourteen links. The
+ * four are the subjects the product deals in — you, one security, one
+ * portfolio, your saved work — and the bar states only those, asking for a
+ * click to see the destinations under one, where the sidebar had all of them
+ * permanently on screen.
  *
  * It also returns the 224px the sidebar occupied to the page. That matters
  * more here than on most products: the reported-history table is 52rem wide
@@ -115,8 +115,8 @@ export function NavBar() {
           {/*
            * Mobile: every destination in one menu.
            *
-           * The bottom bar carries five of the twelve, which is the right
-           * number for a thumb-sized bar and leaves seven — Research and
+           * The bottom bar carries five of the fourteen, which is the right
+           * number for a thumb-sized bar and leaves nine — Research and
            * Settings among them — with no route to them at all on a phone.
            */}
           <DropdownMenu>

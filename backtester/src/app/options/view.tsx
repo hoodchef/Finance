@@ -46,6 +46,7 @@ import {
 } from '@/lib/options/analytics';
 import { applyPreset, emptyPosition, newLeg, PRESETS, type PresetId } from '@/lib/options/presets';
 import { perDay, perPoint } from '@/lib/options/pricing';
+import { useActiveTicker, useTickerStore } from '@/store/ticker';
 import { OptimiserPanel } from '@/components/options/optimiser-panel';
 import { HedgePanel } from '@/components/options/hedge-panel';
 
@@ -131,6 +132,35 @@ export function OptionsView() {
   const [input, setInput] = React.useState('AAPL');
   const [data, setData] = React.useState<ChainResponse | null>(null);
   const [loading, setLoading] = React.useState(false);
+
+  /*
+   * Ticker context: adopt once on mount, publish on change. Two pages syncing
+   * both ways is how a symbol starts flickering between them.
+   */
+  const activeFocus = useActiveTicker();
+  const publishTicker = useTickerStore((s) => s.setTicker);
+
+  /*
+   * Adopted on the FIRST non-null focus, not on mount.
+   *
+   * `useActiveTicker` gates on hydration and returns null during the first
+   * client paint, so a mount-only effect runs before the persisted symbol
+   * exists and adopts nothing — which is exactly what happened: arriving here
+   * with KO in focus still showed an empty page. The ref makes it once-only
+   * without tying it to a render that is too early to be useful.
+   */
+  const adopted = React.useRef(false);
+
+  React.useEffect(() => {
+    if (adopted.current || !activeFocus?.symbol) return;
+    adopted.current = true;
+    setInput(activeFocus.symbol);
+    void load(activeFocus.symbol);
+  }, [activeFocus]);
+
+  React.useEffect(() => {
+    if (ticker) publishTicker(ticker);
+  }, [ticker, publishTicker]);
 
   const [position, setPosition] = React.useState<OptionPosition>(() => emptyPosition('AAPL'));
   const [spot, setSpot] = React.useState(200);

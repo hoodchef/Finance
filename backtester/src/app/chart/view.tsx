@@ -10,6 +10,7 @@ import { Input } from '@/components/ui/input';
 import { Skeleton } from '@/components/ui/skeleton';
 import { formatCurrency, formatCurrencyCompact, formatPercent } from '@/lib/format';
 import { cn } from '@/lib/utils';
+import { useActiveTicker, useTickerStore } from '@/store/ticker';
 
 /**
  * Charting.
@@ -373,6 +374,32 @@ export function ChartView() {
   const [loading, setLoading] = React.useState(false);
   const [error, setError] = React.useState<string | null>(null);
   const [hovered, setHovered] = React.useState<number | null>(null);
+
+  /*
+   * Ticker context, adopted on the FIRST non-null focus rather than on mount.
+   *
+   * `useActiveTicker` gates on hydration and returns null during the first
+   * client paint, so a mount-only effect runs before the persisted symbol
+   * exists and adopts nothing. Tested: arriving here with KO in focus still
+   * showed AAPL. The ref keeps it once-only without tying it to a render that
+   * is too early to be useful.
+   *
+   * Adopt-once-then-publish is deliberately one-directional at any instant:
+   * two pages syncing both ways is how a symbol starts flickering between them.
+   */
+  const activeFocus = useActiveTicker();
+  const publishTicker = useTickerStore((s) => s.setTicker);
+  const adopted = React.useRef(false);
+
+  React.useEffect(() => {
+    if (adopted.current || !activeFocus?.symbol) return;
+    adopted.current = true;
+    if (activeFocus.symbol !== ticker) setTicker(activeFocus.symbol);
+  }, [activeFocus, ticker]);
+
+  React.useEffect(() => {
+    if (ticker) publishTicker(ticker, data?.name ?? undefined);
+  }, [ticker, data?.name, publishTicker]);
   const [fundamentals, setFundamentals] = React.useState<FundamentalsBrief | null>(null);
   const [fundamentalsNote, setFundamentalsNote] = React.useState<string | null>(null);
   const [compare, setCompare] = React.useState<Array<{ ticker: string; bars: Bar[] }>>([]);

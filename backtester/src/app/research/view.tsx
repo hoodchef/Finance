@@ -29,6 +29,7 @@ import { buildFundamentalsCsv } from '@/lib/export/fundamentals-csv';
 import type { Dilution, Valuation, YearRow } from '@/lib/fundamentals/metrics';
 import { downloadCsv, safeFilename } from '@/lib/export/csv';
 import { useWorkspace } from '@/store/workspace';
+import { useActiveTicker, useTickerStore } from '@/store/ticker';
 import Link from 'next/link';
 
 interface Response {
@@ -69,6 +70,38 @@ export function ResearchView() {
   const [data, setData] = React.useState<Response | null>(null);
   const [pending, setPending] = React.useState(false);
   const [error, setError] = React.useState<string | null>(null);
+
+  /*
+   * Ticker context: adopt once on mount so arriving from the chart or the
+   * options page lands on the same company, and publish whatever is looked up
+   * here so leaving carries it onward. One-directional at any instant.
+   */
+  const activeFocus = useActiveTicker();
+  const publishTicker = useTickerStore((s) => s.setTicker);
+
+  /*
+   * Adopted on the FIRST non-null focus, not on mount.
+   *
+   * `useActiveTicker` gates on hydration and returns null during the first
+   * client paint, so a mount-only effect runs before the persisted symbol
+   * exists and adopts nothing — which is exactly what happened: arriving here
+   * with KO in focus still showed an empty page. The ref makes it once-only
+   * without tying it to a render that is too early to be useful.
+   */
+  const adopted = React.useRef(false);
+
+  React.useEffect(() => {
+    if (adopted.current || !activeFocus?.symbol) return;
+    adopted.current = true;
+    void look(activeFocus.symbol);
+    // `look` is stable for this purpose and the ref makes this run once; adding
+    // it would re-run the lookup on every render that redefines it.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [activeFocus]);
+
+  React.useEffect(() => {
+    if (data?.company?.ticker) publishTicker(data.company.ticker, data.company.name);
+  }, [data?.company?.ticker, data?.company?.name, publishTicker]);
 
   async function look(ticker: string) {
     const clean = ticker.trim().toUpperCase();
