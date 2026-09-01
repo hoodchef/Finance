@@ -1,2 +1,2 @@
 # Finance
-financial scanner
+financial hub
