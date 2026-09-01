@@ -77,6 +77,20 @@ export const PROVIDER_LICENCES: Record<string, ProviderLicence> = {
       'TIME_SERIES_WEEKLY_ADJUSTED carries an adjusted close and per-bar dividends. Splits are already folded into both close and adjusted close, verified against Tiingo across AAPL 2019-2021 (total return 393.5267% vs 393.5270%, agreeing to 6.9e-7).',
     verifiedOn: '2026-08-24',
   },
+  polygon: {
+    providerId: 'polygon',
+    label: 'Polygon.io',
+    commercial: 'personal-only',
+    summary:
+      'Documented, key-authenticated API with split-adjusted aggregates and separate dividend, split and ticker-event feeds. The free Stocks Basic tier is licensed for personal, non-commercial use: displaying the data in a product makes you a redistributor.',
+    commercialPath:
+      'Polygon sells Starter/Developer/Advanced business plans that permit commercial use and lift the request limit. The free tier does not, at any volume.',
+    freeTier:
+      'About 5 requests/minute, end-of-day data, and roughly 2 years of history. The history limit is applied SILENTLY — a request for ten years returns HTTP 200 with two years of bars and no warning — so every fetch here compares the window returned against the window asked for.',
+    corporateActions:
+      'Dividends carry cash_amount and split_adjusted_cash_amount; splits carry split_from/split_to. Verified on AAPL: the 2013-02-07 dividend is 2.65 raw and 0.094643 split-adjusted, matching the 7:1 (2014) and 4:1 (2020) splits exactly. Prices are split-adjusted but never dividend-adjusted; Polygon serves no total-return close.',
+    verifiedOn: '2026-08-31',
+  },
   alpaca: {
     providerId: 'alpaca',
     label: 'Alpaca',
