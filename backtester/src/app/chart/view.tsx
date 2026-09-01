@@ -376,6 +376,10 @@ export function ChartView() {
   const [fundamentals, setFundamentals] = React.useState<FundamentalsBrief | null>(null);
   const [fundamentalsNote, setFundamentalsNote] = React.useState<string | null>(null);
   const [compare, setCompare] = React.useState<Array<{ ticker: string; bars: Bar[] }>>([]);
+  const [earnings, setEarnings] = React.useState<{
+    next: { reportDate: string; fiscalDateEnding: string | null } | null;
+    past: Array<{ end: string; reportedOn: string | null; epsDiluted: number | null; revenue: number | null }>;
+  } | null>(null);
 
   /* Autocomplete. Debounced so a fast typist does not spend the rate limit. */
   React.useEffect(() => {
@@ -455,6 +459,36 @@ export function ChartView() {
       })
       .catch(() => {
         if (!cancelled) setFundamentalsNote('Fundamentals could not be loaded.');
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [ticker]);
+
+  /*
+   * Earnings, from the existing EDGAR-backed route. Past dates come from the
+   * 8-K that announced each quarter — the release itself — so a marker on the
+   * chart sits on the day the market learned the figure, not on the day the
+   * 10-Q was filed weeks later.
+   */
+  React.useEffect(() => {
+    let cancelled = false;
+    setEarnings(null);
+    fetch('/api/earnings', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ ticker }),
+    })
+      .then(async (res) => {
+        if (!res.ok || cancelled) return;
+        const body = await res.json();
+        setEarnings({
+          next: body.upcoming?.find?.((u: { symbol: string }) => u.symbol === ticker) ?? null,
+          past: Array.isArray(body.history) ? body.history.slice(0, 8) : [],
+        });
+      })
+      .catch(() => {
+        /* Earnings are additive; the chart stands without them. */
       });
     return () => {
       cancelled = true;
@@ -746,6 +780,44 @@ export function ChartView() {
                     value={formatCurrency(Math.min(...bars.map((b) => b.low)))}
                   />
                   <Field label="From" value={bars[0].date} />
+                </div>
+              )}
+
+              {earnings && (earnings.next || earnings.past.length > 0) && (
+                <div className="border-t border-border pt-3">
+                  <div className="mb-2 text-2xs font-semibold uppercase tracking-wide text-muted-foreground">
+                    Earnings
+                  </div>
+                  {earnings.next && (
+                    <div className="mb-2">
+                      <div className="text-2xs uppercase tracking-wide text-muted-foreground">
+                        Next report
+                      </div>
+                      <div className="numeric text-sm font-medium">{earnings.next.reportDate}</div>
+                    </div>
+                  )}
+                  {earnings.past.length > 0 && (
+                    <table className="w-full text-xs">
+                      <thead>
+                        <tr className="border-b border-border text-left text-muted-foreground">
+                          <th className="py-1 pr-2 font-medium">Quarter</th>
+                          <th className="py-1 pr-2 text-right font-medium">EPS</th>
+                          <th className="py-1 text-right font-medium">Revenue</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {earnings.past.slice(0, 5).map((q) => (
+                          <tr key={q.end} className="border-b border-border/50 last:border-0">
+                            <td className="numeric py-1 pr-2">{q.end}</td>
+                            <td className="numeric py-1 pr-2 text-right">
+                              {q.epsDiluted?.toFixed(2) ?? '—'}
+                            </td>
+                            <td className="numeric py-1 text-right">{fmtMoney(q.revenue)}</td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  )}
                 </div>
               )}
 
