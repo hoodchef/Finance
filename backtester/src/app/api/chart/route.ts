@@ -55,7 +55,7 @@ export async function POST(request: Request) {
       ? body.from
       : new Date(Date.now() - 365 * 86_400_000).toISOString().slice(0, 10);
 
-    const aggregates = await fetchAggregates(ticker, multiplier, timespan, from, to);
+    const { bars: aggregates, coverage } = await fetchAggregates(ticker, timespan, from, to, multiplier);
     // normaliseAggregates reports what it discarded; a bar Polygon sent that
     // could not be parsed is a gap worth surfacing, not a silent omission.
     const { bars, dropped } = normaliseAggregates(aggregates, timespan);
@@ -99,7 +99,39 @@ export async function POST(request: Request) {
     const specs = Array.isArray(body.indicators)
       ? body.indicators.map(parseIndicatorSpec).filter(Boolean)
       : [];
-    const overlays = specs.length ? computeIndicators(bars, specs) : [];
+    /*
+     * `computeIndicators` returns a map keyed by spec id, where a multi-line
+     * study (MACD, Bollinger) is one entry holding several series. The chart
+     * consumes a flat list of overlays, each with its own axis. Flattening
+     * here rather than in the component keeps the axis decision — which
+     * studies belong on the price and which need their own pane — next to the
+     * definitions of the studies themselves.
+     */
+    const computed = specs.length ? computeIndicators(bars, specs) : {};
+    const overlays: Array<{
+      id: string;
+      label: string;
+      points: Array<number | null>;
+      axis: 'price' | 'separate';
+    }> = [];
+    for (const [id, value] of Object.entries(computed)) {
+      // Oscillators are unbounded relative to price and must not share its axis.
+      const separate = id.startsWith('rsi') || id.startsWith('macd');
+      const axis = separate ? ('separate' as const) : ('price' as const);
+      if (Array.isArray(value)) {
+        overlays.push({ id, label: id.toUpperCase(), points: value, axis });
+        continue;
+      }
+      for (const [part, series] of Object.entries(value)) {
+        if (!Array.isArray(series)) continue;
+        overlays.push({
+          id: `${id}:${part}`,
+          label: `${id.toUpperCase()} ${part}`,
+          points: series as Array<number | null>,
+          axis,
+        });
+      }
+    }
 
     return NextResponse.json({
       ticker,

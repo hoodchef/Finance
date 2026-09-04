@@ -11,6 +11,9 @@ import { Skeleton } from '@/components/ui/skeleton';
 import { formatCurrency, formatCurrencyCompact, formatPercent } from '@/lib/format';
 import { cn } from '@/lib/utils';
 import { useActiveTicker, useTickerStore } from '@/store/ticker';
+import { PriceChart } from '@/components/chart/price-chart';
+import type { ChartMode, DrawingTool, Overlay } from '@/components/chart/types';
+import type { Drawing } from '@/components/chart/drawings';
 
 /**
  * Charting.
@@ -69,6 +72,7 @@ interface ChartResponse {
   ticker: string;
   name: string | null;
   bars: Bar[];
+  overlays?: Overlay[];
   events: ChartEvent[];
   note: string | null;
   provenance: { source: string; latency: string; fetchedAt: string } | null;
@@ -85,7 +89,24 @@ const RANGES = [
 ] as const;
 
 type RangeId = (typeof RANGES)[number]['id'];
-type ChartKind = 'candles' | 'line' | 'area';
+
+/** Studies offered, by the spec string the API parses. */
+const INDICATORS = [
+  { spec: 'sma:50', label: 'SMA 50' },
+  { spec: 'sma:200', label: 'SMA 200' },
+  { spec: 'ema:21', label: 'EMA 21' },
+  { spec: 'bb:20', label: 'Bollinger' },
+  { spec: 'rsi:14', label: 'RSI' },
+  { spec: 'macd', label: 'MACD' },
+] as const;
+
+const TOOLS: Array<{ id: DrawingTool; label: string }> = [
+  { id: 'cursor', label: 'Select' },
+  { id: 'trendline', label: 'Trend' },
+  { id: 'horizontal', label: 'Level' },
+  { id: 'rect', label: 'Zone' },
+  { id: 'note', label: 'Note' },
+];
 
 const iso = (d: Date) => d.toISOString().slice(0, 10);
 
@@ -94,268 +115,6 @@ function rangeStart(id: RangeId): string {
   if (id === 'YTD') return `${now.getUTCFullYear()}-01-01`;
   const days = RANGES.find((r) => r.id === id)?.days ?? 365;
   return iso(new Date(now.getTime() - days * 86_400_000));
-}
-
-/* ------------------------------------------------------------------ */
-/* Chart surface                                                       */
-/* ------------------------------------------------------------------ */
-
-/**
- * The price surface.
- *
- * SVG rather than canvas: at the bar counts this data source can return —
- * roughly 500 daily bars over two years — SVG stays smooth, and it gives every
- * bar a real DOM node, which makes the crosshair hit-testing exact rather than
- * inferred from pixel maths.
- *
- * Colours are read from theme tokens through CSS custom properties so the four
- * themes all work; nothing here is a literal colour.
- */
-function ChartSurface({
-  bars,
-  kind,
-  height = 380,
-  onHover,
-  hovered,
-  logScale,
-  compare = [],
-}: {
-  bars: Bar[];
-  kind: ChartKind;
-  height?: number;
-  onHover: (index: number | null) => void;
-  hovered: number | null;
-  logScale: boolean;
-  /** Normalised comparison overlays, drawn on their own 0-100% scale. */
-  compare?: Array<{ ticker: string; bars: Bar[] }>;
-}) {
-  const ref = React.useRef<SVGSVGElement>(null);
-  const [width, setWidth] = React.useState(900);
-
-  React.useEffect(() => {
-    const el = ref.current?.parentElement;
-    if (!el) return;
-    const ro = new ResizeObserver(([entry]) => setWidth(entry.contentRect.width));
-    ro.observe(el);
-    setWidth(el.clientWidth);
-    return () => ro.disconnect();
-  }, []);
-
-  const padding = { top: 8, right: 56, bottom: 18, left: 8 };
-  const priceH = height * 0.76;
-  const volH = height - priceH - padding.bottom;
-  const innerW = Math.max(40, width - padding.left - padding.right);
-
-  const { xOf, yOf, vOf, lo, hi, ticks } = React.useMemo(() => {
-    if (!bars.length) {
-      return { xOf: () => 0, yOf: () => 0, vOf: () => 0, lo: 0, hi: 1, ticks: [] as number[] };
-    }
-    let min = Infinity;
-    let max = -Infinity;
-    let vMax = 0;
-    for (const b of bars) {
-      if (b.low < min) min = b.low;
-      if (b.high > max) max = b.high;
-      if (b.volume > vMax) vMax = b.volume;
-    }
-    // A little headroom so the extremes are not welded to the frame.
-    const pad = (max - min) * 0.06 || 1;
-    const l = Math.max(logScale ? 1e-6 : -Infinity, min - pad);
-    const h = max + pad;
-
-    const project = (v: number) =>
-      logScale
-        ? (Math.log(Math.max(v, 1e-9)) - Math.log(l)) / (Math.log(h) - Math.log(l) || 1)
-        : (v - l) / (h - l || 1);
-
-    const step = innerW / Math.max(1, bars.length);
-    const t: number[] = [];
-    for (let i = 0; i <= 4; i++) t.push(l + ((h - l) * i) / 4);
-
-    return {
-      xOf: (i: number) => padding.left + i * step + step / 2,
-      yOf: (v: number) => padding.top + (1 - project(v)) * (priceH - padding.top),
-      vOf: (v: number) => (vMax > 0 ? (v / vMax) * volH : 0),
-      lo: l,
-      hi: h,
-      ticks: t,
-    };
-  }, [bars, innerW, priceH, volH, logScale, padding.left, padding.top]);
-
-  const step = innerW / Math.max(1, bars.length);
-  const bodyW = Math.max(1, Math.min(9, step * 0.68));
-
-  const handleMove = (e: React.MouseEvent<SVGSVGElement>) => {
-    const rect = ref.current?.getBoundingClientRect();
-    if (!rect || !bars.length) return;
-    const x = e.clientX - rect.left - padding.left;
-    const i = Math.round((x - step / 2) / step);
-    onHover(Math.max(0, Math.min(bars.length - 1, i)));
-  };
-
-  if (!bars.length) {
-    return (
-      <div
-        style={{ height }}
-        className="flex items-center justify-center text-xs text-muted-foreground"
-      >
-        No price history to draw.
-      </div>
-    );
-  }
-
-  const linePath = bars
-    .map((b, i) => `${i === 0 ? 'M' : 'L'}${xOf(i).toFixed(2)},${yOf(b.close).toFixed(2)}`)
-    .join(' ');
-  const areaPath = `${linePath} L${xOf(bars.length - 1).toFixed(2)},${priceH} L${xOf(0).toFixed(2)},${priceH} Z`;
-
-  const first = bars[0].close;
-  const last = bars[bars.length - 1].close;
-  const rising = last >= first;
-
-  return (
-    <svg
-      ref={ref}
-      width="100%"
-      height={height}
-      onMouseMove={handleMove}
-      onMouseLeave={() => onHover(null)}
-      className="select-none"
-      role="img"
-      aria-label="Price history"
-    >
-      {/* Horizontal guides and the price axis. */}
-      {ticks.map((t) => (
-        <g key={t}>
-          <line
-            x1={padding.left}
-            x2={padding.left + innerW}
-            y1={yOf(t)}
-            y2={yOf(t)}
-            stroke="hsl(var(--grid))"
-            strokeWidth={1}
-          />
-          <text
-            x={padding.left + innerW + 6}
-            y={yOf(t) + 3}
-            className="numeric"
-            fontSize={10}
-            fill="hsl(var(--muted-foreground))"
-          >
-            {t >= 1000 ? t.toFixed(0) : t.toFixed(2)}
-          </text>
-        </g>
-      ))}
-
-      {kind === 'candles' ? (
-        bars.map((b, i) => {
-          const up = b.close >= b.open;
-          const colour = up ? 'hsl(var(--positive))' : 'hsl(var(--negative))';
-          const yO = yOf(b.open);
-          const yC = yOf(b.close);
-          return (
-            <g key={b.date}>
-              <line
-                x1={xOf(i)}
-                x2={xOf(i)}
-                y1={yOf(b.high)}
-                y2={yOf(b.low)}
-                stroke={colour}
-                strokeWidth={1}
-              />
-              <rect
-                x={xOf(i) - bodyW / 2}
-                y={Math.min(yO, yC)}
-                width={bodyW}
-                height={Math.max(1, Math.abs(yC - yO))}
-                fill={colour}
-              />
-            </g>
-          );
-        })
-      ) : (
-        <>
-          {kind === 'area' && (
-            <path
-              d={areaPath}
-              fill={rising ? 'hsl(var(--positive))' : 'hsl(var(--negative))'}
-              fillOpacity={0.1}
-            />
-          )}
-          <path
-            d={linePath}
-            fill="none"
-            stroke={rising ? 'hsl(var(--positive))' : 'hsl(var(--negative))'}
-            strokeWidth={1.5}
-          />
-        </>
-      )}
-
-      {/* Volume, sharing the x-scale. */}
-      {bars.map((b, i) => (
-        <rect
-          key={`v-${b.date}`}
-          x={xOf(i) - bodyW / 2}
-          y={height - padding.bottom - vOf(b.volume)}
-          width={bodyW}
-          height={vOf(b.volume)}
-          fill={b.close >= b.open ? 'hsl(var(--positive))' : 'hsl(var(--negative))'}
-          fillOpacity={0.28}
-        />
-      ))}
-
-      {/*
-        Comparisons are rebased to their own first close and drawn against the
-        base security's percentage range, not its price. Overlaying raw prices
-        would make a $600 stock dwarf a $30 one and say nothing about which
-        performed better, which is the only question a comparison answers.
-      */}
-      {compare.map((c, ci) => {
-        if (c.bars.length < 2) return null;
-        const baseFirst = bars[0].close;
-        const baseLast = bars[bars.length - 1].close;
-        const cFirst = c.bars[0].close;
-        // Map the comparison's return onto the base's price axis.
-        const toPrice = (v: number) => baseFirst * (v / cFirst);
-        const n = Math.min(c.bars.length, bars.length);
-        const d = Array.from({ length: n }, (_, i) => {
-          const price = toPrice(c.bars[Math.floor((i / n) * c.bars.length)].close);
-          return `${i === 0 ? 'M' : 'L'}${xOf(i).toFixed(2)},${yOf(price).toFixed(2)}`;
-        }).join(' ');
-        return (
-          <path
-            key={c.ticker}
-            d={d}
-            fill="none"
-            stroke={`hsl(var(--series-${(ci + 2) % 15}))`}
-            strokeWidth={1.25}
-            strokeOpacity={0.9}
-          />
-        );
-      })}
-
-      {/* Crosshair. */}
-      {hovered != null && bars[hovered] && (
-        <g pointerEvents="none">
-          <line
-            x1={xOf(hovered)}
-            x2={xOf(hovered)}
-            y1={padding.top}
-            y2={height - padding.bottom}
-            stroke="hsl(var(--foreground))"
-            strokeOpacity={0.35}
-            strokeDasharray="3 3"
-          />
-          <circle
-            cx={xOf(hovered)}
-            cy={yOf(bars[hovered].close)}
-            r={3}
-            fill="hsl(var(--foreground))"
-          />
-        </g>
-      )}
-    </svg>
-  );
 }
 
 /* ------------------------------------------------------------------ */
@@ -368,8 +127,11 @@ export function ChartView() {
   const [open, setOpen] = React.useState(false);
   const [ticker, setTicker] = React.useState('AAPL');
   const [range, setRange] = React.useState<RangeId>('1Y');
-  const [kind, setKind] = React.useState<ChartKind>('candles');
+  const [kind, setKind] = React.useState<ChartMode>('candlestick');
   const [logScale, setLogScale] = React.useState(false);
+  const [indicators, setIndicators] = React.useState<string[]>([]);
+  const [tool, setTool] = React.useState<DrawingTool>('cursor');
+  const [drawings, setDrawings] = React.useState<Drawing[]>([]);
   const [data, setData] = React.useState<ChartResponse | null>(null);
   const [loading, setLoading] = React.useState(false);
   const [error, setError] = React.useState<string | null>(null);
@@ -430,7 +192,7 @@ export function ChartView() {
     return () => window.clearTimeout(t);
   }, [query]);
 
-  const load = React.useCallback(async (symbol: string, r: RangeId) => {
+  const load = React.useCallback(async (symbol: string, r: RangeId, inds: string[] = []) => {
     setLoading(true);
     setError(null);
     try {
@@ -442,6 +204,7 @@ export function ChartView() {
           timespan: 'day',
           from: rangeStart(r),
           to: iso(new Date()),
+          indicators: inds,
         }),
       });
       const body = await res.json();
@@ -460,8 +223,8 @@ export function ChartView() {
   }, []);
 
   React.useEffect(() => {
-    void load(ticker, range);
-  }, [ticker, range, load]);
+    void load(ticker, range, indicators);
+  }, [ticker, range, indicators, load]);
 
   /*
    * Fundamentals come from the existing SEC EDGAR route, not from the price
@@ -551,7 +314,35 @@ export function ChartView() {
     setCompare([]);
   }, [range, ticker]);
 
-  const bars = data?.bars ?? [];
+  // Memoised: a fresh [] each render would invalidate every downstream memo.
+  const bars = React.useMemo(() => data?.bars ?? [], [data?.bars]);
+
+  /*
+   * Comparisons ride the engine's own overlay mechanism rather than a second
+   * drawing path. Each is rebased to its first close and mapped onto the base
+   * security's price axis, so the shapes are comparable: overlaying raw prices
+   * would let a $600 stock dwarf a $30 one while saying nothing about which
+   * performed better, which is the only question a comparison answers.
+   */
+  const comparisonOverlays = React.useMemo<Overlay[]>(() => {
+    if (!bars.length) return [];
+    const base = bars[0].close;
+    return compare.map((c) => {
+      const first = c.bars[0]?.close;
+      const points = bars.map((_, i) => {
+        if (!first) return null;
+        const src = c.bars[Math.min(c.bars.length - 1, Math.floor((i / bars.length) * c.bars.length))];
+        return src ? base * (src.close / first) : null;
+      });
+      return { id: `cmp-${c.ticker}`, label: c.ticker, points, axis: 'price' as const };
+    });
+  }, [bars, compare]);
+
+  const allOverlays = React.useMemo<Overlay[]>(
+    () => [...(data?.overlays ?? []), ...comparisonOverlays],
+    [data?.overlays, comparisonOverlays],
+  );
+
   const active = hovered != null ? bars[hovered] : bars[bars.length - 1];
   const first = bars[0];
 
@@ -635,7 +426,7 @@ export function ChartView() {
               </div>
 
               <div className="flex gap-0.5">
-                {(['candles', 'line', 'area'] as const).map((k) => (
+                {(['candlestick', 'line', 'area'] as const).map((k) => (
                   <Button
                     key={k}
                     size="sm"
@@ -643,7 +434,7 @@ export function ChartView() {
                     className="h-7 px-2 text-2xs capitalize"
                     onClick={() => setKind(k)}
                   >
-                    {k}
+                    {k === 'candlestick' ? 'Candles' : k}
                   </Button>
                 ))}
               </div>
@@ -656,6 +447,64 @@ export function ChartView() {
               >
                 Log
               </Button>
+
+              {/*
+                Indicators are named by spec string and computed server-side
+                from the same bars the chart draws, so an overlay can never be
+                a period out of step with the candles under it.
+              */}
+              <div className="flex items-center gap-1">
+                <span className="text-2xs uppercase tracking-wide text-muted-foreground">
+                  Study
+                </span>
+                {INDICATORS.map((ind) => {
+                  const on = indicators.includes(ind.spec);
+                  return (
+                    <Button
+                      key={ind.spec}
+                      size="sm"
+                      variant={on ? 'secondary' : 'ghost'}
+                      className="h-7 px-2 text-2xs"
+                      onClick={() =>
+                        setIndicators((cur) =>
+                          on ? cur.filter((x) => x !== ind.spec) : [...cur, ind.spec],
+                        )
+                      }
+                    >
+                      {ind.label}
+                    </Button>
+                  );
+                })}
+              </div>
+
+              {/* Drawing tools. Escape cancels, Delete removes the selection. */}
+              <div className="flex items-center gap-1">
+                <span className="text-2xs uppercase tracking-wide text-muted-foreground">
+                  Draw
+                </span>
+                {TOOLS.map((t) => (
+                  <Button
+                    key={t.id}
+                    size="sm"
+                    variant={tool === t.id ? 'secondary' : 'ghost'}
+                    className="h-7 px-2 text-2xs"
+                    onClick={() => setTool(t.id)}
+                    aria-pressed={tool === t.id}
+                  >
+                    {t.label}
+                  </Button>
+                ))}
+                {drawings.length > 0 && (
+                  <Button
+                    size="sm"
+                    variant="ghost"
+                    className="h-7 px-2 text-2xs text-muted-foreground"
+                    onClick={() => setDrawings([])}
+                  >
+                    Clear {drawings.length}
+                  </Button>
+                )}
+              </div>
 
               <div className="flex items-center gap-1.5">
                 <span className="text-2xs uppercase tracking-wide text-muted-foreground">
@@ -736,15 +585,27 @@ export function ChartView() {
               {loading && !bars.length ? (
                 <Skeleton className="h-[380px] w-full" />
               ) : (
-                <ChartSurface
+                <PriceChart
                   bars={bars}
-                  kind={kind}
-                  onHover={setHovered}
-                  hovered={hovered}
-                  logScale={logScale}
-                  compare={compare}
-                />
-              )}
+                  overlays={allOverlays}
+                  events={data?.events ?? []}
+                  symbol={data?.ticker ?? ticker}
+                  height={420}
+                  mode={kind}
+                  priceScale={logScale ? 'log' : 'linear'}
+                  tool={tool}
+                  onToolChange={setTool}
+                  drawings={drawings}
+                  onDrawingsChange={setDrawings}
+                  showVolume
+                  // The page already groups every control in one row; the
+                  // engine's own toolbar would be a second place to look for
+                  // the same switches.
+                  showToolbar={false}
+                  formatPrice={(v) => formatCurrency(v)}
+                  emptyMessage="No price history to draw."
+                  ariaLabel={`${data?.ticker ?? ticker} price history`}
+                />              )}
 
               {/* Event lane, kept off the price surface. */}
               {data?.events && data.events.length > 0 && (
