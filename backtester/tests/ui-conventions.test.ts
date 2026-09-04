@@ -99,3 +99,32 @@ describe('the conventions are written down', () => {
     }
   });
 });
+
+describe('chart series colours', () => {
+  /**
+   * The series tokens are hex literals, not HSL triplets.
+   *
+   * `hsl(var(--series-4))` therefore becomes `hsl(#fb7185)`, which is invalid
+   * CSS and computes to `none`. The failure is silent — the path renders with
+   * no colour at all — and it shipped on three pages before a blank ridge
+   * chart made it visible. Nothing else in the codebase catches it: the value
+   * is neither a palette class nor a hex literal in the source.
+   */
+  it('never wraps a series token in hsl()', () => {
+    const offenders: string[] = [];
+    for (const f of files) {
+      const src = fs.readFileSync(f, 'utf8');
+      if (/hsl\(\s*var\(\s*--series-/.test(src)) offenders.push(rel(f));
+    }
+    expect(
+      offenders,
+      `series tokens are hex; use var(--series-N) or seriesColor():\n${offenders.join('\n')}`,
+    ).toEqual([]);
+  });
+
+  it('keeps the tokens defined as the literals that assumption rests on', () => {
+    const css = fs.readFileSync(path.join(SRC, 'app/globals.css'), 'utf8');
+    // If these ever become HSL triplets, the rule above inverts.
+    expect(css).toMatch(/--series-0:\s*#[0-9a-fA-F]{3,8}/);
+  });
+});

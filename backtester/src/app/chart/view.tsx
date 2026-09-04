@@ -526,7 +526,7 @@ export function ChartView() {
                     key={c.ticker}
                     variant="outline"
                     className="gap-1 py-0.5 text-2xs font-normal"
-                    style={{ borderColor: `hsl(var(--series-${(i + 2) % 15}))` }}
+                    style={{ borderColor: `var(--series-${(i + 2) % 15})` }}
                   >
                     <span className="numeric">{c.ticker}</span>
                     <button

@@ -48,7 +48,13 @@ one of them.
 - Secondary text: `text-muted-foreground`
 - Borders: `border-border`, dividers `border-border/50`
 - Quiet fill: `bg-muted/40`
-- Chart series: `hsl(var(--series-0))` … `hsl(var(--series-14))`
+- Chart series: `var(--series-0)` … `var(--series-14)`, or `seriesColor()` from
+  `@/lib/utils`
+
+The series tokens are **hex literals, not HSL triplets**, so they are used bare:
+`hsl(var(--series-4))` becomes `hsl(#fb7185)`, which is invalid CSS and computes
+to `none`. The failure is silent — the shape renders with no colour at all — and
+it shipped on three pages before anyone noticed a chart had gone blank.
 
 Use the shorthand utilities, defined in `globals.css`. The verbose
 `text-[hsl(var(--positive))]` form works but is the minority spelling, and the

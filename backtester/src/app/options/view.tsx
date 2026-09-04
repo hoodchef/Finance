@@ -609,15 +609,15 @@ export function OptionsView() {
                         type="monotone"
                         dataKey="atExpiry"
                         name="At expiry"
-                        stroke="hsl(var(--series-0))"
-                        fill="hsl(var(--series-0))"
+                        stroke="var(--series-0)"
+                        fill="var(--series-0)"
                         fillOpacity={0.12}
                       />
                       <Line
                         type="monotone"
                         dataKey="theoretical"
                         name="Today (theoretical)"
-                        stroke="hsl(var(--series-2))"
+                        stroke="var(--series-2)"
                         dot={false}
                         strokeWidth={1.5}
                       />
@@ -728,7 +728,7 @@ export function OptionsView() {
                           <Tooltip contentStyle={{ fontSize: 11 }} />
                           <ReferenceLine y={0} stroke="hsl(var(--foreground))" strokeOpacity={0.3} />
                           <ReferenceLine x={liveSpot} stroke="hsl(var(--foreground))" strokeDasharray="3 3" strokeOpacity={0.4} />
-                          <Line type="monotone" dataKey={g} stroke={`hsl(var(--series-${i}))`} dot={false} strokeWidth={1.5} />
+                          <Line type="monotone" dataKey={g} stroke={`var(--series-${i})`} dot={false} strokeWidth={1.5} />
                         </ComposedChart>
                       </ResponsiveContainer>
                     </div>
@@ -908,8 +908,8 @@ export function OptionsView() {
                           <YAxis {...AXIS_PROPS} width={48} />
                           <Tooltip contentStyle={{ fontSize: 11 }}
                             labelFormatter={(v: number) => `P/L from ${formatCurrency(v)}`} />
-                          <Area type="step" dataKey="count" stroke="hsl(var(--series-4))"
-                            fill="hsl(var(--series-4))" fillOpacity={0.25} />
+                          <Area type="step" dataKey="count" stroke="var(--series-4)"
+                            fill="var(--series-4)" fillOpacity={0.25} />
                         </ComposedChart>
                       </ResponsiveContainer>
                     </div>

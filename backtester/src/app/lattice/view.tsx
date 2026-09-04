@@ -13,6 +13,7 @@ import {
   buildRidge,
   latticeOutcomes,
   layoutRelationshipGraph,
+  mulberry32,
   percentile,
   riskNeutralUpProbability,
   runLattice,
@@ -85,7 +86,6 @@ export function LatticeView() {
   const [years, setYears] = React.useState(1);
   const [seed, setSeed] = React.useState(42);
   const [running, setRunning] = React.useState(true);
-  const [dropped, setDropped] = React.useState(0);
 
   /* ---------------- Measurement ---------------- */
 
@@ -290,32 +290,83 @@ export function LatticeView() {
 
   const graph = React.useMemo(() => {
     if (!corr || corr.symbols.length < 2) return null;
+    /*
+     * With a handful of holdings every pair is worth drawing; a threshold only
+     * earns its place once the graph is dense enough to be unreadable.
+     *
+     * Fixed at 0.3 it hid the honest answer: SPY and BND measure below it, so
+     * a correct result — stocks and bonds barely move together — rendered as
+     * two dots and no edges, which reads as broken rather than as diversified.
+     */
     return layoutRelationshipGraph({
       symbols: corr.symbols,
       correlation: corr.matrix,
-      threshold: 0.3,
+      threshold: corr.symbols.length > 6 ? 0.3 : 0.001,
       seed: 9,
     });
   }, [corr]);
 
-  /* Animate the pile filling, so the convergence is watched rather than shown. */
+  /*
+   * Live drop.
+   *
+   * The first version scaled every bar in proportion, which shows the answer
+   * appearing rather than the process producing it — and the process is the
+   * whole point: nobody draws that curve, independent coin flips leave it
+   * behind. Balls now fall one peg per frame along their own path, land, and
+   * are counted, so the pile is built in front of you.
+   */
+  const [falling, setFalling] = React.useState<Array<{ id: number; path: number[]; row: number }>>([]);
+  const [landed, setLanded] = React.useState<number[]>(() => new Array(LEVELS + 1).fill(0));
+  const [dropped, setDropped] = React.useState(0);
+  const nextId = React.useRef(0);
+  const rng = React.useRef(mulberry32(seed));
+
+  // A new lattice — new seed or new parameters — restarts the drop.
   React.useEffect(() => {
+    rng.current = mulberry32(seed);
+    nextId.current = 0;
+    setFalling([]);
+    setLanded(new Array(LEVELS + 1).fill(0));
     setDropped(0);
-  }, [lattice]);
+  }, [seed, pUp]);
 
   React.useEffect(() => {
     if (!running || dropped >= TRIALS) return;
-    const id = window.setTimeout(() => setDropped((d) => Math.min(TRIALS, d + 90)), 16);
-    return () => window.clearTimeout(id);
-  }, [running, dropped]);
+    const id = window.setInterval(() => {
+      setFalling((current) => {
+        const advanced: typeof current = [];
+        const arrivals: number[] = [];
+        for (const ball of current) {
+          const row = ball.row + 1;
+          if (row >= LEVELS) arrivals.push(ball.path.reduce((a, b) => a + b, 0));
+          else advanced.push({ ...ball, row });
+        }
+        if (arrivals.length) {
+          setLanded((bins) => {
+            const next = [...bins];
+            for (const k of arrivals) next[k]++;
+            return next;
+          });
+          setDropped((d) => d + arrivals.length);
+        }
+        // Release several per frame: one at a time would take an hour, and a
+        // stream is closer to what the picture is about anyway.
+        const release = Math.min(6, TRIALS - dropped - advanced.length);
+        for (let i = 0; i < release; i++) {
+          const path = Array.from({ length: LEVELS }, () => (rng.current() < pUp ? 1 : 0));
+          advanced.push({ id: nextId.current++, path, row: 0 });
+        }
+        return advanced;
+      });
+    }, 55);
+    return () => window.clearInterval(id);
+  }, [running, dropped, pUp]);
 
-  const shown = React.useMemo(() => {
-    if (dropped >= TRIALS) return lattice.bins;
-    // Fill bins in proportion, so the shape emerges rather than filling left
-    // to right — the emergence is the thing worth watching.
-    const scale = dropped / TRIALS;
-    return lattice.bins.map((b) => Math.round(b * scale));
-  }, [lattice, dropped]);
+  // The exact binomial, scaled to however many have landed so far.
+  const expectedNow = React.useMemo(
+    () => lattice.expected.map((e) => (e * Math.max(dropped, 1)) / TRIALS),
+    [lattice, dropped],
+  );
 
   const median = percentile(outcomes, 0.5);
   const p05 = percentile(outcomes, 0.05);
@@ -451,8 +502,9 @@ export function LatticeView() {
               title="Probability lattice"
               detail={`${TRIALS.toLocaleString()} paths · one board · ${LEVELS} steps`}
             />
-            <LatticeBoard bins={shown} expected={lattice.expected} levels={LEVELS}
-              spot={spot} vol={vol} years={years} complete={dropped >= TRIALS} />
+            <LatticeBoard bins={landed} expected={expectedNow} levels={LEVELS}
+              spot={spot} vol={vol} years={years} complete={dropped >= TRIALS}
+              falling={falling} pUp={pUp} />
             <p className="mt-2 text-xs leading-relaxed text-muted-foreground">
               Each ball takes {LEVELS} independent steps, up with probability{' '}
               <span className="numeric">{pUp.toFixed(4)}</span> — the same risk-neutral
@@ -483,6 +535,41 @@ export function LatticeView() {
             {graph ? (
               <>
                 <RelationshipGraphView graph={graph} />
+                {corr && corr.symbols.length <= 8 && (
+                  <div className="mt-3 overflow-x-auto">
+                    <table className="w-full text-xs">
+                      <thead>
+                        <tr className="border-b border-border text-left text-muted-foreground">
+                          <th className="py-1.5 pr-3 font-medium">ρ</th>
+                          {corr.symbols.map((sym) => (
+                            <th key={sym} className="py-1.5 pr-3 text-right font-medium">{sym}</th>
+                          ))}
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {corr.symbols.map((row, i) => (
+                          <tr key={row} className="border-b border-border/50 last:border-0">
+                            <td className="numeric py-1.5 pr-3 font-medium">{row}</td>
+                            {corr.symbols.map((col, j) => (
+                              <td
+                                key={col}
+                                className={cn(
+                                  'numeric py-1.5 pr-3 text-right',
+                                  i !== j && corr.matrix[i][j] > 0 && 'text-positive',
+                                  i !== j && corr.matrix[i][j] < 0 && 'text-negative',
+                                  i === j && 'text-muted-foreground',
+                                )}
+                              >
+                                {corr.matrix[i][j].toFixed(2)}
+                              </td>
+                            ))}
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                )}
+
                 <p className="mt-2 rounded-md border border-border bg-muted/40 p-2.5 text-xs leading-relaxed text-muted-foreground">
                   <span className="font-medium text-foreground">Measured.</span> Pearson
                   correlation of daily log returns over the{' '}
@@ -592,6 +679,8 @@ function LatticeBoard({
   vol,
   years,
   complete,
+  falling,
+  pUp,
 }: {
   bins: number[];
   expected: number[];
@@ -600,6 +689,8 @@ function LatticeBoard({
   vol: number;
   years: number;
   complete: boolean;
+  falling: Array<{ id: number; path: number[]; row: number }>;
+  pUp: number;
 }) {
   const W = 1000;
   const H = 340;
@@ -646,6 +737,22 @@ function LatticeBoard({
             fill={up ? 'hsl(var(--positive))' : 'hsl(var(--negative))'}
             fillOpacity={0.55}
           />
+        );
+      })}
+
+      {/*
+        Balls in flight. A ball's x is the running sum of the steps it has
+        taken, so it tracks the peg lattice exactly rather than drifting over
+        a decorative path — what you watch is the same walk that decides the
+        bin it lands in.
+      */}
+      {falling.map((ball) => {
+        const rights = ball.path.slice(0, ball.row).reduce((a, b) => a + b, 0);
+        const lefts = ball.row - rights;
+        const x = W / 2 + (rights - lefts) * (colW / 2);
+        const y = pegTop + ((pegBottom - pegTop) * ball.row) / Math.max(1, levels - 1);
+        return (
+          <circle key={ball.id} cx={x} cy={y} r={2.6} fill="var(--series-0)" fillOpacity={0.95} />
         );
       })}
 
@@ -709,8 +816,8 @@ function RidgePlot({
         return (
           <g key={band.label}>
             <path d={`${d} L${W},${baseline} L0,${baseline} Z`}
-              fill={`hsl(var(--series-${index % 15}))`} fillOpacity={0.32} />
-            <path d={d} fill="none" stroke={`hsl(var(--series-${index % 15}))`} strokeWidth={1.9} />
+              fill={`var(--series-${index % 15})`} fillOpacity={0.32} />
+            <path d={d} fill="none" stroke={`var(--series-${index % 15})`} strokeWidth={1.9} />
             <text x={6} y={baseline - 4} fontSize={10} className="numeric"
               fill="hsl(var(--muted-foreground))">
               {band.label} · ±{band.oneSigma.toFixed(1)}
@@ -751,13 +858,25 @@ function RelationshipGraphView({
         const b = byId.get(e.b);
         if (!a || !b) return null;
         return (
-          <line
-            key={`${e.a}-${e.b}`}
-            x1={at(a.x)} y1={at(a.y)} x2={at(b.x)} y2={at(b.y)}
-            stroke={e.correlation >= 0 ? 'hsl(var(--positive))' : 'hsl(var(--negative))'}
-            strokeOpacity={0.18 + Math.abs(e.correlation) * 0.5}
-            strokeWidth={0.5 + Math.abs(e.correlation) * 2.5}
-          />
+          <g key={`${e.a}-${e.b}`}>
+            <line
+              x1={at(a.x)} y1={at(a.y)} x2={at(b.x)} y2={at(b.y)}
+              stroke={e.correlation >= 0 ? 'hsl(var(--positive))' : 'hsl(var(--negative))'}
+              strokeOpacity={0.22 + Math.abs(e.correlation) * 0.55}
+              strokeWidth={0.6 + Math.abs(e.correlation) * 3}
+            />
+            {/* The value, so the picture and the table cannot disagree. */}
+            <text
+              x={(at(a.x) + at(b.x)) / 2}
+              y={(at(a.y) + at(b.y)) / 2 - 3}
+              textAnchor="middle"
+              fontSize={9}
+              className="numeric"
+              fill="hsl(var(--muted-foreground))"
+            >
+              {e.correlation.toFixed(2)}
+            </text>
+          </g>
         );
       })}
       {graph.nodes.map((n) => (
