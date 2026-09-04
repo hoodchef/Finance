@@ -4,6 +4,7 @@ import os from 'node:os';
 import fs from 'node:fs';
 import {
   PolygonNotEntitledError,
+  PolygonProvider,
   PolygonRateLimitError,
   __testing,
   clearPolygonCache,
@@ -312,3 +313,271 @@ describe.runIf(live)('live API', () => {
     expect(result.coverage.truncated).toBe(false);
   }, 30_000);
 });
+describe('corporate actions', () => {
+  // Verbatim from the live /stocks/v1/dividends response for AAPL, which
+  // returned rows ordered by internal id: 2022, then 2013, then 2016.
+  const LIVE_DIVIDENDS = [
+    {
+      ticker: 'AAPL',
+      record_date: '2022-11-07',
+      pay_date: '2022-11-10',
+      declaration_date: '2022-10-27',
+      ex_dividend_date: '2022-11-04',
+      frequency: 4,
+      cash_amount: 0.23,
+      currency: 'USD',
+      historical_adjustment_factor: 0.980837,
+      split_adjusted_cash_amount: 0.23,
+    },
+    {
+      ticker: 'AAPL',
+      pay_date: '2013-02-14',
+      ex_dividend_date: '2013-02-07',
+      frequency: 0,
+      cash_amount: 2.65,
+      currency: 'USD',
+      split_adjusted_cash_amount: 0.094643,
+    },
+    {
+      ticker: 'AAPL',
+      pay_date: '2016-08-11',
+      ex_dividend_date: '2016-08-04',
+      frequency: 4,
+      cash_amount: 0.57,
+      currency: 'USD',
+      split_adjusted_cash_amount: 0.1425,
+    },
+  ];
+
+  it('sorts dividends by date, because the endpoint does not', async () => {
+    route(/\/stocks\/v1\/dividends/, () => json({ status: 'OK', results: LIVE_DIVIDENDS }));
+    const rows = await fetchDividends('AAPL');
+    expect(rows.map((r) => r.ex_dividend_date)).toEqual([
+      '2013-02-07',
+      '2016-08-04',
+      '2022-11-04',
+    ]);
+  });
+
+  it('uses the split-adjusted amount, which matches the split history exactly', () => {
+    // AAPL split 7:1 in 2014 and 4:1 in 2020, so a 2013 dividend is restated
+    // by 28. 2.65 / 28 = 0.0946428..., and Polygon reports 0.094643.
+    const events = __testing.toDividendEvents(LIVE_DIVIDENDS);
+    const y2013 = events.find((e) => e.date === '2013-02-07');
+    expect(y2013?.amount).toBeCloseTo(0.094643, 9);
+    expect(y2013?.amount).toBeCloseTo(2.65 / 28, 5);
+    // Applying the raw 2.65 to split-adjusted prices would overstate that
+    // payment by a factor of 28.
+    expect(y2013?.amount).not.toBeCloseTo(2.65, 2);
+  });
+
+  it('returns dividends ascending and inside the requested range', () => {
+    const events = __testing.toDividendEvents(LIVE_DIVIDENDS, {
+      start: '2014-01-01',
+      end: '2020-01-01',
+    });
+    expect(events.map((e) => e.date)).toEqual(['2016-08-04']);
+  });
+
+  it('reads splits as numerator over denominator', async () => {
+    route(/\/stocks\/v1\/splits/, () =>
+      json({
+        status: 'OK',
+        results: [
+          { execution_date: '2020-08-31', split_from: 1, split_to: 4, ticker: 'AAPL' },
+          { execution_date: '2014-06-09', split_from: 1, split_to: 7, ticker: 'AAPL' },
+        ],
+      }),
+    );
+    const rows = await fetchSplits('AAPL');
+    expect(rows.map((r) => r.execution_date)).toEqual(['2014-06-09', '2020-08-31']);
+
+    const events = __testing.toSplitEvents(rows);
+    expect(events).toEqual([
+      { date: '2014-06-09', numerator: 7, denominator: 1 },
+      { date: '2020-08-31', numerator: 4, denominator: 1 },
+    ]);
+  });
+
+  it('drops rows it cannot date or ratio rather than guessing at them', () => {
+    expect(__testing.toSplitEvents([{ split_from: 1, split_to: 2 }])).toEqual([]);
+    expect(__testing.toDividendEvents([{ cash_amount: 1 }])).toEqual([]);
+    expect(__testing.toDividendEvents([{ ex_dividend_date: '2020-01-01' }])).toEqual([]);
+  });
+});
+
+describe('asset classification', () => {
+  it('maps Polygon instrument types onto the application classes', () => {
+    expect(__testing.toAssetClass('CS', 'stocks')).toBe('equity');
+    expect(__testing.toAssetClass('ETF', 'stocks')).toBe('etf');
+    expect(__testing.toAssetClass('ADRC', 'stocks')).toBe('equity');
+    expect(__testing.toAssetClass(undefined, 'crypto')).toBe('crypto');
+    expect(__testing.toAssetClass('INDEX', 'indices')).toBe('index');
+  });
+
+  it('calls an unrecognised type other, rather than assuming equity', () => {
+    // A warrant or a unit described as common stock is a wrong label, and the
+    // engine branches on the class.
+    expect(__testing.toAssetClass('WARRANT', 'stocks')).toBe('other');
+    expect(__testing.toAssetClass(undefined, undefined)).toBe('other');
+  });
+});
+
+describe('the provider', () => {
+  const mountFullHistory = () => {
+    route(/\/v2\/aggs\//, () =>
+      json({
+        status: 'OK',
+        adjusted: true,
+        results: [
+          agg('2026-08-10', 100),
+          agg('2026-08-11', 101),
+          agg('2026-08-12', 102),
+        ],
+      }),
+    );
+    route(/\/stocks\/v1\/dividends/, () =>
+      json({
+        status: 'OK',
+        results: [
+          { ex_dividend_date: '2026-08-11', cash_amount: 1, split_adjusted_cash_amount: 1 },
+        ],
+      }),
+    );
+    route(/\/stocks\/v1\/splits/, () => json({ status: 'OK', results: [] }));
+    route(/\/v3\/reference\/tickers\/AAPL/, () =>
+      json({
+        status: 'OK',
+        results: {
+          ticker: 'AAPL',
+          name: 'Apple Inc.',
+          market: 'stocks',
+          type: 'CS',
+          primary_exchange: 'XNAS',
+          currency_name: 'usd',
+          list_date: '1980-12-12',
+          active: true,
+        },
+      }),
+    );
+  };
+
+  it('builds a split-adjusted series with real metadata', async () => {
+    mountFullHistory();
+    const series = await new PolygonProvider().getHistoricalPrices('AAPL', {
+      start: '2026-08-01',
+      end: '2026-08-31',
+    });
+
+    expect(series.source).toBe('polygon');
+    expect(series.synthetic).toBe(false);
+    expect(series.adjustment).toBe('split-adjusted');
+    expect(series.interval).toBe('daily');
+    expect(series.bars.map((b) => b.date)).toEqual(['2026-08-10', '2026-08-11', '2026-08-12']);
+    expect(series.meta.name).toBe('Apple Inc.');
+    expect(series.meta.exchange).toBe('XNAS');
+    expect(series.meta.currency).toBe('USD');
+    expect(series.meta.assetClass).toBe('equity');
+    expect(series.dividends).toEqual([{ date: '2026-08-11', amount: 1 }]);
+  });
+
+  it('reports the first date it can fetch, not the listing date', async () => {
+    // The interface defines firstTradeDate as the first date the PROVIDER has
+    // data for. Polygon's own list_date for AAPL is 1980-12-12, and putting
+    // that here would tell the engine 45 years of history exists behind a
+    // plan that will never serve it.
+    mountFullHistory();
+    const series = await new PolygonProvider().getFullHistory('AAPL');
+    expect(series.meta.firstTradeDate).toBe('2026-08-10');
+    expect(series.meta.lastTradeDate).toBe('2026-08-12');
+  });
+
+  it('slices a range out of one cached full history', async () => {
+    mountFullHistory();
+    const provider = new PolygonProvider();
+    await provider.getHistoricalPrices('AAPL', { start: '2026-08-01', end: '2026-08-31' });
+    const before = calls.length;
+
+    const narrow = await provider.getHistoricalPrices('AAPL', {
+      start: '2026-08-11',
+      end: '2026-08-11',
+    });
+    expect(narrow.bars).toHaveLength(1);
+    // Widening or narrowing a range must not cost another four requests.
+    expect(calls).toHaveLength(before);
+  });
+
+  it('treats an empty 200 as an unknown symbol, not an empty history', async () => {
+    // Verified live: ZZZQFAKE returns HTTP 200, status "OK", resultsCount 0
+    // and no `results` key at all. An empty body is the only signal there is.
+    route(/\/v2\/aggs\//, () =>
+      json({ ticker: 'ZZZQFAKE', queryCount: 0, resultsCount: 0, status: 'OK' }),
+    );
+    await expect(
+      new PolygonProvider().getHistoricalPrices('ZZZQFAKE', {
+        start: '2026-08-01',
+        end: '2026-08-31',
+      }),
+    ).rejects.toThrow(UnknownSymbolError);
+  });
+
+  it('fails rather than reporting a security paid no dividends', async () => {
+    // Bars without corporate actions would understate total return by exactly
+    // the whole dividend history, and nothing on screen would say so.
+    route(/\/v2\/aggs\//, () => json({ status: 'OK', results: [agg('2026-08-10', 100)] }));
+    route(/\/stocks\/v1\/dividends/, () => json({ error: 'too many' }, 429));
+    route(/\/stocks\/v1\/splits/, () => json({ status: 'OK', results: [] }));
+    route(/\/v3\/reference\/tickers\//, () => json({ status: 'OK', results: {} }));
+
+    await expect(
+      new PolygonProvider().getHistoricalPrices('AAPL', {
+        start: '2026-08-01',
+        end: '2026-08-31',
+      }),
+    ).rejects.toThrow(PolygonRateLimitError);
+  });
+
+  it('derives the trading calendar from observed bars', async () => {
+    mountFullHistory();
+    const days = await new PolygonProvider().getTradingCalendar(
+      { start: '2026-08-01', end: '2026-08-31' },
+      ['AAPL'],
+    );
+    expect(days).toEqual(['2026-08-10', '2026-08-11', '2026-08-12']);
+  });
+
+  it('declares itself non-synthetic and names the plan in its description', () => {
+    const provider = new PolygonProvider();
+    expect(provider.id).toBe('polygon');
+    expect(provider.synthetic).toBe(false);
+    expect(provider.description).toMatch(/end-of-day/);
+    expect(provider.description).toMatch(/Personal use only/);
+  });
+});
+
+describe('search', () => {
+  it('maps reference rows to results with their asset class', async () => {
+    route(/\/v3\/reference\/tickers\?/, () =>
+      json({
+        status: 'OK',
+        results: [
+          { ticker: 'AAPL', name: 'Apple Inc.', market: 'stocks', type: 'CS',
+            primary_exchange: 'XNAS', currency_name: 'usd', active: true },
+          { ticker: 'AAPX', name: 'T-Rex 2X Long Apple Daily Target ETF', market: 'stocks',
+            type: 'ETF', primary_exchange: 'BATS', currency_name: 'usd', active: true },
+        ],
+      }),
+    );
+    const results = await searchTickers('app', 5);
+    expect(results.map((r) => r.ticker)).toEqual(['AAPL', 'AAPX']);
+    expect(results[0].assetClass).toBe('equity');
+    expect(results[1].assetClass).toBe('etf');
+    expect(results[0].currency).toBe('USD');
+  });
+
+  it('returns nothing for an empty query without a request', async () => {
+    expect(await searchTickers('   ')).toEqual([]);
+    expect(calls).toHaveLength(0);
+  });
+});
+

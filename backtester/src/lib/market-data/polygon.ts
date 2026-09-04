@@ -1,5 +1,6 @@
 import { MarketDataError, UnknownSymbolError, type MarketDataProvider } from './provider';
 import type {
+  AssetClass,
   CorporateActions,
   DateRange,
   DividendEvent,
@@ -296,10 +297,22 @@ export interface TickerHit {
   name: string;
   market?: string;
   type?: string;
+  /** Stated by the reference endpoint; undefined means unknown, not USD. */
+  currency?: string;
+  exchange?: string;
+  /** Derived from `type` and `market`; `other` when unrecognised. */
+  assetClass?: AssetClass;
 }
 
 interface TickersResponse {
-  results?: Array<{ ticker: string; name?: string; market?: string; type?: string }>;
+  results?: Array<{
+    ticker: string;
+    name?: string;
+    market?: string;
+    type?: string;
+    currency_name?: string;
+    primary_exchange?: string;
+  }>;
 }
 
 export async function searchTickers(query: string, limit = 12): Promise<TickerHit[]> {
@@ -315,11 +328,23 @@ export async function searchTickers(query: string, limit = 12): Promise<TickerHi
     name: r.name ?? r.ticker,
     market: r.market,
     type: r.type,
+    // Undefined means unknown, never USD: asserting a default would let a
+    // CAD-denominated listing be summed with USD ones as though they matched.
+    currency: r.currency_name?.toUpperCase(),
+    exchange: r.primary_exchange,
+    assetClass: __testing.toAssetClass(r.type, r.market),
   }));
 }
 
 interface TickerDetailResponse {
-  results?: { ticker: string; name?: string; market?: string; type?: string };
+  results?: {
+    ticker: string;
+    name?: string;
+    market?: string;
+    type?: string;
+    currency_name?: string;
+    primary_exchange?: string;
+  };
 }
 
 export async function fetchTickerDetail(ticker: string): Promise<TickerHit | null> {
@@ -333,6 +358,9 @@ export async function fetchTickerDetail(ticker: string): Promise<TickerHit | nul
       name: body.results.name ?? body.results.ticker,
       market: body.results.market,
       type: body.results.type,
+      currency: body.results.currency_name?.toUpperCase(),
+      exchange: body.results.primary_exchange,
+      assetClass: __testing.toAssetClass(body.results.type, body.results.market),
     };
   } catch {
     // A missing profile must not take the price chart down with it.
@@ -363,20 +391,26 @@ export interface PolygonSplit {
   split_to?: number;
 }
 
+/** Ascending by ex-date; the endpoint returns newest first. */
 export async function fetchDividends(ticker: string, limit = 40): Promise<PolygonDividend[]> {
   const body = await get<{ results?: PolygonDividend[] }>('/stocks/v1/dividends', {
     ticker,
     limit: String(limit),
   });
-  return body.results ?? [];
+  return [...(body.results ?? [])].sort((a, b) =>
+    (a.ex_dividend_date ?? '') < (b.ex_dividend_date ?? '') ? -1 : 1,
+  );
 }
 
+/** Ascending by execution date; the endpoint does not promise an order. */
 export async function fetchSplits(ticker: string, limit = 20): Promise<PolygonSplit[]> {
   const body = await get<{ results?: PolygonSplit[] }>('/stocks/v1/splits', {
     ticker,
     limit: String(limit),
   });
-  return body.results ?? [];
+  return [...(body.results ?? [])].sort((a, b) =>
+    (a.execution_date ?? '') < (b.execution_date ?? '') ? -1 : 1,
+  );
 }
 
 export interface PolygonTickerEvent {
@@ -429,11 +463,49 @@ function toDividendEvents(
     .sort((a, b) => (a.date < b.date ? -1 : a.date > b.date ? 1 : 0));
 }
 
+/**
+ * Maps a vendor instrument type onto the application's asset class.
+ *
+ * Anything unrecognised becomes `other`, never `equity`. The engine branches
+ * on this, and labelling a warrant or a unit as common stock is a wrong answer
+ * dressed as a confident one.
+ */
+function toAssetClass(type: string | undefined, market: string | undefined): AssetClass {
+  const t = (type ?? '').toUpperCase();
+  const m = (market ?? '').toLowerCase();
+  if (m === 'crypto') return 'crypto';
+  if (m === 'fx') return 'other';
+  if (t === 'ETF' || t === 'ETN' || t === 'ETV') return 'etf';
+  // CS is common stock; ADRC an American depositary receipt, which the engine
+  // treats the same way.
+  if (t === 'CS' || t === 'ADRC' || t === 'ADRP') return 'equity';
+  if (t === 'INDEX') return 'index';
+  return 'other';
+}
+
+/** Vendor split rows as engine events, ascending, dropping what cannot be read. */
+function toSplitEvents(rows: PolygonSplit[]): SplitEvent[] {
+  return rows
+    .flatMap((r) => {
+      const date = r.execution_date;
+      const numerator = r.split_to;
+      const denominator = r.split_from;
+      // A ratio that cannot be read is dropped rather than guessed at: a wrong
+      // split silently rescales every price before it.
+      if (!date || !numerator || !denominator) return [];
+      if (!(numerator > 0) || !(denominator > 0)) return [];
+      return [{ date, numerator, denominator }];
+    })
+    .sort((a, b) => (a.date < b.date ? -1 : a.date > b.date ? 1 : 0));
+}
+
 /** Internals the tests pin, exported deliberately rather than by accident. */
 export const __testing = {
   daysApart,
   TRUNCATION_TOLERANCE_DAYS,
   toDividendEvents,
+  toAssetClass,
+  toSplitEvents,
 };
 
 /* ------------------------------------------------------------------ */
@@ -461,13 +533,56 @@ export class PolygonProvider implements MarketDataProvider {
   readonly label = 'Polygon';
   readonly synthetic = false;
   readonly description =
-    'OPRA-adjacent US equities, crypto and option contracts. The free plan is end-of-day, about ' +
-    'two years deep, and roughly five requests a minute.';
+    'US equities, crypto and option contracts. The free plan is end-of-day, about two years ' +
+    'deep, and roughly five requests a minute. Personal use only — redistribution needs a ' +
+    'business plan.';
+
+  /**
+   * The widest window this plan serves, fetched once per symbol and sliced.
+   *
+   * At five requests a minute, re-fetching because someone moved a chart from
+   * one year to two is the difference between a page that works and one that
+   * rate-limits. The plan serves about two years regardless, so asking for all
+   * of it costs exactly what asking for part of it costs.
+   */
+  private full = new Map<string, { at: number; series: PriceSeries }>();
+
+  private static readonly FULL_TTL_MS = 10 * 60 * 1000;
+
+  async getFullHistory(symbol: string): Promise<PriceSeries> {
+    const ticker = normalisePolygonTicker(symbol);
+    const hit = this.full.get(ticker);
+    if (hit && Date.now() - hit.at < PolygonProvider.FULL_TTL_MS) return hit.series;
+
+    const to = new Date().toISOString().slice(0, 10);
+    const from = new Date(Date.now() - 800 * 86_400_000).toISOString().slice(0, 10);
+    const series = await this.fetchSeries(ticker, { start: from, end: to });
+    this.full.set(ticker, { at: Date.now(), series });
+    return series;
+  }
 
   async getHistoricalPrices(symbol: string, range: DateRange): Promise<PriceSeries> {
     const ticker = normalisePolygonTicker(symbol);
+    const full = await this.getFullHistory(ticker);
+    const bars = full.bars.filter((b) => b.date >= range.start && b.date <= range.end);
+    if (!bars.length) throw new UnknownSymbolError(symbol);
+    return {
+      ...full,
+      bars,
+      dividends: full.dividends.filter((d) => d.date >= range.start && d.date <= range.end),
+      splits: full.splits.filter((s) => s.date >= range.start && s.date <= range.end),
+      meta: {
+        ...full.meta,
+        firstTradeDate: bars[0].date,
+        lastTradeDate: bars[bars.length - 1].date,
+      },
+    };
+  }
+
+  /** One uncached fetch. `getFullHistory` is the only caller. */
+  private async fetchSeries(ticker: string, range: DateRange): Promise<PriceSeries> {
     const { bars: raw, coverage } = await fetchAggregates(ticker, 'day', range.start, range.end);
-    if (!raw.length) throw new UnknownSymbolError(symbol);
+    if (!raw.length) throw new UnknownSymbolError(ticker);
 
     const bars: PriceBar[] = raw
       .filter((b) => typeof b.t === 'number')
@@ -486,40 +601,40 @@ export class PolygonProvider implements MarketDataProvider {
       }))
       .filter((b) => b.close > 0);
 
-    if (!bars.length) throw new UnknownSymbolError(symbol);
+    if (!bars.length) throw new UnknownSymbolError(ticker);
 
-    const [dividends, splits] = await Promise.all([
-      this.getDividends(ticker, range).catch(() => [] as DividendEvent[]),
-      fetchSplits(ticker)
-        .then((rows) =>
-          rows
-            .filter((r) => r.execution_date && r.split_from && r.split_to)
-            .map((r) => ({
-              date: r.execution_date as string,
-              // Polygon states from/to; the engine keeps both, so a 4-for-1
-              // stays 4/1 rather than being flattened to a float.
-              numerator: r.split_to as number,
-              denominator: r.split_from as number,
-            }))
-            .filter(
-              (s) =>
-                s.date >= range.start &&
-                s.date <= range.end &&
-                s.numerator > 0 &&
-                s.denominator > 0,
-            ),
-        )
-        .catch(() => [] as SplitEvent[]),
+    /*
+     * Corporate actions are NOT optional, and a failure here must not be
+     * swallowed.
+     *
+     * Returning bars with an empty dividend list says "this security paid
+     * nothing", which understates total return by the entire dividend history
+     * and puts nothing on screen to say so. "We could not find out" and "there
+     * were none" are different answers, and only one of them is safe to guess.
+     */
+    const [dividends, splitRows] = await Promise.all([
+      this.getDividends(ticker, range),
+      fetchSplits(ticker),
     ]);
+    const splits = __testing
+      .toSplitEvents(splitRows)
+      .filter((s) => s.date >= range.start && s.date <= range.end);
+
+    const detail = await fetchTickerDetail(ticker).catch(() => null);
 
     return {
       meta: {
         symbol: ticker,
-        name: ticker,
-        assetClass: ticker.startsWith('X:') ? 'crypto' : ticker.startsWith('O:') ? 'other' : 'equity',
-        // Polygon's aggregate response states no currency, so this stays
-        // undefined rather than asserting USD for a listing it never described.
-        currency: undefined,
+        name: detail?.name ?? ticker,
+        assetClass: __testing.toAssetClass(detail?.type, detail?.market),
+        currency: detail?.currency,
+        exchange: detail?.exchange,
+        /*
+         * The first date this PROVIDER has data for, not the listing date.
+         * Polygon reports AAPL's list_date as 1980-12-12, and repeating that
+         * here would tell the engine that forty-five years of history sits
+         * behind a plan that serves two.
+         */
         firstTradeDate: bars[0].date,
         lastTradeDate: bars[bars.length - 1].date,
       },
@@ -560,9 +675,9 @@ export class PolygonProvider implements MarketDataProvider {
     return hits.map((h) => ({
       symbol: h.ticker,
       name: h.name,
-      assetClass: h.ticker.startsWith('X:') ? 'crypto' : 'equity',
-      currency: undefined,
-      exchange: undefined,
+      assetClass: h.assetClass ?? 'other',
+      currency: h.currency,
+      exchange: h.exchange,
     }));
   }
 }
