@@ -10,6 +10,7 @@ import {
   LayoutDashboard,
   LineChart,
   Grid3x3,
+  Scale,
   Settings,
   Sigma,
   Sparkles,
@@ -153,6 +154,13 @@ export const NAV_GROUPS: NavGroup[] = [
         icon: Sparkles,
         short: 'Studies',
         hint: 'Factors, scenarios, rebalancing',
+      },
+      {
+        href: '/optimise',
+        label: 'Sharpe lab',
+        icon: Scale,
+        short: 'Sharpe',
+        hint: 'Weight a portfolio, and see what survives out of sample',
       },
       {
         href: '/lattice',
