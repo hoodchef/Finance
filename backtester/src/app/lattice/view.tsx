@@ -1,7 +1,7 @@
 'use client';
 
 import * as React from 'react';
-import { Pause, Play, RotateCcw } from 'lucide-react';
+import { Pause, Play, RotateCcw, Search } from 'lucide-react';
 import { PageBody, PageHeader } from '@/components/layout/app-shell';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent } from '@/components/ui/card';
@@ -18,6 +18,15 @@ import {
   runLattice,
 } from '@/lib/lattice/distribution';
 import { useWorkspace } from '@/store/workspace';
+import { useActiveTicker, useTickerStore } from '@/store/ticker';
+import {
+  alignSeries,
+  correlationMatrix,
+  InsufficientHistoryError,
+  periodsPerYear,
+  realizedVolatility,
+  type DatedClose,
+} from '@/lib/lattice/realized';
 
 /**
  * The distribution lab.
@@ -45,6 +54,31 @@ const TRIALS = 6000;
 export function LatticeView() {
   const positions = useWorkspace((s) => s.draft.positions);
 
+  const [ticker, setTicker] = React.useState('');
+  const [query, setQuery] = React.useState('');
+  const [hits, setHits] = React.useState<Array<{ ticker: string; name: string }>>([]);
+  const [openHits, setOpenHits] = React.useState(false);
+  const [measured, setMeasured] = React.useState<{
+    symbol: string;
+    name: string | null;
+    spot: number;
+    volatility: number;
+    observations: number;
+    from: string;
+    to: string;
+    perYear: number;
+  } | null>(null);
+  const [measureNote, setMeasureNote] = React.useState<string | null>(null);
+  const [busy, setBusy] = React.useState(false);
+  const [corr, setCorr] = React.useState<{
+    symbols: string[];
+    matrix: number[][];
+    dates: number;
+    from: string;
+    to: string;
+  } | null>(null);
+  const [corrNote, setCorrNote] = React.useState<string | null>(null);
+
   const [spot, setSpot] = React.useState(100);
   const [vol, setVol] = React.useState(0.25);
   const [rate, setRate] = React.useState(0.04);
@@ -52,6 +86,104 @@ export function LatticeView() {
   const [seed, setSeed] = React.useState(42);
   const [running, setRunning] = React.useState(true);
   const [dropped, setDropped] = React.useState(0);
+
+  /* ---------------- Measurement ---------------- */
+
+  const activeFocus = useActiveTicker();
+  const publishTicker = useTickerStore((s) => s.setTicker);
+  const adopted = React.useRef(false);
+
+  /** Fetches daily closes for one symbol over roughly two years. */
+  const closesFor = React.useCallback(async (symbol: string): Promise<DatedClose[]> => {
+    const to = new Date().toISOString().slice(0, 10);
+    const from = new Date(Date.now() - 730 * 86_400_000).toISOString().slice(0, 10);
+    const res = await fetch('/api/chart', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ ticker: symbol, timespan: 'day', from, to }),
+    });
+    const body = await res.json();
+    if (!res.ok) throw new Error(body.error ?? `Could not load ${symbol}.`);
+    return (body.bars ?? []).map((b: { date: string; close: number }) => ({
+      date: b.date,
+      close: b.close,
+    }));
+  }, []);
+
+  /**
+   * Measures the spot and volatility a security actually had.
+   *
+   * The volatility is the standard deviation of log returns annualised by the
+   * observed frequency, not a number typed into a box. It is what makes the
+   * lattice a statement about this security rather than an illustration.
+   */
+  const measure = React.useCallback(
+    async (symbol: string) => {
+      const up = symbol.trim().toUpperCase();
+      if (!up) return;
+      setBusy(true);
+      setMeasureNote(null);
+      try {
+        const closes = await closesFor(up);
+        const v = realizedVolatility(closes);
+        const last = closes[closes.length - 1];
+        setMeasured({
+          symbol: up,
+          name: null,
+          spot: last.close,
+          volatility: v,
+          observations: closes.length,
+          from: closes[0].date,
+          to: last.date,
+          perYear: periodsPerYear(closes),
+        });
+        setSpot(Number(last.close.toFixed(2)));
+        setVol(v);
+        setTicker(up);
+        publishTicker(up);
+      } catch (e) {
+        setMeasured(null);
+        setMeasureNote(
+          e instanceof InsufficientHistoryError
+            ? e.message
+            : e instanceof Error
+              ? e.message
+              : `Could not measure ${up}.`,
+        );
+      } finally {
+        setBusy(false);
+      }
+    },
+    [closesFor, publishTicker],
+  );
+
+  React.useEffect(() => {
+    if (adopted.current || !activeFocus?.symbol) return;
+    adopted.current = true;
+    void measure(activeFocus.symbol);
+  }, [activeFocus, measure]);
+
+  /* Autocomplete, debounced so a fast typist does not spend the rate limit. */
+  React.useEffect(() => {
+    if (query.trim().length < 1) {
+      setHits([]);
+      return;
+    }
+    const t = window.setTimeout(async () => {
+      try {
+        const res = await fetch('/api/chart/search', {
+          method: 'POST',
+          headers: { 'content-type': 'application/json' },
+          body: JSON.stringify({ query: query.trim() }),
+        });
+        const body = await res.json();
+        setHits(Array.isArray(body.results) ? body.results.slice(0, 8) : []);
+      } catch {
+        setHits([]);
+      }
+    }, 220);
+    return () => window.clearTimeout(t);
+  }, [query]);
 
   /* ---------------- Computation, all pure ---------------- */
 
@@ -111,20 +243,60 @@ export function LatticeView() {
     [positions],
   );
 
+  /**
+   * Measures the correlations, on the dates every holding actually traded.
+   *
+   * Capped at five symbols because the data plan allows about five requests a
+   * minute; asking for more turns a page load into a rate limit. The cap is
+   * stated on screen rather than silently truncating the portfolio.
+   */
+  const measureCorrelations = React.useCallback(async () => {
+    if (symbols.length < 2) return;
+    setBusy(true);
+    setCorrNote(null);
+    try {
+      const wanted = symbols.slice(0, 5);
+      const series: Record<string, DatedClose[]> = {};
+      for (const sym of wanted) {
+        series[sym] = await closesFor(sym);
+      }
+      const aligned = alignSeries(series);
+      setCorr({
+        symbols: aligned.symbols,
+        matrix: correlationMatrix(aligned),
+        dates: aligned.dates.length,
+        from: aligned.dates[0],
+        to: aligned.dates[aligned.dates.length - 1],
+      });
+      if (symbols.length > wanted.length) {
+        setCorrNote(
+          `Measured the first ${wanted.length} of ${symbols.length} holdings — the data plan ` +
+            'allows about five requests a minute.',
+        );
+      }
+    } catch (e) {
+      setCorr(null);
+      setCorrNote(
+        e instanceof InsufficientHistoryError
+          ? e.message
+          : e instanceof Error
+            ? e.message
+            : 'Correlations could not be measured.',
+      );
+    } finally {
+      setBusy(false);
+    }
+  }, [symbols, closesFor]);
+
   const graph = React.useMemo(() => {
-    if (symbols.length < 2) return null;
-    // A deterministic stand-in structure, seeded off the symbols themselves so
-    // it is stable per portfolio. Explicitly not measured.
-    const n = symbols.length;
-    const corr = Array.from({ length: n }, (_, i) =>
-      Array.from({ length: n }, (_, j) => {
-        if (i === j) return 1;
-        const h = (symbols[i].charCodeAt(0) * 31 + symbols[j].charCodeAt(0) * 17) % 100;
-        return Math.round(((h / 100) * 1.4 - 0.4) * 100) / 100;
-      }),
-    );
-    return layoutRelationshipGraph({ symbols, correlation: corr, threshold: 0.3, seed: 9 });
-  }, [symbols]);
+    if (!corr || corr.symbols.length < 2) return null;
+    return layoutRelationshipGraph({
+      symbols: corr.symbols,
+      correlation: corr.matrix,
+      threshold: 0.3,
+      seed: 9,
+    });
+  }, [corr]);
 
   /* Animate the pile filling, so the convergence is watched rather than shown. */
   React.useEffect(() => {
@@ -193,6 +365,68 @@ export function LatticeView() {
           </CardContent>
         </Card>
 
+        {/* Search */}
+        <Card>
+          <CardContent className="space-y-3 p-4">
+            <div className="relative max-w-xl">
+              <Search className="pointer-events-none absolute left-2.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-muted-foreground" />
+              <Input
+                value={query}
+                onChange={(e) => { setQuery(e.target.value); setOpenHits(true); }}
+                onFocus={() => setOpenHits(true)}
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter' && query.trim()) {
+                    void measure(query.trim());
+                    setQuery('');
+                    setOpenHits(false);
+                  }
+                  if (e.key === 'Escape') setOpenHits(false);
+                }}
+                placeholder="Measure a security — AAPL, MSFT, KO…"
+                className="pl-8 text-xs"
+                aria-label="Search a security to measure"
+              />
+              {openHits && hits.length > 0 && (
+                <div className="absolute z-20 mt-1 w-full overflow-hidden rounded-md border border-border bg-popover shadow-lg">
+                  {hits.map((h) => (
+                    <button
+                      key={h.ticker}
+                      type="button"
+                      onClick={() => { void measure(h.ticker); setQuery(''); setOpenHits(false); }}
+                      className="flex w-full items-baseline gap-2 px-2.5 py-1.5 text-left hover:bg-accent"
+                    >
+                      <span className="numeric text-xs font-medium">{h.ticker}</span>
+                      <span className="truncate text-2xs text-muted-foreground">{h.name}</span>
+                    </button>
+                  ))}
+                </div>
+              )}
+            </div>
+
+            {measured ? (
+              <p className="text-xs leading-relaxed text-muted-foreground">
+                <span className="font-medium text-foreground">{measured.symbol}</span> measured
+                from <span className="numeric">{measured.observations}</span> closes,{' '}
+                <span className="numeric">{measured.from}</span> to{' '}
+                <span className="numeric">{measured.to}</span>. Realised volatility{' '}
+                <span className="numeric font-medium text-foreground">
+                  {formatPercent(measured.volatility, 1)}
+                </span>{' '}
+                — the standard deviation of daily log returns, annualised by the observed
+                frequency, not a number typed into a box.
+              </p>
+            ) : (
+              <p className="text-xs leading-relaxed text-muted-foreground">
+                {measureNote ??
+                  'Search a security to drive the lattice from its own measured volatility, or set the inputs by hand below.'}
+              </p>
+            )}
+            {measured && measureNote && (
+              <p className="text-xs leading-relaxed text-negative">{measureNote}</p>
+            )}
+          </CardContent>
+        </Card>
+
         {/* Controls */}
         <Card>
           <CardContent className="flex flex-wrap items-end gap-4 p-4">
@@ -203,8 +437,9 @@ export function LatticeView() {
               onChange={(v) => setRate(v / 100)} />
             <Num label="Horizon (years)" value={years} step={1} onChange={(v) => setYears(Math.max(1, v))} />
             <p className="ml-auto max-w-md text-xs leading-relaxed text-muted-foreground">
-              Every figure on this page is computed from these four inputs. None of it is a
-              market quote or a record of trades.
+              These drive every figure below. Searching a security replaces the spot and
+              volatility with its measured ones; edit them here to ask a what-if instead. The
+              distributions are model output, never a quote or a record of trades.
             </p>
           </CardContent>
         </Card>
@@ -249,19 +484,31 @@ export function LatticeView() {
               <>
                 <RelationshipGraphView graph={graph} />
                 <p className="mt-2 rounded-md border border-border bg-muted/40 p-2.5 text-xs leading-relaxed text-muted-foreground">
-                  <span className="font-medium text-foreground">Illustrative structure.</span> The
-                  layout is real — correlated holdings pull together, so a cluster is a cluster of
-                  things that move as one — but these correlations are a deterministic stand-in,
-                  not measured from prices. Measuring them needs overlapping history for every
-                  pair, which the backtest engine does and this page does not. A plausible
-                  correlation nobody measured is not a fact.
+                  <span className="font-medium text-foreground">Measured.</span> Pearson
+                  correlation of daily log returns over the{' '}
+                  <span className="numeric">{corr?.dates ?? 0}</span> days every holding actually
+                  traded, {corr?.from} to {corr?.to}. Only shared dates are used: filling a gap
+                  where one symbol did not trade inserts a zero return that drags correlations
+                  toward zero, and makes a portfolio look better diversified than it is.
                 </p>
               </>
             ) : (
-              <p className="text-xs leading-relaxed text-muted-foreground">
-                Add at least two holdings to a portfolio to see how they relate. With one there is
-                nothing to relate.
-              </p>
+              <div className="space-y-2">
+                <p className="text-xs leading-relaxed text-muted-foreground">
+                  {symbols.length < 2
+                    ? 'Add at least two holdings to a portfolio to see how they relate. With one there is nothing to relate.'
+                    : `Measures the correlation between ${symbols.length} holdings from their own price history.`}
+                </p>
+                {symbols.length >= 2 && (
+                  <Button size="sm" variant="outline" onClick={() => void measureCorrelations()}
+                    disabled={busy}>
+                    {busy ? 'Measuring…' : 'Measure correlations'}
+                  </Button>
+                )}
+                {corrNote && (
+                  <p className="text-xs leading-relaxed text-muted-foreground">{corrNote}</p>
+                )}
+              </div>
             )}
           </CardContent>
         </Card>
