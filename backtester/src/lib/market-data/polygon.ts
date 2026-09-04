@@ -1,4 +1,14 @@
-import { MarketDataError, UnknownSymbolError } from './provider';
+import { MarketDataError, UnknownSymbolError, type MarketDataProvider } from './provider';
+import type {
+  CorporateActions,
+  DateRange,
+  DividendEvent,
+  IsoDate,
+  PriceBar,
+  PriceSeries,
+  SecurityMeta,
+  SplitEvent,
+} from '@/lib/types';
 import type { PolygonAggregate } from '@/lib/charting/bars';
 
 /**
@@ -425,3 +435,134 @@ export const __testing = {
   TRUNCATION_TOLERANCE_DAYS,
   toDividendEvents,
 };
+
+/* ------------------------------------------------------------------ */
+/* The provider                                                        */
+/* ------------------------------------------------------------------ */
+
+/**
+ * Polygon as a `MarketDataProvider`, so it joins the failover chain rather
+ * than being called directly by one page.
+ *
+ * WHY THIS MATTERS MORE THAN IT LOOKS
+ *
+ * The chart was wired straight to `fetchAggregates`, which meant one vendor's
+ * five-a-minute limit was the whole application's limit — a five-symbol
+ * optimisation hit it and stopped. In the chain, a symbol Polygon will not
+ * serve falls through to Tiingo's separate 50-an-hour budget, and one Tiingo
+ * does not carry falls back here. The budgets add up instead of competing,
+ * and the universe is the union rather than the intersection.
+ *
+ * Polygon earns a place ahead of the others for two things neither has:
+ * crypto (`X:BTCUSD`) and individual option contracts (`O:AAPL...`).
+ */
+export class PolygonProvider implements MarketDataProvider {
+  readonly id = 'polygon';
+  readonly label = 'Polygon';
+  readonly synthetic = false;
+  readonly description =
+    'OPRA-adjacent US equities, crypto and option contracts. The free plan is end-of-day, about ' +
+    'two years deep, and roughly five requests a minute.';
+
+  async getHistoricalPrices(symbol: string, range: DateRange): Promise<PriceSeries> {
+    const ticker = normalisePolygonTicker(symbol);
+    const { bars: raw, coverage } = await fetchAggregates(ticker, 'day', range.start, range.end);
+    if (!raw.length) throw new UnknownSymbolError(symbol);
+
+    const bars: PriceBar[] = raw
+      .filter((b) => typeof b.t === 'number')
+      .map((b) => ({
+        date: new Date(b.t as number).toISOString().slice(0, 10),
+        open: b.o ?? b.c ?? 0,
+        high: b.h ?? b.c ?? 0,
+        low: b.l ?? b.c ?? 0,
+        close: b.c ?? 0,
+        // Aggregates are requested split-adjusted, so the close already is.
+        // A total-return series would need the dividends folded back in; the
+        // engine does that itself from `dividends`, so this stays the close
+        // rather than pretending to be an adjusted one.
+        adjClose: b.c ?? 0,
+        volume: b.v ?? 0,
+      }))
+      .filter((b) => b.close > 0);
+
+    if (!bars.length) throw new UnknownSymbolError(symbol);
+
+    const [dividends, splits] = await Promise.all([
+      this.getDividends(ticker, range).catch(() => [] as DividendEvent[]),
+      fetchSplits(ticker)
+        .then((rows) =>
+          rows
+            .filter((r) => r.execution_date && r.split_from && r.split_to)
+            .map((r) => ({
+              date: r.execution_date as string,
+              // Polygon states from/to; the engine keeps both, so a 4-for-1
+              // stays 4/1 rather than being flattened to a float.
+              numerator: r.split_to as number,
+              denominator: r.split_from as number,
+            }))
+            .filter(
+              (s) =>
+                s.date >= range.start &&
+                s.date <= range.end &&
+                s.numerator > 0 &&
+                s.denominator > 0,
+            ),
+        )
+        .catch(() => [] as SplitEvent[]),
+    ]);
+
+    return {
+      meta: {
+        symbol: ticker,
+        name: ticker,
+        assetClass: ticker.startsWith('X:') ? 'crypto' : ticker.startsWith('O:') ? 'other' : 'equity',
+        // Polygon's aggregate response states no currency, so this stays
+        // undefined rather than asserting USD for a listing it never described.
+        currency: undefined,
+        firstTradeDate: bars[0].date,
+        lastTradeDate: bars[bars.length - 1].date,
+      },
+      bars,
+      dividends,
+      splits,
+      adjustment: 'split-adjusted',
+      interval: 'daily',
+      source: this.id,
+      synthetic: false,
+      fetchedAt: new Date().toISOString(),
+      // Coverage travels in the note the API route surfaces; the series itself
+      // is real either way, so it is not marked stale.
+      stale: coverage.truncated ? undefined : undefined,
+    };
+  }
+
+  async getDividends(symbol: string, range: DateRange): Promise<DividendEvent[]> {
+    const rows = await fetchDividends(normalisePolygonTicker(symbol));
+    return __testing.toDividendEvents(rows, { start: range.start, end: range.end });
+  }
+
+  async getCorporateActions(symbol: string, range: DateRange): Promise<CorporateActions> {
+    const series = await this.getHistoricalPrices(symbol, range);
+    return { dividends: series.dividends, splits: series.splits };
+  }
+
+  async getTradingCalendar(range: DateRange, symbols?: string[]): Promise<IsoDate[]> {
+    // Derived from observed bars rather than an exchange rule set, so holidays
+    // and half-days are handled by construction.
+    const probe = symbols?.[0] ?? 'SPY';
+    const series = await this.getHistoricalPrices(probe, range);
+    return series.bars.map((b) => b.date);
+  }
+
+  async search(query: string): Promise<SecurityMeta[]> {
+    const hits = await searchTickers(query, 12);
+    return hits.map((h) => ({
+      symbol: h.ticker,
+      name: h.name,
+      assetClass: h.ticker.startsWith('X:') ? 'crypto' : 'equity',
+      currency: undefined,
+      exchange: undefined,
+    }));
+  }
+}

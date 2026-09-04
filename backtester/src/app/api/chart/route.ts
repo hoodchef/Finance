@@ -1,4 +1,6 @@
 import { NextResponse } from 'next/server';
+import { getProvider } from '@/lib/market-data';
+import type { PriceBar } from '@/lib/types';
 import {
   fetchAggregates,
   fetchDividends,
@@ -55,10 +57,59 @@ export async function POST(request: Request) {
       ? body.from
       : new Date(Date.now() - 365 * 86_400_000).toISOString().slice(0, 10);
 
-    const { bars: aggregates, coverage } = await fetchAggregates(ticker, timespan, from, to, multiplier);
-    // normaliseAggregates reports what it discarded; a bar Polygon sent that
-    // could not be parsed is a gap worth surfacing, not a silent omission.
-    const { bars, dropped } = normaliseAggregates(aggregates, timespan);
+    /*
+     * Polygon first, then the rest of the chain.
+     *
+     * Polygon is asked first because it is the only source here that serves
+     * crypto and option contracts, and because its aggregates carry the
+     * coverage information the truncation check needs. But its free plan
+     * allows about five requests a minute, and wiring the chart to it alone
+     * made that one ceiling the whole application's — a five-symbol
+     * optimisation stopped on it.
+     *
+     * Falling through to `getProvider()` puts Tiingo's separate hourly budget
+     * behind it, so the allowances add up rather than compete, and a symbol
+     * Polygon will not serve is still answered.
+     */
+    let bars: Awaited<ReturnType<typeof normaliseAggregates>>['bars'] = [];
+    let dropped = 0;
+    let coverage: Awaited<ReturnType<typeof fetchAggregates>>['coverage'] | null = null;
+    let servedBy = 'polygon';
+    let fallbackNote: string | null = null;
+
+    try {
+      const primary = await fetchAggregates(ticker, timespan, from, to, multiplier);
+      coverage = primary.coverage;
+      // normaliseAggregates reports what it discarded; a bar the vendor sent
+      // that could not be parsed is a gap worth surfacing, not a silent
+      // omission.
+      const normalised = normaliseAggregates(primary.bars, timespan);
+      bars = normalised.bars;
+      dropped = normalised.dropped;
+    } catch (primaryError) {
+      const series = await getProvider()
+        .getHistoricalPrices(ticker, { start: from, end: to })
+        .catch(() => null);
+      if (!series || series.bars.length === 0) throw primaryError;
+
+      bars = series.bars.map((b: PriceBar) => ({
+        date: b.date,
+        open: b.open,
+        high: b.high,
+        low: b.low,
+        close: b.close,
+        volume: b.volume,
+        // The other providers report neither, and null is the honest value —
+        // zero would render as a real VWAP of nothing.
+        vwap: null,
+        trades: null,
+        timestamp: Date.parse(`${b.date}T00:00:00Z`),
+      }));
+      servedBy = series.source;
+      fallbackNote =
+        `Polygon could not serve this request, so it came from ${series.source}. ` +
+        (primaryError instanceof Error ? primaryError.message : '');
+    }
 
     // Everything below is additive. A failure here must not lose the prices.
     const [detail, dividends, splits, tickerEvents] = await Promise.all([

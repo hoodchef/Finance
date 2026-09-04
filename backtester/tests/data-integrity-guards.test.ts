@@ -537,9 +537,27 @@ describe('weekly data cannot masquerade as daily', () => {
   });
 
   it('places Alpha Vantage last in the failover chain', () => {
+    /*
+     * Last means a symbol another provider can serve DAILY never reaches it —
+     * Alpha Vantage serves Canadian listings weekly, and reaching it early
+     * would silently coarsen an otherwise-daily backtest.
+     *
+     * Asserted as position rather than adjacency. The original regex pinned
+     * `tiingo, yahoo, ...tail` literally and broke the moment Polygon was
+     * inserted between them, even though Alpha Vantage was still last: it was
+     * testing the arrangement instead of the invariant.
+     */
     const body = read('lib/market-data/index.ts');
-    // Last means a symbol another provider can serve daily never reaches it.
-    expect(body).toMatch(/providers\.tiingo,\s*providers\.yahoo,\s*\.\.\.tail/);
+    for (const construction of body.match(/new FailoverProvider\(\[[^\]]*\]/g) ?? []) {
+      if (!construction.includes('tail')) continue;
+      const tailAt = construction.indexOf('...tail');
+      for (const other of ['providers.tiingo', 'providers.yahoo', '...polygon']) {
+        const at = construction.indexOf(other);
+        if (at >= 0) expect(at, `${other} must precede Alpha Vantage`).toBeLessThan(tailAt);
+      }
+    }
+    // And it is only ever reached through `tail`, never named directly.
+    expect(body).toMatch(/tail[\s\S]*?providers\.alphavantage/);
   });
 
   it('does not treat a 200-OK refusal as data', () => {
