@@ -9,6 +9,7 @@ import {
   Hourglass,
   LayoutDashboard,
   LineChart,
+  Grid3x3,
   Settings,
   Sigma,
   Sparkles,
@@ -152,6 +153,13 @@ export const NAV_GROUPS: NavGroup[] = [
         icon: Sparkles,
         short: 'Studies',
         hint: 'Factors, scenarios, rebalancing',
+      },
+      {
+        href: '/lattice',
+        label: 'Distribution lab',
+        icon: Grid3x3,
+        short: 'Lab',
+        hint: 'The lattice, the ridge and how holdings relate',
       },
       {
         href: '/simulator',
