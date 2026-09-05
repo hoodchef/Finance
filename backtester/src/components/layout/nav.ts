@@ -10,6 +10,7 @@ import {
   LayoutDashboard,
   LineChart,
   Grid3x3,
+  Gauge,
   Scale,
   Settings,
   Sigma,
@@ -140,6 +141,13 @@ export const NAV_GROUPS: NavGroup[] = [
         icon: LineChart,
         short: 'Test',
         hint: 'What it would have done',
+      },
+      {
+        href: '/performance',
+        label: 'Performance metrics',
+        icon: Gauge,
+        short: 'Stats',
+        hint: 'Every ratio, and the convention each one follows',
       },
       {
         href: '/assets',
