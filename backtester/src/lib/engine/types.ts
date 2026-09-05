@@ -181,4 +181,11 @@ export interface EngineInput {
   strategy?: import('./strategy').TargetWeightStrategy;
   /** Benchmarks skip portfolio-level fees; see `runBacktest`. */
   applyPortfolioFees?: boolean;
+  /**
+   * Trading days between the data a strategy may read and the close it trades
+   * at. Defaults to 1, which is the only honest setting on daily bars — see the
+   * note on `signalLagDays` in `engine.ts`. Present so a test can set it to 0
+   * and measure the look-ahead that default removes.
+   */
+  signalLagDays?: number;
 }

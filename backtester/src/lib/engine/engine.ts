@@ -113,6 +113,32 @@ export function runEngine(input: EngineInput): EngineResult {
     tradeable.map((a) => [a.symbol, normWeight.get(a.symbol) ?? 0]),
   );
 
+  /**
+   * How far back the strategy's information set is, in trading days.
+   * =============================================================================
+   * One, and it must not be zero by default.
+   *
+   * A strategy is asked for weights on day `i` and the resulting trade fills at
+   * day `i`'s CLOSE. If it is also allowed to read day `i`'s close, it is
+   * deciding on a price it could not have known until the instant the market
+   * closed, and then trading at that very price. `trendFilter` did exactly
+   * that: it took today's close, put it in the moving average, compared the two
+   * and traded — a rule no one can follow, and one that flatters every
+   * signal-driven result.
+   *
+   * With a lag of one, the signal is formed from information through the
+   * previous close and the fill happens at today's, which is the weakest honest
+   * assumption available on daily bars.
+   *
+   * Fixed weights and any purely calendar-based rule are unaffected: they read
+   * no prices, so shifting the context does not change what they return.
+   *
+   * Configurable only so a test can set it to zero and demonstrate the bias it
+   * removes. Nothing in the product surfaces a control for it, because "let me
+   * see the future" is not a setting.
+   */
+  const signalLagDays = Math.max(0, Math.round(input.signalLagDays ?? 1));
+
   /** Cached per day: a strategy is asked once, however many times it is read. */
   const weightCache = new Map<number, Map<string, number>>();
 
@@ -124,7 +150,10 @@ export function runEngine(input: EngineInput): EngineResult {
     if (strategy === fixedWeights) {
       resolved = declaredForStrategy;
     } else {
-      const ctx = makeContext(i, calendar, tradeable, declaredForStrategy, totalValueAt(i));
+      // Clamped at zero: on the first day there is no prior close, and every
+      // signal strategy already refuses to act on a partial window.
+      const asOf = Math.max(0, i - signalLagDays);
+      const ctx = makeContext(asOf, calendar, tradeable, declaredForStrategy, totalValueAt(asOf));
       const raw = strategy.targetWeights(ctx);
       // A strategy may not allocate more than the whole portfolio; anything
       // over 1 is scaled back rather than silently levering the account.
@@ -670,25 +699,54 @@ export function runEngine(input: EngineInput): EngineResult {
     });
   }
 
+  /*
+   * Realised gains, bucketed by symbol once.
+   *
+   * The per-symbol summary below used to run `realisedGains.filter(...)` inside
+   * a `tradeable.map(...)`, which is O(holdings x gains), and then two further
+   * passes over each bucket to split short from long term. A 40-holding
+   * portfolio rebalanced monthly for 25 years produces enough sales for that to
+   * matter, and none of the three passes were needed: one walk over the gains
+   * fills every bucket and every subtotal.
+   *
+   * `longTerm` is deliberately compared against `true`/`false` rather than
+   * treated as a boolean. It is optional, and an unknown holding period must
+   * fall into NEITHER subtotal rather than silently counting as short term,
+   * which is what a truthiness test would do.
+   */
+  interface GainBucket {
+    total: number;
+    shortTerm: number;
+    longTerm: number;
+  }
+  const gainsBySymbol = new Map<string, GainBucket>();
+  for (const g of realisedGains) {
+    let bucket = gainsBySymbol.get(g.symbol);
+    if (!bucket) {
+      bucket = { total: 0, shortTerm: 0, longTerm: 0 };
+      gainsBySymbol.set(g.symbol, bucket);
+    }
+    bucket.total += g.gain;
+    if (g.longTerm === false) bucket.shortTerm += g.gain;
+    else if (g.longTerm === true) bucket.longTerm += g.gain;
+  }
+  const NO_GAINS: GainBucket = { total: 0, shortTerm: 0, longTerm: 0 };
+
   const ledgers: SymbolLedger[] = tradeable.map((a) => {
     const lot = lots.get(a.symbol)!;
     const endingShares = shares.get(a.symbol) ?? 0;
     const endingValue = positionValue(a, last);
 
     const book = books.get(a.symbol)!;
-    const symbolGains = realisedGains.filter((g) => g.symbol === a.symbol);
+    const symbolGains = gainsBySymbol.get(a.symbol) ?? NO_GAINS;
     lotSummaries.push({
       symbol: a.symbol,
       openShares: book.shares,
       openCostBasis: book.costBasis,
       unrealisedGain: endingValue - book.costBasis,
-      realisedGain: symbolGains.reduce((x, g) => x + g.gain, 0),
-      realisedShortTerm: symbolGains
-        .filter((g) => g.longTerm === false)
-        .reduce((x, g) => x + g.gain, 0),
-      realisedLongTerm: symbolGains
-        .filter((g) => g.longTerm === true)
-        .reduce((x, g) => x + g.gain, 0),
+      realisedGain: symbolGains.total,
+      realisedShortTerm: symbolGains.shortTerm,
+      realisedLongTerm: symbolGains.longTerm,
       dividends: lot.dividends,
     });
     // Cash out (ending value + sale proceeds + dividends) minus cash in
