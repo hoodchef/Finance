@@ -4,10 +4,13 @@
 
 @layer base {
   :root {
-    --font-sans: ui-sans-serif, -apple-system, BlinkMacSystemFont, 'Segoe UI',
-      Inter, Roboto, 'Helvetica Neue', Arial, sans-serif;
-    --font-mono: ui-monospace, 'SF Mono', SFMono-Regular, 'JetBrains Mono',
-      'Roboto Mono', Menlo, Consolas, monospace;
+    /* The loaded faces first, then the system stack. The fallbacks are not
+       decoration: `font-display: swap` paints them for the first few frames,
+       and they are what remains if the font files ever fail to serve. */
+    --font-sans: 'Inter Variable', ui-sans-serif, -apple-system,
+      BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
+    --font-mono: 'JetBrains Mono Variable', ui-monospace, 'SF Mono',
+      SFMono-Regular, 'Roboto Mono', Menlo, Consolas, monospace;
 
     --background: 0 0% 100%;
     --foreground: 222 32% 12%;
@@ -335,7 +338,24 @@
   body {
     @apply bg-background text-foreground antialiased;
     font-family: var(--font-sans);
-    font-feature-settings: 'cv02', 'cv03', 'cv04', 'cv11';
+    /*
+     * Inter carries an optical-size axis, so the face is redrawn for the size
+     * it is set at rather than one drawing being scaled to all of them: more
+     * open at an 11px label, tighter at a 24px headline figure. `auto` is the
+     * browser default, but this product spans 11px to 24px on one screen and
+     * the behaviour is load-bearing enough to say out loud.
+     *
+     * There is deliberately NO `font-feature-settings` here. It used to read
+     * `'cv02' 'cv03' 'cv04' 'cv11'` — Inter's character variants for an open
+     * 4, 6 and 9 — and it never did anything, first because no Inter was
+     * loaded at all, and then because neither the Google nor the fontsource
+     * build ships those variants. Verified rather than assumed: rendered at
+     * 70px, `0123469aIl` is pixel-identical with and without them, and `pnum`
+     * against `tnum` does not move a digit either, because Inter's figures are
+     * already uniform width. Numbers align here by construction, not by
+     * feature flag.
+     */
+    font-optical-sizing: auto;
   }
 
   /* Every figure in the product is tabular so columns of numbers line up. */
