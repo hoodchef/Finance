@@ -1,5 +1,13 @@
 import type { AssetClass, SecurityMeta } from '@/lib/types';
 import generated from './universe.generated.json';
+import { normaliseSymbol } from './symbol';
+
+/**
+ * Re-exported, not redefined. Normalisation lives in `./symbol` because the
+ * browser needs it and must not pay 775 KB for it; everything else here needs
+ * the full directory and stays on the server.
+ */
+export { normaliseSymbol };
 
 /**
  * The tradable-symbol universe.
@@ -62,28 +70,6 @@ export function isKnownSymbol(symbol: string): boolean {
   return bySymbol.has(normaliseSymbol(symbol));
 }
 
-/**
- * Reconciles the two ways a share class gets written.
- *
- * Exchange directories use a dot (BRK.B); price APIs generally use a hyphen
- * (BRK-B). A suffixed foreign listing (XEQT.TO) also uses a dot, but there the
- * separator is an exchange qualifier and rewriting it would break the ticker.
- *
- * A regex cannot reliably tell those apart — `.B` is a share class and `.V` is
- * the TSX Venture exchange, and they look identical. So the decision is made
- * from data rather than a guess: the hyphenated form wins only if it actually
- * exists in the listing directory.
- */
-export function normaliseSymbol(input: string): string {
-  const s = input.trim().toUpperCase();
-  if (!s || s.startsWith('^')) return s;
-  if (!s.includes('.')) return s;
-
-  const hyphenated = s.replace(/\./g, '-');
-  // Checked against the directory, so BRK.B resolves and XEQT.TO does not.
-  if (bySymbol.has(hyphenated)) return hyphenated;
-  return s;
-}
 
 /**
  * Ranked prefix-then-substring search.

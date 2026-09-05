@@ -14,3 +14,7 @@ out
 # here for convenience. Committing it would add a broken submodule pointer
 # rather than its files.
 canpath/
+
+# Scratch draft of the pull-request description. It is written fresh for each
+# PR and would only go stale in the repository.
+PR_BODY.md

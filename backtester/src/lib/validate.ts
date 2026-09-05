@@ -18,7 +18,10 @@ import type {
 } from '@/lib/types';
 import { defaultConfig, MAX_HISTORY_START } from '@/lib/defaults';
 import { isValidIso, todayIso } from '@/lib/market-data/dates';
-import { normaliseSymbol } from '@/lib/market-data/universe';
+// From `market-data/symbol`, NOT `market-data/universe`: this module is
+// imported by a client component, and the universe carries a 775 KB listing
+// directory that would ride into the browser with it.
+import { normaliseSymbol } from '@/lib/market-data/symbol';
 
 /**
  * Request validation for the API routes.

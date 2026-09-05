@@ -77,6 +77,29 @@ export interface AssetAnalysis {
   lastDate: IsoDate;
 }
 
+/**
+ * The undownsampled daily observations, for statistics rather than charts.
+ *
+ * `BacktestResult.series` is thinned to roughly 1,600 points, which is right
+ * for a chart and wrong for anything that treats a point as one trading day.
+ * A ten-year run yields about 1,277 of them, so each spans two days — and any
+ * statistic derived from them silently doubles. That failure is quiet and
+ * plausible: the expected annual return comes back at twice the CAGR sitting
+ * two rows above it, and nothing about the number looks wrong.
+ *
+ * Day zero is included, with an index of 1, so period returns derived from
+ * this are aligned to `dates` with one fewer element.
+ */
+export interface DailyObservations {
+  dates: IsoDate[];
+  /** Growth of 1.00, time-weighted. */
+  index: number[];
+  /** Share of the portfolio not held in cash, per day. */
+  investedShare: number[];
+  /** The primary benchmark on the identical calendar, or null. */
+  benchmarkIndex: number[] | null;
+}
+
 export interface AllocationPoint {
   date: IsoDate;
   weights: Record<string, number>;
@@ -126,6 +149,8 @@ export interface BacktestResult {
   realMetrics: PerformanceMetrics | null;
   inflation: InflationInfo | null;
   series: SeriesPoint[];
+  /** Full-resolution daily data. Populated only when asked for; see the type. */
+  dailyObservations: DailyObservations | null;
   allocation: AllocationPoint[];
   ledgers: SymbolLedger[];
   /** Per-symbol cost basis and the realised/unrealised split. */
@@ -155,6 +180,11 @@ export interface RunBacktestOptions {
   provider?: MarketDataProvider;
   /** Skip per-asset standalone runs when only headline numbers are needed. */
   includeAssetAnalysis?: boolean;
+  /**
+   * Attach the undownsampled daily series. Off by default because it roughly
+   * doubles the response for callers that only draw a chart.
+   */
+  includeDailyObservations?: boolean;
   maxTransactions?: number;
 }
 
@@ -271,10 +301,28 @@ function toAllocation(result: EngineResult, max = 400): AllocationPoint[] {
   return out;
 }
 
-/** A config for a passive single-asset comparison run: no fees, no trading. */
+/**
+ * A config for a passive single-asset comparison run: no fees, no trading.
+ *
+ * When contributions are dropped, the run must still be funded. A portfolio
+ * built entirely from contributions has `initialInvestment: 0`, and stripping
+ * the contributions as well leaves the comparison run holding nothing at all:
+ * its index sits at 1.00 for the entire window, and the relative statistics
+ * computed against it come back as a beta of exactly 0.00, an R² of 0.00% and
+ * an alpha equal to the portfolio's own return. Every one of those is a
+ * confident, wrong number that looks like a measurement.
+ *
+ * The stake is nominal because it cannot matter: these runs exist only to
+ * produce a daily time-weighted return series, and TWR is scale-invariant. For
+ * an already-funded config this changes nothing.
+ */
+const NOMINAL_STAKE = 10_000;
+
 function passiveConfig(config: BacktestConfig, keepContributions: boolean): BacktestConfig {
+  const funded = keepContributions || config.initialInvestment > 0;
   return {
     ...config,
+    initialInvestment: funded ? config.initialInvestment : NOMINAL_STAKE,
     rebalance: 'never',
     contributionFrequency: keepContributions ? config.contributionFrequency : 'none',
     contributionAmount: keepContributions ? config.contributionAmount : 0,
@@ -310,6 +358,7 @@ export async function runBacktest({
   config,
   provider = getProvider(),
   includeAssetAnalysis = true,
+  includeDailyObservations = false,
   maxTransactions = 3000,
 }: RunBacktestOptions): Promise<BacktestResult> {
   const positions = portfolio.positions.filter(
@@ -413,6 +462,7 @@ export async function runBacktest({
   }
 
   // Relative statistics need the benchmark's daily returns on the same calendar.
+  let benchmarkIndex: number[] | null = null;
   const primary = benchmarkSymbols[0];
   if (primary) {
     const asset = data.assets.find((a) => a.symbol === primary);
@@ -432,6 +482,7 @@ export async function runBacktest({
           cashFlows: cashFlowsFromResult(result),
         });
         metrics.ratios = withRelative.ratios;
+        benchmarkIndex = run.daily.map((d) => d.index);
       }
     }
   }
@@ -547,6 +598,21 @@ export async function runBacktest({
     realMetrics,
     inflation,
     series: portfolioSeries,
+    dailyObservations: includeDailyObservations
+      ? {
+          dates: result.daily.map((d) => d.date),
+          index: result.daily.map((d) => d.index),
+          investedShare: result.daily.map((d) =>
+            d.totalValue > 0 ? Math.min(1, Math.max(0, 1 - d.cash / d.totalValue)) : 0,
+          ),
+          // Only when the benchmark ran the identical calendar — a shorter one
+          // would silently pair each day with the wrong day.
+          benchmarkIndex:
+            benchmarkIndex && benchmarkIndex.length === result.daily.length
+              ? benchmarkIndex
+              : null,
+        }
+      : null,
     allocation: toAllocation(result),
     ledgers: result.ledgers,
     lots: result.lots,

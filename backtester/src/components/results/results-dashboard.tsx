@@ -1,42 +1,80 @@
 'use client';
 
 import * as React from 'react';
+import dynamic from 'next/dynamic';
 import type { BacktestResult } from '@/lib/backtest';
 import { fromBacktest } from '@/lib/analytics/adapters';
 import { formatDate } from '@/lib/format';
 import { Badge } from '@/components/ui/badge';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { GrowthChart } from '@/components/charts/growth-chart';
-import { DrawdownChart } from '@/components/charts/drawdown-chart';
-import { AnnualReturnsChart, AnnualSummary } from '@/components/charts/annual-returns';
-import { MonthlyHeatmap } from '@/components/charts/monthly-heatmap';
-import { RollingChart, RollingTable } from '@/components/charts/rolling-chart';
-import {
-  AllocationDonut,
-  AllocationDrift,
-  ContributionChart,
-} from '@/components/charts/allocation-charts';
 import { CapitalBreakdown, KpiGrid } from './kpi-grid';
-import {
-  BenchmarkTable,
-  DrawdownTable,
-  HoldingsTable,
-  RiskTable,
-} from './tables';
+import { BenchmarkTable } from './tables';
 import {
   DataFreshness,
   ExportMenu,
-  InsightsPanel,
   MethodologyPanel,
   SyntheticDataBanner,
   WarningsPanel,
 } from './panels';
 import { AssetDetailDialog } from './asset-detail';
-import { TaxLotsPanel } from './tax-lots';
 import { RealSummaryStrip, RealTermsPanel } from './real-terms';
-import { CorrelationPanel } from './correlation-matrix';
-import { PeriodReturnsTable } from './period-returns';
-import { StrategySweep } from './strategy-sweep';
+
+/**
+ * Six of the seven tabs are loaded on demand.
+ * =============================================================================
+ * Radix already declines to RENDER an inactive tab, but the code for all seven
+ * still shipped in the page bundle, which made `/backtest` 240 kB against
+ * 21 kB for the next largest route in the app — eleven times the size, to show
+ * one tab. Everything behind a tab nobody clicked was paid for on first load.
+ *
+ * Only the Performance tab is bundled eagerly, because it is the one that is
+ * open when results arrive. The rest are separate chunks fetched on first
+ * click, which is a request the reader has just made and is expecting.
+ *
+ * `ssr: false` because the dashboard only ever exists after a backtest has run
+ * in the browser; there is no server render of it to hydrate against.
+ */
+const tabLoader = () => <TabSkeleton />;
+
+const RiskTab = dynamic(() => import('./tabs/risk-tab').then((m) => m.RiskTab), {
+  ssr: false,
+  loading: tabLoader,
+});
+const ReturnsTab = dynamic(() => import('./tabs/returns-tab').then((m) => m.ReturnsTab), {
+  ssr: false,
+  loading: tabLoader,
+});
+const AllocationTab = dynamic(
+  () => import('./tabs/allocation-tab').then((m) => m.AllocationTab),
+  { ssr: false, loading: tabLoader },
+);
+const HoldingsTab = dynamic(() => import('./tabs/holdings-tab').then((m) => m.HoldingsTab), {
+  ssr: false,
+  loading: tabLoader,
+});
+const GainsTab = dynamic(() => import('./tabs/gains-tab').then((m) => m.GainsTab), {
+  ssr: false,
+  loading: tabLoader,
+});
+const InsightsTab = dynamic(() => import('./tabs/insights-tab').then((m) => m.InsightsTab), {
+  ssr: false,
+  loading: tabLoader,
+});
+
+/**
+ * Holds the tab's height while its chunk arrives, so the page does not jump.
+ * Deliberately says nothing: a spinner captioned "Loading" on a 150ms fetch
+ * reads as an error state more often than as progress.
+ */
+function TabSkeleton() {
+  return (
+    <div className="space-y-3" aria-hidden>
+      <div className="h-64 animate-pulse rounded-lg border border-border bg-muted/40" />
+      <div className="h-24 animate-pulse rounded-lg border border-border bg-muted/40" />
+    </div>
+  );
+}
 
 /**
  * The results page. Everything visible here is computed by the engine from the
@@ -97,43 +135,27 @@ export function ResultsDashboard({ result }: { result: BacktestResult }) {
         </TabsContent>
 
         <TabsContent value="risk" className="space-y-5">
-          <DrawdownChart subjects={subjects} />
-          <DrawdownTable result={result} />
-          <CorrelationPanel result={result} />
-          <RiskTable result={result} />
+          <RiskTab result={result} subjects={subjects} />
         </TabsContent>
 
         <TabsContent value="returns" className="space-y-5">
-          <AnnualReturnsChart result={result} />
-          <AnnualSummary result={result} />
-          <MonthlyHeatmap monthly={result.metrics.monthly} annual={result.metrics.annual} />
-          <RollingChart result={result} />
-          <RollingTable result={result} />
-          <PeriodReturnsTable result={result} />
+          <ReturnsTab result={result} />
         </TabsContent>
 
         <TabsContent value="allocation" className="space-y-5">
-          <div className="grid gap-5 lg:grid-cols-2">
-            <AllocationDonut result={result} />
-            <ContributionChart result={result} />
-          </div>
-          <AllocationDrift result={result} />
+          <AllocationTab result={result} />
         </TabsContent>
 
         <TabsContent value="holdings" className="space-y-5">
-          <HoldingsTable result={result} onSelect={setSelectedAsset} />
+          <HoldingsTab result={result} onSelect={setSelectedAsset} />
         </TabsContent>
 
         <TabsContent value="gains" className="space-y-5">
-          <TaxLotsPanel result={result} />
+          <GainsTab result={result} />
         </TabsContent>
 
         <TabsContent value="insights" className="space-y-5">
-          <InsightsPanel result={result} />
-          {/* Beside the insights rather than in its own tab: it answers "was
-              the rule worth it", which is the same question the rest of this
-              tab asks about the portfolio. */}
-          <StrategySweep />
+          <InsightsTab result={result} />
         </TabsContent>
       </Tabs>
 

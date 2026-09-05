@@ -1,16 +1,18 @@
 import type { MarketDataProvider } from './provider';
 import { YahooFinanceProvider } from './yahoo';
 import { TiingoProvider } from './tiingo';
+import { PolygonProvider } from './polygon';
 import { AlphaVantageProvider } from './alphavantage';
 import { DemoDataProvider } from './demo';
 import { FailoverProvider } from './failover';
 
-export type ProviderId = 'yahoo' | 'tiingo' | 'alphavantage' | 'demo';
+export type ProviderId = 'yahoo' | 'tiingo' | 'alphavantage' | 'polygon' | 'demo';
 
 const providers: Record<ProviderId, MarketDataProvider> = {
   yahoo: new YahooFinanceProvider(),
   tiingo: new TiingoProvider(),
   alphavantage: new AlphaVantageProvider(),
+  polygon: new PolygonProvider(),
   demo: new DemoDataProvider(),
 };
 
@@ -41,6 +43,7 @@ export function getProvider(): MarketDataProvider {
   if (configured === 'tiingo') return providers.tiingo;
   if (configured === 'yahoo') return providers.yahoo;
   if (configured === 'alphavantage') return providers.alphavantage;
+  if (configured === 'polygon') return providers.polygon;
 
   // Unset or unrecognised: chain the real providers so a coverage gap in one
   // is filled by the next. Never synthetic — a typo in an environment variable
@@ -53,8 +56,39 @@ export function getProvider(): MarketDataProvider {
     ? [providers.alphavantage]
     : [];
 
+  /*
+   * Polygon sits between Tiingo and Yahoo.
+   *
+   * Two reasons, and the first is about budget rather than coverage. Each
+   * vendor rate-limits separately — Tiingo about fifty an hour, Polygon about
+   * five a minute — so chaining them adds the allowances together instead of
+   * making one vendor's ceiling the whole application's. A five-symbol
+   * optimisation that exhausted Polygon alone now finishes on Tiingo.
+   *
+   * The second is reach: Polygon is the only one here that serves crypto
+   * (`X:BTCUSD`) and individual option contracts, so a symbol the others
+   * cannot resolve falls through to something that can. The universe becomes
+   * the union rather than the intersection.
+   *
+   * It goes behind Tiingo because Tiingo's quota is larger per hour and its
+   * corporate actions are explicit, and ahead of Yahoo because Yahoo is an
+   * undocumented endpoint that rate-limits by IP without notice.
+   */
+  const polygon: MarketDataProvider[] = process.env.POLYGON_API_KEY?.trim()
+    ? [providers.polygon]
+    : [];
+
   if (process.env.TIINGO_API_KEY?.trim()) {
-    chained ??= new FailoverProvider([providers.tiingo, providers.yahoo, ...tail]);
+    chained ??= new FailoverProvider([
+      providers.tiingo,
+      ...polygon,
+      providers.yahoo,
+      ...tail,
+    ]);
+    return chained;
+  }
+  if (polygon.length) {
+    chained ??= new FailoverProvider([...polygon, providers.yahoo, ...tail]);
     return chained;
   }
   if (tail.length) {

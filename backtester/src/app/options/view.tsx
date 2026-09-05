@@ -46,6 +46,7 @@ import {
 } from '@/lib/options/analytics';
 import { applyPreset, emptyPosition, newLeg, PRESETS, type PresetId } from '@/lib/options/presets';
 import { perDay, perPoint } from '@/lib/options/pricing';
+import { useActiveTicker, useTickerStore } from '@/store/ticker';
 import { OptimiserPanel } from '@/components/options/optimiser-panel';
 import { HedgePanel } from '@/components/options/hedge-panel';
 
@@ -131,6 +132,35 @@ export function OptionsView() {
   const [input, setInput] = React.useState('AAPL');
   const [data, setData] = React.useState<ChainResponse | null>(null);
   const [loading, setLoading] = React.useState(false);
+
+  /*
+   * Ticker context: adopt once on mount, publish on change. Two pages syncing
+   * both ways is how a symbol starts flickering between them.
+   */
+  const activeFocus = useActiveTicker();
+  const publishTicker = useTickerStore((s) => s.setTicker);
+
+  /*
+   * Adopted on the FIRST non-null focus, not on mount.
+   *
+   * `useActiveTicker` gates on hydration and returns null during the first
+   * client paint, so a mount-only effect runs before the persisted symbol
+   * exists and adopts nothing — which is exactly what happened: arriving here
+   * with KO in focus still showed an empty page. The ref makes it once-only
+   * without tying it to a render that is too early to be useful.
+   */
+  const adopted = React.useRef(false);
+
+  React.useEffect(() => {
+    if (adopted.current || !activeFocus?.symbol) return;
+    adopted.current = true;
+    setInput(activeFocus.symbol);
+    void load(activeFocus.symbol);
+  }, [activeFocus]);
+
+  React.useEffect(() => {
+    if (ticker) publishTicker(ticker);
+  }, [ticker, publishTicker]);
 
   const [position, setPosition] = React.useState<OptionPosition>(() => emptyPosition('AAPL'));
   const [spot, setSpot] = React.useState(200);
@@ -579,15 +609,15 @@ export function OptionsView() {
                         type="monotone"
                         dataKey="atExpiry"
                         name="At expiry"
-                        stroke="hsl(var(--series-0))"
-                        fill="hsl(var(--series-0))"
+                        stroke="var(--series-0)"
+                        fill="var(--series-0)"
                         fillOpacity={0.12}
                       />
                       <Line
                         type="monotone"
                         dataKey="theoretical"
                         name="Today (theoretical)"
-                        stroke="hsl(var(--series-2))"
+                        stroke="var(--series-2)"
                         dot={false}
                         strokeWidth={1.5}
                       />
@@ -698,7 +728,7 @@ export function OptionsView() {
                           <Tooltip contentStyle={{ fontSize: 11 }} />
                           <ReferenceLine y={0} stroke="hsl(var(--foreground))" strokeOpacity={0.3} />
                           <ReferenceLine x={liveSpot} stroke="hsl(var(--foreground))" strokeDasharray="3 3" strokeOpacity={0.4} />
-                          <Line type="monotone" dataKey={g} stroke={`hsl(var(--series-${i}))`} dot={false} strokeWidth={1.5} />
+                          <Line type="monotone" dataKey={g} stroke={`var(--series-${i})`} dot={false} strokeWidth={1.5} />
                         </ComposedChart>
                       </ResponsiveContainer>
                     </div>
@@ -878,8 +908,8 @@ export function OptionsView() {
                           <YAxis {...AXIS_PROPS} width={48} />
                           <Tooltip contentStyle={{ fontSize: 11 }}
                             labelFormatter={(v: number) => `P/L from ${formatCurrency(v)}`} />
-                          <Area type="step" dataKey="count" stroke="hsl(var(--series-4))"
-                            fill="hsl(var(--series-4))" fillOpacity={0.25} />
+                          <Area type="step" dataKey="count" stroke="var(--series-4)"
+                            fill="var(--series-4)" fillOpacity={0.25} />
                         </ComposedChart>
                       </ResponsiveContainer>
                     </div>

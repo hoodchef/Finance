@@ -99,6 +99,24 @@ const out = {
 const dest = path.join('src', 'lib', 'market-data', 'universe.generated.json');
 await fs.writeFile(dest, JSON.stringify(out), 'utf8');
 
+/**
+ * The share-class index, written beside the full directory.
+ *
+ * `normaliseSymbol` has to decide whether the dot in BRK.B is a share class or
+ * an exchange suffix, and it decides by asking whether the hyphenated form is
+ * really listed. That is its ONLY data dependency, and it is the one piece the
+ * browser needs — so it ships separately.
+ *
+ * The full directory is 775 KB and server-side. Bundling it to answer a
+ * question that 155 symbols can answer put 654 KB into the backtest page, which
+ * was three quarters of that route's JavaScript.
+ */
+const hyphenated = rows.map((r) => r.s).filter((s) => s.includes('-')).sort();
+const shareDest = path.join('src', 'lib', 'market-data', 'share-classes.generated.json');
+await fs.writeFile(shareDest, JSON.stringify(hyphenated), 'utf8');
+
 const bytes = (await fs.stat(dest)).size;
+const shareBytes = (await fs.stat(shareDest)).size;
 console.log(`${out.count} symbols (${out.etfCount} ETFs, ${out.count - out.etfCount} equities)`);
 console.log(`→ ${dest}  ${(bytes / 1024).toFixed(0)} KB`);
+console.log(`→ ${shareDest}  ${hyphenated.length} share classes, ${(shareBytes / 1024).toFixed(1)} KB`);

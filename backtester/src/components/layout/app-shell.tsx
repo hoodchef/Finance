@@ -4,6 +4,7 @@ import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 import { MOBILE_NAV } from './nav';
 import { NavBar } from './nav-bar';
+import { TickerBar } from './ticker-bar';
 import { cn } from '@/lib/utils';
 
 function isActive(pathname: string, href: string): boolean {
@@ -13,14 +14,21 @@ function isActive(pathname: string, href: string): boolean {
 /**
  * The application frame.
  *
- * Navigation is a bar across the top rather than a column down the side. The
- * groups and their order are unchanged — the sidebar's reading of the product
- * was right — but a bar shows the four questions and opens the destinations
- * under one on demand, and gives the page back the width the sidebar held.
+ * Navigation is a bar across the top rather than a column down the side. It
+ * states the four subjects the product deals in — you, a security, a portfolio,
+ * your saved work — and opens the destinations under one on demand, which gives
+ * the page back the width the sidebar held.
+ *
+ * Under it sits the ticker bar: which security is in focus, and the views you
+ * can look at it through. It is the other half of the navigation. The top bar
+ * answers "where do I go"; the ticker bar answers "what am I looking at", and
+ * carries that answer with you when you go. It renders only when something is
+ * in focus, so pages that have nothing to do with a single security are not
+ * asked to make room for an empty strip.
  *
  * The mobile bottom bar stays. It carries the five destinations that make up
  * the journey end to end, at thumb size, and no dropdown beats that for the
- * routes people take constantly; the bar's own menu covers the other seven.
+ * routes people take constantly; the bar's own menu covers the other nine.
  */
 export function AppShell({ children }: { children: React.ReactNode }) {
   const pathname = usePathname();
@@ -28,6 +36,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
   return (
     <div className="flex min-h-dvh flex-col">
       <NavBar />
+      <TickerBar />
 
       <main className="min-w-0 flex-1 pb-16 lg:pb-0">{children}</main>
 

@@ -52,4 +52,20 @@ const nextConfig = {
   },
 };
 
-module.exports = nextConfig;
+/**
+ * `npm run analyze` writes a treemap of the client bundle to
+ * `.next/analyze/client.html`.
+ *
+ * Worth having wired up permanently. The backtest route once shipped 240 kB,
+ * of which 654 kB raw — three quarters of the chunk — was the exchange listing
+ * directory, pulled in three levels down an import chain by one function.
+ * Nothing else could see it: types were right, tests passed, lint was clean,
+ * and the route table just said a number that looked plausible beside the
+ * others. Attribution is the only tool that finds that class of problem.
+ */
+const withAnalyzer = require('@next/bundle-analyzer')({
+  enabled: process.env.ANALYZE === 'true',
+  openAnalyzer: false,
+});
+
+module.exports = withAnalyzer(nextConfig);

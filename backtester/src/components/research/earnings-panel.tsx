@@ -123,7 +123,7 @@ function MonthGrid({
             <div
               key={i}
               className={cn(
-                'min-h-[3.1rem] rounded-sm border border-border/40 p-1',
+                'min-h-[2.75rem] rounded-sm border border-border/40 p-1',
                 on.length > 0 && 'bg-muted/50',
                 isToday && 'border-foreground/40',
               )}
@@ -164,7 +164,13 @@ export function EarningsPanel({ ticker }: { ticker: string }) {
   const positions = useWorkspace((s) => s.draft.positions);
   const [data, setData] = React.useState<EarningsResponse | null>(null);
   const [error, setError] = React.useState<string | null>(null);
-  const [loading, setLoading] = React.useState(false);
+  /*
+   * True from the first render when there is a ticker, for the same reason as
+   * the news panel: the effect runs after the first paint, so starting false
+   * painted "No earnings data." for a company whose earnings had not been
+   * asked for yet.
+   */
+  const [loading, setLoading] = React.useState(() => Boolean(ticker));
 
   // The holdings are what make a month view worth looking at; the researched
   // company alone is one date. Stringified so the effect keys on the symbols
@@ -226,7 +232,9 @@ export function EarningsPanel({ ticker }: { ticker: string }) {
           <CardTitle className="text-sm">Earnings</CardTitle>
         </CardHeader>
         <CardContent>
-          <p className="text-xs text-muted-foreground">{error ?? 'No earnings data.'}</p>
+          <p className="text-xs leading-relaxed text-muted-foreground">
+            {error ?? 'Look up a company to see its reporting dates.'}
+          </p>
         </CardContent>
       </Card>
     );
@@ -260,9 +268,18 @@ export function EarningsPanel({ ticker }: { ticker: string }) {
   }
 
   return (
-    <div className="grid gap-3 lg:grid-cols-2">
+    /*
+     * Three-fifths to the calendar, two to the table.
+     *
+     * At an even split the month grids — up to three of them — stacked
+     * vertically and ran well past the bottom of the at-most-twelve-row table
+     * beside them, leaving a long empty gutter down the right of the section.
+     * Wider, the months sit two across and the two columns come out much
+     * closer in height.
+     */
+    <div className="grid gap-3 lg:grid-cols-5">
       {/* Upcoming */}
-      <Card>
+      <Card className="lg:col-span-3">
         <CardHeader className="pb-2">
           <CardTitle className="flex items-center gap-1.5 text-sm">
             <CalendarDays className="h-3.5 w-3.5" />
@@ -270,18 +287,33 @@ export function EarningsPanel({ ticker }: { ticker: string }) {
           </CardTitle>
         </CardHeader>
         <CardContent className="space-y-3">
+          {/* The next reporting date is what this panel is opened for, and it
+              was a sentence in the same 12px as every other sentence on the
+              page. It is the answer, so it is now the largest thing here. */}
           {next ? (
-            <p className="text-xs">
-              <span className="font-medium">{data.company.ticker}</span> reports on{' '}
-              <span className="numeric font-medium">{fmt(next.reportDate)}</span>
-              {next.fiscalDateEnding && (
-                <span className="text-muted-foreground">
-                  , covering the quarter ending{' '}
-                  <span className="numeric">{fmt(next.fiscalDateEnding)}</span>
-                </span>
+            <div>
+              <div className="text-2xs font-medium uppercase tracking-wide text-muted-foreground">
+                {data.company.ticker} next reports
+              </div>
+              <div className="numeric text-lg font-medium">{fmt(next.reportDate)}</div>
+              {(next.fiscalDateEnding || next.timeOfDay) && (
+                <p className="text-xs leading-relaxed text-muted-foreground">
+                  {next.fiscalDateEnding && (
+                    <>
+                      Covering the quarter ending{' '}
+                      <span className="numeric">{fmt(next.fiscalDateEnding)}</span>
+                      {next.timeOfDay ? ', ' : '.'}
+                    </>
+                  )}
+                  {next.timeOfDay && (
+                    <>
+                      {next.fiscalDateEnding ? '' : 'Reporting '}
+                      {next.timeOfDay}.
+                    </>
+                  )}
+                </p>
               )}
-              {next.timeOfDay && <span className="text-muted-foreground"> ({next.timeOfDay})</span>}.
-            </p>
+            </div>
           ) : (
             <p className="text-xs leading-relaxed text-muted-foreground">
               {data.upcomingNote ??
@@ -292,20 +324,30 @@ export function EarningsPanel({ ticker }: { ticker: string }) {
           )}
 
           {data.upcoming.length > 0 && (
-            <div className="space-y-3">
-              {months.map((m) => (
-                <MonthGrid
-                  key={m.toISOString()}
-                  monthStart={m}
-                  events={byDate}
-                  highlight={data.company.ticker}
-                />
-              ))}
+            <div className="border-t border-border pt-3">
+              <div className="grid gap-x-4 gap-y-3 sm:grid-cols-2">
+                {months.map((m) => (
+                  <MonthGrid
+                    key={m.toISOString()}
+                    monthStart={m}
+                    events={byDate}
+                    highlight={data.company.ticker}
+                  />
+                ))}
+              </div>
+              {/* The other chips were unexplained: a month of tickers with no
+                  statement of where they came from. */}
+              <p className="mt-2 text-xs leading-relaxed text-muted-foreground">
+                <span className="rounded-sm bg-[hsl(var(--accent))] px-1 font-semibold text-[hsl(var(--accent-foreground))]">
+                  {data.company.ticker}
+                </span>{' '}
+                is this company; other dates are holdings in your portfolio.
+              </p>
             </div>
           )}
 
           {data.unlisted.length > 0 && (
-            <p className="text-xs leading-relaxed text-muted-foreground">
+            <p className="rounded-md border border-border bg-muted/40 p-2.5 text-xs leading-relaxed text-muted-foreground">
               No date published for {data.unlisted.join(', ')}. Funds and ETFs do not report
               earnings at all, and the vendor&rsquo;s calendar does not cover every operating
               company either — so this means no date was found, not that nothing is scheduled.
@@ -315,7 +357,7 @@ export function EarningsPanel({ ticker }: { ticker: string }) {
       </Card>
 
       {/* Past */}
-      <Card>
+      <Card className="lg:col-span-2">
         <CardHeader className="pb-2">
           <CardTitle className="flex items-center gap-1.5 text-sm">
             <History className="h-3.5 w-3.5" />
@@ -384,7 +426,7 @@ export function EarningsPanel({ ticker }: { ticker: string }) {
         </CardContent>
       </Card>
 
-      <div className="rounded-md border border-border bg-muted/40 p-3 text-xs leading-relaxed text-muted-foreground lg:col-span-2">
+      <div className="rounded-md border border-border bg-muted/40 p-2.5 text-xs leading-relaxed text-muted-foreground lg:col-span-5">
         <p>
           <span className="font-medium text-foreground">Past.</span> {data.provenance.history}{' '}
           {data.provenance.fourthQuarter}

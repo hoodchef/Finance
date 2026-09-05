@@ -87,7 +87,15 @@ function age(iso: string): string {
 export function CompanyNews({ ticker }: { ticker: string }) {
   const [data, setData] = React.useState<NewsResponse | null>(null);
   const [error, setError] = React.useState<string | null>(null);
-  const [loading, setLoading] = React.useState(false);
+  /*
+   * Loading starts true when there is a ticker to load.
+   *
+   * The effect that sets it runs after the first paint, so starting false
+   * rendered one frame of "No news available." before the skeleton — a panel
+   * asserting there is no news for a company whose news had not been requested
+   * yet. The flash is brief and it is still wrong.
+   */
+  const [loading, setLoading] = React.useState(() => Boolean(ticker));
 
   React.useEffect(() => {
     if (!ticker) return;
@@ -141,7 +149,9 @@ export function CompanyNews({ ticker }: { ticker: string }) {
           <CardTitle className="text-sm">Recent news</CardTitle>
         </CardHeader>
         <CardContent>
-          <p className="text-xs text-muted-foreground">{error ?? 'No news available.'}</p>
+          <p className="text-xs leading-relaxed text-muted-foreground">
+            {error ?? 'Look up a company to see its filings and headlines.'}
+          </p>
         </CardContent>
       </Card>
     );
@@ -228,10 +238,13 @@ export function CompanyNews({ ticker }: { ticker: string }) {
                     {f.form}
                   </Badge>
                 </p>
+                {/* Event descriptions are sentences ("Results of operations
+                    and financial condition") and they wrap. 11px is for a
+                    label, not for a line of prose that runs to two lines. */}
                 {f.events.length > 0 && (
                   <p
                     className={cn(
-                      'mt-0.5 text-2xs leading-snug',
+                      'mt-0.5 text-xs leading-snug',
                       f.notable ? 'text-[hsl(var(--negative))]' : 'text-muted-foreground',
                     )}
                   >
@@ -255,7 +268,7 @@ export function CompanyNews({ ticker }: { ticker: string }) {
       </Card>
 
       {/* Provenance, for both sources. */}
-      <div className="rounded-md border border-border bg-muted/40 p-3 text-xs leading-relaxed text-muted-foreground lg:col-span-2">
+      <div className="rounded-md border border-border bg-muted/40 p-2.5 text-xs leading-relaxed text-muted-foreground lg:col-span-2">
         <p>
           <span className="font-medium text-foreground">Filings.</span> {data.provenance.filings}{' '}
           Insider transactions (Forms 3/4/5 and 144), prospectus supplements and investors&rsquo;
