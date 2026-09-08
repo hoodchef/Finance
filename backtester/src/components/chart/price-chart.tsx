@@ -48,6 +48,7 @@ import {
   AreaChart,
   CandlestickChart,
   LineChart,
+  ChevronsRight,
   Maximize2,
   Minus,
   MousePointer2,
@@ -97,9 +98,11 @@ import {
   MOMENTUM_EPSILON,
   clampViewport,
   fitViewport,
+  isAtLatest,
   nearestIndex,
   panByPixels,
   panStep,
+  scrollToLatest,
   stepMomentum,
   velocityFromSamples,
   zoomFactorFromPinch,
@@ -1024,6 +1027,13 @@ export function PriceChart({
         e.preventDefault();
         setViewport(fitViewport(count));
         break;
+      case 'End':
+        // Keeps the zoom and goes to the newest bar — the counterpart to Home,
+        // which throws the zoom away to fit everything.
+        e.preventDefault();
+        stopMomentum();
+        setViewport((vp) => scrollToLatest(vp, count));
+        break;
       default:
         break;
     }
@@ -1088,11 +1098,42 @@ export function PriceChart({
             stopMomentum();
             setViewport(fitViewport(count));
           }}
+          onLatest={() => {
+            stopMomentum();
+            setViewport((vp) => scrollToLatest(vp, count));
+          }}
         />
       )}
 
       <div ref={surfaceRef} className="relative min-h-0 flex-1">
         <canvas ref={canvasRef} className="absolute inset-0" aria-hidden />
+
+        {/*
+          The way back to the newest bar, offered only once you have left it.
+          =====================================================================
+          Zoomed into a few days of five-minute bars, the right-hand edge is a
+          long drag away and the only control that reached it was "reset",
+          which fits the whole series and destroys the zoom on the way. This
+          keeps the zoom and moves the window.
+
+          It appears only when the viewport has actually left the edge, so it
+          is absent for the whole of a normal first look at a chart, and it
+          sits clear of the price axis rather than over the last candles.
+        */}
+        {!isAtLatest(viewport, count) && (
+          <button
+            type="button"
+            onClick={() => {
+              stopMomentum();
+              setViewport((vp) => scrollToLatest(vp, count));
+            }}
+            title="Go to latest bar (End)"
+            className="absolute bottom-3 right-16 z-10 flex items-center gap-1 rounded-full border border-border bg-popover/95 px-2.5 py-1 text-2xs text-muted-foreground shadow-lg backdrop-blur transition-colors hover:border-input hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+          >
+            Latest
+            <ChevronsRight className="h-3 w-3" aria-hidden />
+          </button>
+        )}
 
         {showReadout && readoutBar && (
           <Readout
@@ -1211,6 +1252,7 @@ function ChartToolbar({
   canDelete,
   onDelete,
   onReset,
+  onLatest,
 }: {
   mode: ChartMode;
   onMode: (m: ChartMode) => void;
@@ -1221,6 +1263,7 @@ function ChartToolbar({
   canDelete: boolean;
   onDelete: () => void;
   onReset: () => void;
+  onLatest: () => void;
 }) {
   const modes: Array<{ value: ChartMode; icon: React.ReactNode; label: string }> = [
     { value: 'candlestick', icon: <CandlestickChart />, label: 'Candlesticks' },
@@ -1274,7 +1317,10 @@ function ChartToolbar({
         >
           {priceMode === 'log' ? 'Log' : 'Linear'}
         </Button>
-        <IconToggle active={false} label="Reset zoom" onClick={onReset}>
+        <IconToggle active={false} label="Go to latest bar (End)" onClick={onLatest}>
+          <ChevronsRight />
+        </IconToggle>
+        <IconToggle active={false} label="Fit all bars (Home)" onClick={onReset}>
           <Maximize2 />
         </IconToggle>
         <IconToggle

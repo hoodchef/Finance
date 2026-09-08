@@ -5,7 +5,8 @@
       "name": "canpath",
       "runtimeExecutable": "npm",
       "runtimeArgs": ["--prefix", "backtester", "run", "dev"],
-      "port": 3100
+      "port": 3100,
+      "autoPort": false
     }
   ]
 }

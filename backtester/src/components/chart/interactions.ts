@@ -60,6 +60,38 @@ export function fitViewport(count: number, preferredBars?: number): Viewport {
 }
 
 /**
+ * Snaps the viewport to the most recent bar, KEEPING the current zoom.
+ * =============================================================================
+ * Distinct from `fitViewport`, and the distinction is the whole point. Reset
+ * fits the entire series, so the only way back to the right-hand edge was to
+ * throw the zoom level away and build it again — which on a chart zoomed into
+ * a few days of five-minute bars means losing the thing you were looking at in
+ * order to find where it ended.
+ *
+ * Panning is also asymmetric in a way that makes this worse: history is
+ * bounded and recent data is where the reader keeps returning, so "back to the
+ * end" is a far more common intent than "back to the beginning" and deserves
+ * its own control rather than a long drag.
+ */
+export function scrollToLatest(vp: Viewport, count: number): Viewport {
+  if (count <= 0) return { start: 0, end: 1 };
+  const span = Math.max(vp.end - vp.start, MIN_BARS);
+  return clampViewport({ start: count - span, end: count }, count);
+}
+
+/**
+ * Is the viewport already showing the most recent bar?
+ *
+ * Half a bar of tolerance, so a viewport parked at the edge by a fractional
+ * pan still counts as "at the end" — otherwise the affordance that offers to
+ * take you there flickers on while you are already there.
+ */
+export function isAtLatest(vp: Viewport, count: number): boolean {
+  if (count <= 0) return true;
+  return vp.end >= count - 0.5;
+}
+
+/**
  * Scales the viewport about `anchorIndex`, which stays under the cursor.
  *
  * `factor` multiplies the SPAN: 0.9 zooms in, 1.1 zooms out. Anchoring on the
@@ -261,5 +293,19 @@ export function zoomStep(vp: Viewport, count: number, direction: -1 | 1): Viewpo
   // No anchor: the keyboard zooms about the viewport centre, and passing the
   // midpoint as an anchor would have it treated as a bar index and offset by
   // half a bar. The absent anchor IS the intent.
-  return zoomViewport(vp, count, factor, Number.NaN);
+  const zoomed = zoomViewport(vp, count, factor, Number.NaN);
+
+  /*
+   * Zooming AT the live edge keeps the live edge.
+   *
+   * About the centre, tightening the span walks the right-hand edge backwards,
+   * so zooming into the newest bar quietly slid it off screen and left the
+   * reader panning to find the thing they had just zoomed into. Anchoring the
+   * right edge when it was already showing is what a chart is expected to do,
+   * and it removes the most common way of ending up lost in the first place.
+   *
+   * Only when already at the end. Zooming in the middle of history must still
+   * hold what is in front of you rather than jumping to the present.
+   */
+  return isAtLatest(vp, count) ? scrollToLatest(zoomed, count) : zoomed;
 }

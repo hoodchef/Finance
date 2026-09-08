@@ -13,6 +13,7 @@ import {
 } from '@/components/ui/dropdown-menu';
 import { NAV_GROUPS, type NavGroup, type NavItem } from './nav';
 import { ThemeToggle } from './theme-toggle';
+import { CommandPalette } from './command-palette';
 import { cn } from '@/lib/utils';
 
 /**
@@ -109,7 +110,11 @@ export function NavBar() {
           })}
         </nav>
 
-        <div className="ml-auto flex items-center gap-1">
+        <div className="ml-auto flex items-center gap-2">
+          {/* Where a search box would be, because that is where people look
+              for one. It prints its own shortcut: a keybinding nobody knows
+              about is a feature nobody has. */}
+          <CommandPalette />
           <ThemeToggle />
 
           {/*

@@ -13,7 +13,12 @@ out
 # CanPath is its own repository (github.com/hoodchef/CanPath), checked out
 # here for convenience. Committing it would add a broken submodule pointer
 # rather than its files.
-canpath/
+#
+# The leading slash is load-bearing. Without it git applies the pattern at
+# EVERY depth, so this also excluded backtester/src/lib/canpath/ — the
+# planner's tax, benefits and allocation modules — which meant a fresh clone
+# of this repository could not typecheck or pass its own suite.
+/canpath/
 
 # Scratch draft of the pull-request description. It is written fresh for each
 # PR and would only go stale in the repository.

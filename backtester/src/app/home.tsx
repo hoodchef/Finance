@@ -10,6 +10,7 @@ import { Badge } from '@/components/ui/badge';
 import { EmptyState } from '@/components/ui/empty-state';
 import { AllocationBar } from '@/components/builder/allocation-bar';
 import { SavingsFlow } from '@/components/planner/savings-flow';
+import { Desk } from '@/components/home/desk';
 import { useHydrated } from '@/hooks/use-hydrated';
 import { useWorkspace } from '@/store/workspace';
 import { PRESETS } from '@/lib/presets';
@@ -56,6 +57,13 @@ export function DashboardHome() {
           answer behind a click; this asks three things and answers it.
         */}
         <SavingsFlow />
+
+        {/*
+          State before explanation. `Desk` renders nothing on a first visit,
+          so the journey cards below still carry a new reader; from the second
+          visit on, the saved runs are what the page opens with.
+        */}
+        <Desk />
 
         {/*
           The journey, stated once.

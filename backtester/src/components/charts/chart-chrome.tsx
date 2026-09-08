@@ -192,3 +192,128 @@ export function ChartFrame({
     </section>
   );
 }
+
+/**
+ * A static key for a chart's series.
+ * =============================================================================
+ * `SeriesToggles` is the interactive version, for charts where hiding a series
+ * is useful. Most charts just need to say which colour is which — and until
+ * now several did not say at all. "Cash generation" drew two bar series, one
+ * blue and one green, with nothing on the page naming either: the only way to
+ * learn that green was free cash flow was to hover a bar.
+ */
+export function ChartLegend({
+  series,
+  className,
+}: {
+  series: Array<{ label: string; color: string; dashed?: boolean }>;
+  className?: string;
+}) {
+  return (
+    <ul className={cn('flex flex-wrap items-center gap-x-3.5 gap-y-1', className)}>
+      {series.map((s) => (
+        <li key={s.label} className="flex items-center gap-1.5 text-2xs text-muted-foreground">
+          <span
+            aria-hidden
+            className={cn('h-2 w-2.5 shrink-0 rounded-sm', s.dashed && 'h-0.5 w-3.5 rounded-none')}
+            style={{ backgroundColor: s.color }}
+          />
+          {s.label}
+        </li>
+      ))}
+    </ul>
+  );
+}
+
+/**
+ * Prints each bar's value as text, just past the end of the bar.
+ * =============================================================================
+ * A bar chart encodes magnitude as length, which stops working the moment one
+ * category dwarfs the rest. AST SpaceMobile's 2025 free cash flow is −$1.15bn
+ * against an operating cash flow of −$40m five years earlier; drawn honestly on
+ * one axis, five of the six years collapse into a few pixels above the zero
+ * line and cannot be read at all.
+ *
+ * The fix is NOT to rescale. Clipping the outlier, or forcing a minimum bar
+ * height, would make the chart easier to look at by making it lie about the
+ * thing it exists to show. The axis stays honest and the number is printed
+ * instead, so a bar too small to measure can still be read.
+ *
+ * Labels sit ABOVE a positive bar and BELOW a negative one, so they never sit
+ * on top of the bar they describe.
+ *
+ * When the category is too narrow for the text to fit across it, the label
+ * TURNS rather than disappearing. Twelve years of two series puts the bars at
+ * 19px while "$117B" needs about thirty, and dropping the label there would
+ * quietly withhold the number from exactly the chart that most needs it
+ * printed. Rotated, it reads up the side of its own bar and never collides
+ * with its neighbour.
+ */
+export function barValueLabel(format: (v: number) => string, minWidth = 30) {
+  return function BarValueLabel(props: {
+    x?: number | string;
+    y?: number | string;
+    width?: number | string;
+    value?: number | string;
+  }) {
+    const x = Number(props.x);
+    const y = Number(props.y);
+    const width = Number(props.width);
+    const value = Number(props.value);
+
+    if (!Number.isFinite(value) || !Number.isFinite(x) || !Number.isFinite(y)) return null;
+    if (!Number.isFinite(width)) return null;
+
+    /*
+     * `y` is the bar's FAR end — the one away from the axis — whichever way the
+     * bar points, so the height is not needed and must not be used.
+     *
+     * Recharts reports a bar below zero as `y` at its bottom with a NEGATIVE
+     * height (y=45.4, height=−3.4 for −$23m), not as `y` at the zero line with
+     * a positive one. Adding the two therefore lands back on the zero line, and
+     * every label on a negative series pinned to the axis instead of following
+     * its bar: on AST SpaceMobile the −$300m label sat inside the bar while the
+     * −$23m label sat clear of it, at the same height.
+     */
+    const below = value < 0;
+    const edge = y;
+    const cx = x + width / 2;
+    const text = format(value);
+
+    const common = {
+      fontSize: 10,
+      fill: 'hsl(var(--muted-foreground))',
+      style: { pointerEvents: 'none' as const },
+    };
+
+    // Wide enough to read straight across the bar.
+    if (width >= minWidth) {
+      return (
+        <text x={cx} y={edge + (below ? 11 : -5)} textAnchor="middle" {...common}>
+          {text}
+        </text>
+      );
+    }
+
+    /*
+     * Narrow: turn the label a quarter turn so it runs along the bar.
+     *
+     * Rotating about the bar's own end keeps it anchored there. `start` grows
+     * the text away from the axis for a bar above zero; `end` grows it the
+     * other way for one below, so both read outward from the bar they belong
+     * to rather than back across it.
+     */
+    const anchorY = edge + (below ? 4 : -4);
+    return (
+      <text
+        x={cx}
+        y={anchorY}
+        textAnchor={below ? 'end' : 'start'}
+        transform={`rotate(-90, ${cx}, ${anchorY})`}
+        {...common}
+      >
+        {text}
+      </text>
+    );
+  };
+}

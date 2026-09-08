@@ -4,6 +4,8 @@ import * as React from 'react';
 import {
   Bar,
   BarChart,
+  LabelList,
+  ReferenceLine,
   CartesianGrid,
   ComposedChart,
   Line,
@@ -22,7 +24,13 @@ import { CompanyNews } from '@/components/research/company-news';
 import { EarningsPanel } from '@/components/research/earnings-panel';
 import { Skeleton } from '@/components/ui/skeleton';
 import { Stat } from '@/components/ui/stat';
-import { AXIS_PROPS, ChartFrame, GRID_PROPS } from '@/components/charts/chart-chrome';
+import {
+  AXIS_PROPS,
+  ChartFrame,
+  GRID_PROPS,
+  ChartLegend,
+  barValueLabel,
+} from '@/components/charts/chart-chrome';
 import { formatCurrencyCompact, formatPercent } from '@/lib/format';
 import { cn, seriesColor, uid } from '@/lib/utils';
 import { buildFundamentalsCsv } from '@/lib/export/fundamentals-csv';
@@ -370,13 +378,22 @@ export function ResearchView() {
               title="Revenue and growth"
               description="Bars are revenue; the line is year-over-year growth on the right-hand reading."
             >
+              <ChartLegend
+                className="px-4 pb-2 sm:px-5"
+                series={[
+                  { label: 'Revenue', color: seriesColor('revenue', 0) },
+                  { label: 'YoY growth', color: seriesColor('growth', 1), dashed: true },
+                ]}
+              />
               <ResponsiveContainer width="100%" height={240}>
-                <ComposedChart data={chartData} margin={{ top: 8, right: 12, bottom: 4, left: 4 }}>
+                <ComposedChart data={chartData} margin={{ top: 42, right: 12, bottom: 4, left: 4 }}>
                   <CartesianGrid {...GRID_PROPS} />
                   <XAxis {...AXIS_PROPS} dataKey="fy" />
                   <YAxis {...AXIS_PROPS} yAxisId="l" tickFormatter={(x) => formatCurrencyCompact(Number(x))} />
                   <YAxis {...AXIS_PROPS} yAxisId="r" orientation="right" tickFormatter={(x) => `${Number(x).toFixed(0)}%`} />
-                  <Bar yAxisId="l" dataKey="revenue" fill={seriesColor('revenue', 0)} isAnimationActive={false} />
+                  <Bar yAxisId="l" dataKey="revenue" fill={seriesColor('revenue', 0)} isAnimationActive={false}>
+                    <LabelList dataKey="revenue" content={barValueLabel(formatCurrencyCompact)} />
+                  </Bar>
                   {/* Not the red slot. Growth is a neutral series, and in the Bloomberg
                       palette red means a fall — a rising line drawn in it reads as
                       the opposite of what it shows. */}
@@ -389,6 +406,14 @@ export function ResearchView() {
               title="Margins over time"
               description="Gross, operating and net. Widening gaps between them show where the money goes."
             >
+              <ChartLegend
+                className="px-4 pb-2 sm:px-5"
+                series={(['gross', 'operating', 'net'] as const).map((k, i) => ({
+                  label: k[0].toUpperCase() + k.slice(1),
+                  color: seriesColor(k, i),
+                  dashed: true,
+                }))}
+              />
               <ResponsiveContainer width="100%" height={220}>
                 <ComposedChart data={chartData} margin={{ top: 8, right: 12, bottom: 4, left: 4 }}>
                   <CartesianGrid {...GRID_PROPS} />
@@ -403,15 +428,32 @@ export function ResearchView() {
 
             <ChartFrame
               title="Cash generation"
-              description="Operating cash flow against free cash flow. The gap is capital expenditure."
+              description="Operating cash flow against free cash flow. The gap is capital expenditure. One heavy year sets the scale, so the smaller years are read from their printed figures rather than their height."
             >
-              <ResponsiveContainer width="100%" height={220}>
-                <BarChart data={chartData} margin={{ top: 8, right: 12, bottom: 4, left: 4 }}>
+              <ChartLegend
+                className="px-4 pb-2 sm:px-5"
+                series={[
+                  { label: 'Operating cash flow', color: seriesColor('ocf', 5) },
+                  { label: 'Free cash flow', color: seriesColor('fcf', 2) },
+                ]}
+              />
+              {/* Taller than its neighbours: the labels sit outside the bar
+                  ends, and below a negative bar they need somewhere to go. */}
+              <ResponsiveContainer width="100%" height={260}>
+                <BarChart data={chartData} margin={{ top: 42, right: 12, bottom: 8, left: 4 }}>
                   <CartesianGrid {...GRID_PROPS} />
                   <XAxis {...AXIS_PROPS} dataKey="fy" />
                   <YAxis {...AXIS_PROPS} tickFormatter={(x) => formatCurrencyCompact(Number(x))} />
-                  <Bar dataKey="ocf" name="Operating" fill={seriesColor('ocf', 5)} isAnimationActive={false} />
-                  <Bar dataKey="fcf" name="Free" fill={seriesColor('fcf', 2)} isAnimationActive={false} />
+                  {/* A zero line, because every bar here hangs off it. Without
+                      it a column of negative bars reads as positive ones drawn
+                      from an axis that happens to sit at the top. */}
+                  <ReferenceLine y={0} stroke="hsl(var(--muted-foreground))" strokeWidth={1} />
+                  <Bar dataKey="ocf" name="Operating" fill={seriesColor('ocf', 5)} isAnimationActive={false}>
+                    <LabelList dataKey="ocf" content={barValueLabel(formatCurrencyCompact)} />
+                  </Bar>
+                  <Bar dataKey="fcf" name="Free" fill={seriesColor('fcf', 2)} isAnimationActive={false}>
+                    <LabelList dataKey="fcf" content={barValueLabel(formatCurrencyCompact)} />
+                  </Bar>
                 </BarChart>
               </ResponsiveContainer>
             </ChartFrame>
