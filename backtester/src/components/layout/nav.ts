@@ -9,8 +9,8 @@ import {
   Hourglass,
   LayoutDashboard,
   LineChart,
-  Grid3x3,
   Gauge,
+  Grid3x3,
   Scale,
   Settings,
   Sigma,
@@ -100,6 +100,13 @@ export const NAV_GROUPS: NavGroup[] = [
      * the bar tell the same story.
      */
     items: [
+      {
+        href: '/desk',
+        label: 'Desk',
+        icon: Gauge,
+        short: 'Desk',
+        hint: 'Momentum, flow and volatility at a glance',
+      },
       {
         href: '/chart',
         label: 'Charts',

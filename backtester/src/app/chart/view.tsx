@@ -79,16 +79,102 @@ interface ChartResponse {
 }
 
 /** Ranges the free Polygon tier can actually serve — roughly two years. */
+/**
+ * The timeframes offered, and the bar size each one asks for.
+ * =============================================================================
+ * The shortest range used to be a month of DAILY bars — about twenty candles,
+ * and nothing below it. Anyone wanting to see how a day actually traded had
+ * nowhere to go.
+ *
+ * The API has served `minute`, `hour`, `day`, `week` and `month` since it was
+ * written; the view simply hard-coded `timespan: 'day'` at both call sites and
+ * never offered the rest. So this is not new capability, it is capability that
+ * was already paid for and never wired to a control.
+ *
+ * `multiplier` rides with the span, because a useful intraday chart is not one
+ * bar size but several: one minute over a single session, five over a week,
+ * an hour over a month. A day of one-minute bars is ~390 candles, which is a
+ * readable chart; a month of them is 8,000, which is a smear.
+ *
+ * The long ranges stay on DAILY bars rather than coarsening to weekly or
+ * monthly, because this Polygon plan caps every timespan at two years alike —
+ * a "5Y" chart of weekly bars showed two years of them. Daily is the one span
+ * the end-of-day providers can also serve, so it is the one that can fall back
+ * to the full record.
+ */
 const RANGES = [
-  { id: '1M', label: '1M', days: 30, span: 'day' },
-  { id: '3M', label: '3M', days: 91, span: 'day' },
-  { id: '6M', label: '6M', days: 182, span: 'day' },
-  { id: 'YTD', label: 'YTD', days: 0, span: 'day' },
-  { id: '1Y', label: '1Y', days: 365, span: 'day' },
-  { id: '2Y', label: '2Y', days: 730, span: 'day' },
+  { id: '1D', label: '1D', days: 1, span: 'minute', multiplier: 1 },
+  { id: '5D', label: '5D', days: 5, span: 'minute', multiplier: 5 },
+  { id: '1M', label: '1M', days: 30, span: 'hour', multiplier: 1 },
+  { id: '3M', label: '3M', days: 91, span: 'day', multiplier: 1 },
+  { id: '6M', label: '6M', days: 182, span: 'day', multiplier: 1 },
+  { id: 'YTD', label: 'YTD', days: 0, span: 'day', multiplier: 1 },
+  { id: '1Y', label: '1Y', days: 365, span: 'day', multiplier: 1 },
+  { id: '2Y', label: '2Y', days: 730, span: 'day', multiplier: 1 },
+  { id: '5Y', label: '5Y', days: 1826, span: 'day', multiplier: 1 },
+  { id: '10Y', label: '10Y', days: 3653, span: 'day', multiplier: 1 },
 ] as const;
 
 type RangeId = (typeof RANGES)[number]['id'];
+
+/** The bar size a range asks the API for. */
+function rangeSpan(id: RangeId): { timespan: string; multiplier: number } {
+  const r = RANGES.find((x) => x.id === id);
+  return { timespan: r?.span ?? 'day', multiplier: r?.multiplier ?? 1 };
+}
+
+/**
+ * How many trading SESSIONS an intraday range should end up showing.
+ *
+ * Counted in sessions rather than calendar days because that is what the
+ * label promises: "1D" means the last day the market traded, not the last
+ * twenty-four hours. Asked for on a Sunday, a one-calendar-day window returns
+ * nothing at all, and over Christmas a five-day one returns two sessions.
+ *
+ * So the request reaches back generously and the answer is trimmed to the
+ * sessions actually wanted. Non-intraday ranges are not trimmed: a month is a
+ * month.
+ */
+const SESSIONS: Partial<Record<RangeId, number>> = { '1D': 1, '5D': 5 };
+
+/** Extra calendar days requested, to survive weekends and holidays. */
+function lookbackDays(id: RangeId): number {
+  const sessions = SESSIONS[id];
+  if (!sessions) return RANGES.find((r) => r.id === id)?.days ?? 365;
+  // Roughly seven calendar days per five sessions, plus a week of slack for
+  // a long holiday weekend.
+  return Math.ceil(sessions * 1.5) + 7;
+}
+
+/**
+ * Trims a response to its last `n` trading sessions.
+ *
+ * Overlay points are a parallel array to `bars` — index `i` of a series is the
+ * study's value at bar `i` — so both are sliced at the same offset. Trimming
+ * one without the other would silently shift every indicator off its own bar,
+ * which is the kind of error that still draws a plausible-looking line.
+ *
+ * The wider request is deliberate beyond weekends: a 50-period average needs
+ * fifty bars of history before the first point it can plot, so the study is
+ * computed over the full window and only the view is cut back.
+ */
+function trimToSessions(body: ChartResponse, n: number): ChartResponse {
+  const bars = body.bars ?? [];
+  if (!bars.length) return body;
+  const days: string[] = [];
+  for (const b of bars) {
+    const d = String(b.date).slice(0, 10);
+    if (days[days.length - 1] !== d) days.push(d);
+  }
+  const keep = new Set(days.slice(-n));
+  const first = bars.findIndex((b) => keep.has(String(b.date).slice(0, 10)));
+  if (first <= 0) return body;
+  return {
+    ...body,
+    bars: bars.slice(first),
+    overlays: (body.overlays ?? []).map((o) => ({ ...o, points: o.points.slice(first) })),
+  };
+}
 
 /** Studies offered, by the spec string the API parses. */
 const INDICATORS = [
@@ -113,8 +199,7 @@ const iso = (d: Date) => d.toISOString().slice(0, 10);
 function rangeStart(id: RangeId): string {
   const now = new Date();
   if (id === 'YTD') return `${now.getUTCFullYear()}-01-01`;
-  const days = RANGES.find((r) => r.id === id)?.days ?? 365;
-  return iso(new Date(now.getTime() - days * 86_400_000));
+  return iso(new Date(now.getTime() - lookbackDays(id) * 86_400_000));
 }
 
 /* ------------------------------------------------------------------ */
@@ -201,7 +286,7 @@ export function ChartView() {
         headers: { 'content-type': 'application/json' },
         body: JSON.stringify({
           ticker: symbol,
-          timespan: 'day',
+          ...rangeSpan(r),
           from: rangeStart(r),
           to: iso(new Date()),
           indicators: inds,
@@ -213,7 +298,8 @@ export function ChartView() {
         setData(null);
         return;
       }
-      setData(body as ChartResponse);
+      const sessions = SESSIONS[r];
+      setData(sessions ? trimToSessions(body as ChartResponse, sessions) : (body as ChartResponse));
     } catch {
       setError('Could not load price history.');
       setData(null);
@@ -295,7 +381,9 @@ export function ChartView() {
           method: 'POST',
           headers: { 'content-type': 'application/json' },
           body: JSON.stringify({
-            ticker: up, timespan: 'day', from: rangeStart(range), to: iso(new Date()),
+            // A comparison has to be on the SAME bars as the chart it is drawn
+            // over, or the two series step through time at different rates.
+            ticker: up, ...rangeSpan(range), from: rangeStart(range), to: iso(new Date()),
           }),
         });
         const body = await res.json();

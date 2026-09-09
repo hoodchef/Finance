@@ -235,7 +235,13 @@ describe('a contribution-funded portfolio still gets a benchmark', () => {
     // and beta came back as exactly 0.00 rather than as unmeasured.
     const { runBacktest } = await import('../src/lib/backtest');
     const { defaultConfig } = await import('../src/lib/defaults');
-    const { getProvider } = await import('../src/lib/market-data');
+    // The DEMO provider, not the live chain. What this test checks is engine
+    // plumbing — that the benchmark run gets funded when the portfolio starts
+    // from nothing — and that is independent of what the prices actually were.
+    // Reaching for real data made the test need an API key and a network, so
+    // it failed on a fresh clone for a reason that had nothing to do with the
+    // behaviour under test. The walk is seeded, so beta is stable run to run.
+    const { getDemoProvider } = await import('../src/lib/market-data');
 
     const result = await runBacktest({
       portfolio: {
@@ -255,7 +261,7 @@ describe('a contribution-funded portfolio still gets a benchmark', () => {
         contributionAmount: 20_000,
         contributionFrequency: 'annual',
       } as never,
-      provider: getProvider(),
+      provider: getDemoProvider(),
       includeAssetAnalysis: false,
       includeDailyObservations: true,
     });

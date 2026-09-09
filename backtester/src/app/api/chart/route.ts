@@ -86,6 +86,45 @@ export async function POST(request: Request) {
       const normalised = normaliseAggregates(primary.bars, timespan);
       bars = normalised.bars;
       dropped = normalised.dropped;
+
+      /*
+       * A truncated answer is not a successful one.
+       * =====================================================================
+       * `fetchAggregates` already detects that this Polygon plan returns two
+       * years and stops, whatever was asked for — it sets `coverage.truncated`
+       * and writes the note. Nothing acted on it here, because the request did
+       * not THROW: a five-year chart and a twenty-year chart both came back
+       * with the same 501 bars and both rendered as if that were the history.
+       *
+       * The end-of-day providers carry the full record — the backtest engine
+       * runs on decades of it — so a truncated daily request is retried there
+       * and the deeper answer wins. Only for daily bars: no EOD vendor can
+       * serve a minute, and week and month would have to be re-aggregated
+       * from days before they could be compared.
+       */
+      if (timespan === 'day' && coverage?.truncated) {
+        const deeper = await getProvider()
+          .getHistoricalPrices(ticker, { start: from, end: to })
+          .catch(() => null);
+        if (deeper && deeper.bars.length > bars.length) {
+          bars = deeper.bars.map((b: PriceBar) => ({
+            date: b.date,
+            open: b.open,
+            high: b.high,
+            low: b.low,
+            close: b.close,
+            volume: b.volume,
+            vwap: null,
+            trades: null,
+            timestamp: Date.parse(`${b.date}T00:00:00Z`),
+          }));
+          servedBy = deeper.source;
+          coverage = null;
+          fallbackNote =
+            `Polygon returned only ${normalised.bars.length} bars for this range, so the ` +
+            `history came from ${deeper.source} instead.`;
+        }
+      }
     } catch (primaryError) {
       const series = await getProvider()
         .getHistoricalPrices(ticker, { start: from, end: to })
@@ -192,13 +231,26 @@ export async function POST(request: Request) {
       overlays,
       events,
       dropped,
+      /*
+       * `fallbackNote` was computed on both fallback paths and never returned,
+       * so a chart served by a different vendor than the one it named said
+       * nothing about it.
+       */
       note:
         bars.length === 0
           ? `Polygon returned no bars for ${ticker} in this window. The free tier carries about ` +
             'two years of history and end-of-day data only.'
-          : null,
+          : fallbackNote,
       provenance: {
-        source: 'Polygon (Massive)',
+        /*
+         * Whoever actually served it.
+         *
+         * This was hardcoded to Polygon, so a request Polygon could not fill —
+         * anything past its two-year ceiling, or any symbol it refused — came
+         * back from Tiingo or Yahoo under Polygon's name. The panel that exists
+         * to say where a number came from was naming the wrong vendor.
+         */
+        source: servedBy === 'polygon' ? 'Polygon (Massive)' : servedBy,
         // The free tier is end-of-day. Saying "real time" here would be the
         // kind of quiet inaccuracy someone trades on.
         latency: 'end-of-day, adjusted for splits and dividends',

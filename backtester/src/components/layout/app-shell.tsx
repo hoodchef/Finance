@@ -68,7 +68,19 @@ export function AppShell({ children }: { children: React.ReactNode }) {
   );
 }
 
-/** Consistent page frame: title block plus a max-width content column. */
+/**
+ * The page's title bar.
+ *
+ * Deliberately shallow. Measured on the performance page, the persistent
+ * chrome — nav bar, ticker bar and this — came to 198px, or 28% of an 718px
+ * viewport, before a single figure. The nav and ticker bars earn their 85px:
+ * one says where you can go, the other what you are looking at, and both stay
+ * useful while you read. This block was the other 113px, and it is read once.
+ *
+ * The description is `text-xs leading-relaxed`, which is what UI-CONVENTIONS
+ * has always specified for prose; it was set at `text-sm` here, so the one
+ * component that frames every page was the one ignoring the type scale.
+ */
 export function PageHeader({
   title,
   description,
@@ -79,11 +91,13 @@ export function PageHeader({
   actions?: React.ReactNode;
 }) {
   return (
-    <div className="flex flex-col gap-3 border-b border-border px-4 py-5 sm:flex-row sm:items-center sm:justify-between sm:px-6 lg:px-8">
+    <div className="flex flex-col gap-2 border-b border-border px-4 py-3 sm:flex-row sm:items-center sm:justify-between sm:px-6 lg:px-8">
       <div className="min-w-0">
         <h1 className="text-xl font-semibold tracking-tight">{title}</h1>
         {description && (
-          <p className="mt-1 max-w-2xl text-sm text-muted-foreground">{description}</p>
+          <p className="mt-0.5 max-w-2xl text-xs leading-relaxed text-muted-foreground">
+            {description}
+          </p>
         )}
       </div>
       {actions && <div className="flex shrink-0 flex-wrap items-center gap-2">{actions}</div>}
@@ -98,5 +112,5 @@ export function PageBody({
   children: React.ReactNode;
   className?: string;
 }) {
-  return <div className={cn('px-4 py-6 sm:px-6 lg:px-8', className)}>{children}</div>;
+  return <div className={cn('px-4 py-4 sm:px-6 lg:px-8', className)}>{children}</div>;
 }

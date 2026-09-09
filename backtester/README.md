@@ -17,11 +17,10 @@ excludes rather than quietly absorbing it.
 
 The engine is a deterministic, event-driven daily simulator that tracks share
 counts and cash through time. It is separate from the UI, has no React
-dependency, and is covered by 621 tests across 29 files — including parity
+dependency, and is covered by 1,552 tests across 68 files — including parity
 checks against two independently-computed references.
 
 ```bash
-cd backtester
 npm install
 npm run dev          # http://localhost:3100
 ```
@@ -858,7 +857,7 @@ npm install
 npm run dev          # port 3100, live Yahoo data
 npm run dev:demo     # synthetic data, same port — one server at a time
 npm run build && npm start
-npm test             # 621 tests across 29 files
+npm test             # 1,552 tests across 68 files
 npm run typecheck
 ```
 
