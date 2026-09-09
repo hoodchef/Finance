@@ -1,4 +1,4 @@
-import { mean, percentile, stdev } from './stats';
+import { autocorrelation, mean, percentile, stdev } from './stats';
 import type { DrawdownPoint } from './drawdown';
 import type { PeriodReturn } from './periods';
 import { normCdf, normInv } from '@/lib/options/pricing';
@@ -339,17 +339,14 @@ export function probabilisticSharpe(
  * suggests.
  */
 export function smartFactor(returns: number[], lags = 3): number {
-  const n = returns.length;
-  if (n < lags + 2) return 1;
-  const m = mean(returns);
-  const denom = sum(returns.map((r) => (r - m) ** 2));
-  if (denom < 1e-12) return 1;
+  if (returns.length < lags + 2) return 1;
 
   let penalty = 0;
   for (let k = 1; k <= lags; k++) {
-    let cov = 0;
-    for (let i = k; i < n; i++) cov += (returns[i] - m) * (returns[i - k] - m);
-    const rho = cov / denom;
+    // One definition of the autocorrelation estimator, and it lives in `stats`.
+    // Two copies is how two pages come to disagree about the same number.
+    const rho = autocorrelation(returns, k);
+    if (rho == null) return 1; // A flat series carries no penalty.
     penalty += (1 - k / (lags + 1)) * rho;
   }
   // Never below one: the penalty may only make a ratio worse, never better.

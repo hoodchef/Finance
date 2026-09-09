@@ -10,6 +10,9 @@ import {
   polygonConfigured,
 } from '@/lib/market-data/polygon';
 import { normaliseAggregates, type ChartTimespan } from '@/lib/charting/bars';
+// The EOD fallbacks below return RAW prices with a separate split list. Without
+// this the chart drew AAPL stepping from $499 to $129 overnight. See adjust.ts.
+import { backAdjustForSplits } from '@/lib/market-data/adjust';
 import { computeIndicators, parseIndicatorSpec } from '@/lib/charting/indicators';
 import { errorResponse } from '@/lib/api-errors';
 
@@ -107,7 +110,7 @@ export async function POST(request: Request) {
           .getHistoricalPrices(ticker, { start: from, end: to })
           .catch(() => null);
         if (deeper && deeper.bars.length > bars.length) {
-          bars = deeper.bars.map((b: PriceBar) => ({
+          bars = backAdjustForSplits(deeper.bars, deeper.splits, deeper.adjustment).map((b: PriceBar) => ({
             date: b.date,
             open: b.open,
             high: b.high,
@@ -131,7 +134,7 @@ export async function POST(request: Request) {
         .catch(() => null);
       if (!series || series.bars.length === 0) throw primaryError;
 
-      bars = series.bars.map((b: PriceBar) => ({
+      bars = backAdjustForSplits(series.bars, series.splits, series.adjustment).map((b: PriceBar) => ({
         date: b.date,
         open: b.open,
         high: b.high,

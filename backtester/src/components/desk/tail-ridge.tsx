@@ -1,7 +1,7 @@
 'use client';
 
 import * as React from 'react';
-import { ChartFrame } from '@/components/charts/chart-chrome';
+import { ChartFrame, useMeasuredWidth } from '@/components/charts/chart-chrome';
 import { formatCurrency, formatNumber, formatPercent } from '@/lib/format';
 import { cn, seriesColor } from '@/lib/utils';
 import type { TailComparison } from '@/lib/desk/tails';
@@ -21,9 +21,8 @@ export interface TailRidgeData {
   spot: number;
 }
 
-const W = 720;
-const H = 330;
-const PAD = { top: 14, right: 12, bottom: 22, left: 12 };
+const PAD = { top: 16, right: 12, bottom: 22, left: 12 };
+const MIN_W = 300;
 
 /**
  * The tail ridge.
@@ -38,8 +37,35 @@ const PAD = { top: 14, right: 12, bottom: 22, left: 12 };
  * A near horizon is a tall narrow spike and a far one a low wide hump because
  * that is what a widening distribution looks like; normalising each to the same
  * height would draw five identical humps and delete the message.
+ *
+ * READING IT. The picture could only be looked at: five curves, three price
+ * labels, and no way to ask what any point on it meant. The crosshair answers
+ * the question the shape exists to raise — the same price is an unremarkable
+ * finish at six months and an extraordinary one at a week — by reporting the
+ * distance from spot in EACH horizon's own standard deviations.
+ *
+ * That figure is not a new model. `oneSigma` is `spot · σ · √t`, supplied per
+ * band, so the log-space σ is `oneSigma / spot` and the readout is
+ * `ln(price / spot)` over it — the same definition of "two standard deviations"
+ * the threshold lines and the table below already use, so the crosshair reads
+ * ±2σ exactly where those lines are drawn. Reporting a probability instead was
+ * tempting and would have been wrong: the grid stops at 2.5σ of the longest
+ * horizon, so summing the drawn density understates precisely the tail this
+ * panel is about.
  */
 export function TailRidgePanel({ data }: { data: TailRidgeData | null }) {
+  const [box, width] = useMeasuredWidth<HTMLDivElement>();
+
+  /*
+   * The crosshair is an INDEX into the price grid, not a price. The bands are
+   * sampled on that grid, so an index puts the marker exactly on each curve,
+   * and it gives the keyboard a natural step — one sample — without inventing
+   * a second notion of how far an arrow key should move.
+   */
+  const [cross, setCross] = React.useState<number | null>(null);
+  /** The horizon under the pointer, in the drawing, the readout or the table. */
+  const [active, setActive] = React.useState<string | null>(null);
+
   if (!data || !data.ridge.bands.length) {
     return (
       <ChartFrame
@@ -68,11 +94,24 @@ export function TailRidgePanel({ data }: { data: TailRidgeData | null }) {
   const upper = data.spot * (1 + threshold);
   const lower = data.spot * (1 - threshold);
 
+  /*
+   * A pixel-for-pixel viewBox, so the ridge REFLOWS with the panel rather than
+   * scaling inside it. The height follows the width at a little under half,
+   * clamped both ways: below ~210px five stacked bands stop being separable,
+   * and above ~360 one panel starts to dominate a page of six.
+   */
+  const W = Math.max(MIN_W, width);
+  const H = Math.round(Math.min(360, Math.max(210, W * 0.42)));
   const plotW = W - PAD.left - PAD.right;
   const plotH = H - PAD.top - PAD.bottom;
 
-  const xOf = (price: number) =>
-    PAD.left + ((price - grid[0]) / (grid[grid.length - 1] - grid[0])) * plotW;
+  const lo = grid[0];
+  const hi = grid[grid.length - 1];
+  const xOf = (price: number) => PAD.left + ((price - lo) / (hi - lo)) * plotW;
+  const clampIndex = (i: number) => Math.min(grid.length - 1, Math.max(0, i));
+  const indexAtX = (x: number) => clampIndex(Math.round(((x - PAD.left) / plotW) * (grid.length - 1)));
+  const indexAtPrice = (price: number) =>
+    clampIndex(Math.round(((price - lo) / (hi - lo)) * (grid.length - 1)));
 
   // One scale across every band, so a far horizon really is flatter.
   const peak = Math.max(...bands.flatMap((b) => b.density));
@@ -88,9 +127,12 @@ export function TailRidgePanel({ data }: { data: TailRidgeData | null }) {
    */
   const rowH = plotH / bands.length;
   const amp = rowH * 0.95;
+  const baseOf = (row: number) => PAD.top + rowH * (row + 1);
+  const yOf = (band: RidgeBand, row: number, i: number) =>
+    baseOf(row) - (band.density[i] / peak) * amp;
 
   const bandPath = (band: RidgeBand, row: number, clip?: [number, number]) => {
-    const base = PAD.top + rowH * (row + 1);
+    const base = baseOf(row);
     const pts: string[] = [];
     let started = false;
     for (let i = 0; i < grid.length; i++) {
@@ -102,9 +144,32 @@ export function TailRidgePanel({ data }: { data: TailRidgeData | null }) {
       started = true;
     }
     if (!pts.length) return '';
-    const first = clip ? Math.max(grid[0], clip[0]) : grid[0];
-    const last = clip ? Math.min(grid[grid.length - 1], clip[1]) : grid[grid.length - 1];
+    const first = clip ? Math.max(lo, clip[0]) : lo;
+    const last = clip ? Math.min(hi, clip[1]) : hi;
     return `${pts.join('')}L${xOf(last).toFixed(2)},${base.toFixed(2)}L${xOf(first).toFixed(2)},${base.toFixed(2)}Z`;
+  };
+
+  const crossPrice = cross != null ? grid[cross] : null;
+  const crossX = cross != null ? xOf(grid[cross]) : 0;
+  /** Distance from spot in this horizon's own standard deviations. */
+  const sigmaAt = (band: RidgeBand, price: number) =>
+    Math.log(price / data.spot) / (band.oneSigma / data.spot);
+
+  const onKeyDown = (event: React.KeyboardEvent) => {
+    const spotIndex = indexAtPrice(data.spot);
+    const at = cross ?? spotIndex;
+    const step = (n: number) => {
+      event.preventDefault();
+      setCross(clampIndex(at + n));
+    };
+    if (event.key === 'ArrowRight') step(1);
+    else if (event.key === 'ArrowLeft') step(-1);
+    else if (event.key === 'PageUp') step(8);
+    else if (event.key === 'PageDown') step(-8);
+    else if (event.key === 'Home') {
+      event.preventDefault();
+      setCross(spotIndex);
+    } else if (event.key === 'Escape') setCross(null);
   };
 
   return (
@@ -112,72 +177,205 @@ export function TailRidgePanel({ data }: { data: TailRidgeData | null }) {
       title="Tail probability ridge"
       description="Where the price could finish at each horizon under a lognormal drawn from this security's own realised volatility — and, beside it, how often the security has actually travelled that far. The model is the curve; the table is the record."
     >
-      <div className="overflow-x-auto px-2 sm:px-3">
-        <svg
-          viewBox={`0 0 ${W} ${H}`}
-          className="h-[330px] w-full min-w-[520px]"
-          role="img"
-          aria-label="Terminal price distributions at five horizons, with the tails beyond two standard deviations filled"
-        >
-          {/* The spot line and the two thresholds, behind the bands. */}
-          <line
-            x1={xOf(data.spot)} x2={xOf(data.spot)} y1={PAD.top} y2={H - PAD.bottom}
-            stroke="hsl(var(--muted-foreground))" strokeWidth={1} strokeDasharray="2 3"
-          />
-          {[lower, upper].map((level) => (
+      <div
+        ref={box}
+        className="rounded px-2 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring sm:px-3"
+        tabIndex={0}
+        role="group"
+        aria-label="Tail ridge. Arrow keys move a price crosshair, Home returns it to spot, Escape clears it."
+        onKeyDown={onKeyDown}
+      >
+        {/* Nothing is drawn until the container has been measured: a guessed
+            width would lay the ridge out once and then move every curve. */}
+        {width > 0 && (
+          <svg
+            viewBox={`0 0 ${W} ${H}`}
+            width="100%"
+            height={H}
+            role="img"
+            aria-label={`Terminal price distributions at ${bands.length} horizons, with the tails beyond ${sigmas} standard deviations filled`}
+            onPointerMove={(event) => {
+              const rect = event.currentTarget.getBoundingClientRect();
+              if (rect.width <= 0) return;
+              setCross(indexAtX(((event.clientX - rect.left) / rect.width) * W));
+            }}
+            onPointerLeave={() => setCross(null)}
+          >
+            {/* The spot line and the two thresholds, behind the bands. */}
             <line
-              key={level}
-              x1={xOf(level)} x2={xOf(level)} y1={PAD.top} y2={H - PAD.bottom}
-              stroke="hsl(var(--negative))" strokeWidth={1} strokeOpacity={0.45}
+              x1={xOf(data.spot)} x2={xOf(data.spot)} y1={PAD.top} y2={H - PAD.bottom}
+              stroke="hsl(var(--muted-foreground))" strokeWidth={1} strokeDasharray="2 3"
             />
-          ))}
+            {[lower, upper].map((level) => (
+              <line
+                key={level}
+                x1={xOf(level)} x2={xOf(level)} y1={PAD.top} y2={H - PAD.bottom}
+                stroke="hsl(var(--negative))" strokeWidth={1} strokeOpacity={0.45}
+              />
+            ))}
 
-          {/* Back to front, so nearer horizons sit in front of further ones. */}
-          {[...bands].reverse().map((band, i) => {
-            const row = bands.length - 1 - i;
-            return (
-              <g key={band.label}>
-                <path
-                  d={bandPath(band, row)}
-                  fill="hsl(var(--card))"
-                  fillOpacity={0.82}
-                  stroke={seriesColor(band.label, row)}
-                  strokeWidth={1.1}
-                />
-                {/* The tails, filled on both sides of the threshold. */}
-                <path d={bandPath(band, row, [grid[0], lower])} fill="hsl(var(--negative))" fillOpacity={0.5} />
-                <path
-                  d={bandPath(band, row, [upper, grid[grid.length - 1]])}
-                  fill="hsl(var(--positive))" fillOpacity={0.42}
-                />
-                <text
-                  x={PAD.left + 2}
-                  y={PAD.top + rowH * (row + 1) - 2}
-                  fontSize={9}
-                  fill="hsl(var(--muted-foreground))"
+            {/* Back to front, so nearer horizons sit in front of further ones. */}
+            {[...bands].reverse().map((band, i) => {
+              const row = bands.length - 1 - i;
+              const dim = active != null && active !== band.label;
+              return (
+                <g
+                  key={band.label}
+                  onPointerEnter={() => setActive(band.label)}
+                  onPointerLeave={() => setActive(null)}
                 >
-                  {band.label}
+                  <path
+                    d={bandPath(band, row)}
+                    fill="hsl(var(--card))"
+                    /*
+                     * Only the STROKE responds to the highlight. The fill is
+                     * what hides the further horizons behind the nearer ones,
+                     * so fading it turns the ridge into five overlapping
+                     * outlines and loses the front-to-back reading entirely.
+                     */
+                    fillOpacity={0.82}
+                    stroke={seriesColor(band.label, row)}
+                    strokeWidth={active === band.label ? 2.2 : 1.1}
+                    strokeOpacity={dim ? 0.32 : 1}
+                  />
+                  {/* The tails, filled on both sides of the threshold. */}
+                  <path d={bandPath(band, row, [lo, lower])} fill="hsl(var(--negative))" fillOpacity={0.5} />
+                  <path
+                    d={bandPath(band, row, [upper, hi])}
+                    fill="hsl(var(--positive))" fillOpacity={0.42}
+                  />
+                  <text
+                    x={PAD.left + 2}
+                    y={baseOf(row) - 3}
+                    fontSize={10}
+                    fontWeight={active === band.label ? 700 : 500}
+                    fill={seriesColor(band.label, row)}
+                    fillOpacity={dim ? 0.45 : 1}
+                  >
+                    {band.label}
+                  </text>
+                </g>
+              );
+            })}
+
+            {/* In front of the bands, but transparent to the pointer so it
+                never steals the hover it exists to follow. */}
+            {cross != null && (
+              <g pointerEvents="none">
+                <line
+                  x1={crossX} x2={crossX} y1={PAD.top} y2={H - PAD.bottom}
+                  stroke="hsl(var(--primary))" strokeWidth={1}
+                />
+                {bands.map((band, row) => (
+                  <circle
+                    key={band.label}
+                    cx={crossX}
+                    cy={yOf(band, row, cross)}
+                    r={2.6}
+                    fill={seriesColor(band.label, row)}
+                    stroke="hsl(var(--card))"
+                    strokeWidth={1}
+                  />
+                ))}
+                <text
+                  x={crossX}
+                  y={PAD.top - 5}
+                  fontSize={10}
+                  textAnchor={crossX > W * 0.8 ? 'end' : crossX < W * 0.2 ? 'start' : 'middle'}
+                  fill="hsl(var(--foreground))"
+                >
+                  {formatCurrency(grid[cross])}
                 </text>
               </g>
-            );
-          })}
+            )}
 
-          {[lower, data.spot, upper].map((level, i) => (
-            <text
-              key={level}
-              x={xOf(level)}
-              y={H - 8}
-              fontSize={9}
-              textAnchor="middle"
-              fill="hsl(var(--muted-foreground))"
-            >
-              {i === 1 ? `spot ${formatCurrency(level)}` : formatCurrency(level)}
-            </text>
-          ))}
-        </svg>
+            {[lower, data.spot, upper].map((level, i) => (
+              <text
+                key={level}
+                x={xOf(level)}
+                y={H - 8}
+                fontSize={9}
+                textAnchor="middle"
+                fill="hsl(var(--muted-foreground))"
+              >
+                {i === 1 ? `spot ${formatCurrency(level)}` : formatCurrency(level)}
+              </text>
+            ))}
+          </svg>
+        )}
       </div>
 
-      <div className="overflow-x-auto border-t border-border">
+      {/*
+       * The readout holds its height whether or not a crosshair is set, so
+       * moving the pointer onto the drawing does not shove the table down the
+       * page underneath the reader's eye.
+       */}
+      <div className="mt-1 min-h-[4.25rem] border-t border-border px-4 pt-2.5 sm:px-5">
+        {crossPrice == null ? (
+          <p className="text-xs leading-relaxed text-muted-foreground">
+            Point at a price — or focus the drawing and use the arrow keys — to read how far it is
+            from spot in each horizon&rsquo;s own standard deviations. The same finish is ordinary
+            at six months and extreme at one week, which is what the widening says.
+          </p>
+        ) : (
+          <div className="grid grid-cols-3 gap-x-4 gap-y-2 sm:grid-cols-6" aria-live="polite">
+            <div className="flex flex-col gap-0.5">
+              <span className="text-2xs font-medium uppercase tracking-wide text-muted-foreground">
+                Finish at
+              </span>
+              <span className="numeric text-sm font-semibold">{formatCurrency(crossPrice)}</span>
+              <span
+                className={cn(
+                  'numeric text-2xs',
+                  crossPrice > data.spot
+                    ? 'text-positive'
+                    : crossPrice < data.spot
+                      ? 'text-negative'
+                      : 'text-muted-foreground',
+                )}
+              >
+                {formatPercent(crossPrice / data.spot - 1, 1)} from spot
+              </span>
+            </div>
+            {bands.map((band, row) => {
+              const z = sigmaAt(band, crossPrice);
+              return (
+                <div
+                  key={band.label}
+                  className="flex flex-col gap-0.5"
+                  onPointerEnter={() => setActive(band.label)}
+                  onPointerLeave={() => setActive(null)}
+                >
+                  <span className="flex items-center gap-1.5 text-2xs font-medium uppercase tracking-wide text-muted-foreground">
+                    <span
+                      aria-hidden
+                      className="h-2 w-2.5 shrink-0 rounded-sm"
+                      style={{ backgroundColor: seriesColor(band.label, row) }}
+                    />
+                    {band.label}
+                  </span>
+                  <span
+                    className={cn(
+                      'numeric text-sm font-semibold',
+                      // Past the threshold this panel is measured at, the
+                      // reading IS the tail — so it is coloured like one.
+                      Math.abs(z) >= sigmas ? (z > 0 ? 'text-positive' : 'text-negative') : '',
+                    )}
+                  >
+                    {z > 0 ? '+' : ''}
+                    {formatNumber(z, 2)}σ
+                  </span>
+                  <span className="text-2xs text-muted-foreground">
+                    1σ is ±{formatPercent(band.oneSigma / data.spot, 1)}
+                  </span>
+                </div>
+              );
+            })}
+          </div>
+        )}
+      </div>
+
+      <div className="mt-2.5 overflow-x-auto border-t border-border">
         <table className="w-full text-xs">
           <thead>
             <tr className="border-b border-border text-left text-muted-foreground">
@@ -190,12 +388,31 @@ export function TailRidgePanel({ data }: { data: TailRidgeData | null }) {
             </tr>
           </thead>
           <tbody>
-            {data.comparisons.map((c) => {
+            {data.comparisons.map((c, row) => {
               const model = c.modelUp + c.modelDown;
               const observed = (c.observedUp ?? 0) + (c.observedDown ?? 0);
               return (
-                <tr key={c.label} className="border-b border-border/50 last:border-0">
-                  <td className="py-1.5 pl-4 pr-3 sm:pl-5">{c.label}</td>
+                <tr
+                  key={c.label}
+                  className={cn(
+                    'border-b border-border/50 last:border-0',
+                    // A row and a curve are the same horizon, and nothing on
+                    // the panel used to say which curve a row meant.
+                    active === c.label && 'bg-muted/40',
+                  )}
+                  onPointerEnter={() => setActive(c.label)}
+                  onPointerLeave={() => setActive(null)}
+                >
+                  <td className="py-1.5 pl-4 pr-3 sm:pl-5">
+                    <span className="flex items-center gap-1.5">
+                      <span
+                        aria-hidden
+                        className="h-2 w-2.5 shrink-0 rounded-sm"
+                        style={{ backgroundColor: seriesColor(c.label, row) }}
+                      />
+                      {c.label}
+                    </span>
+                  </td>
                   <td className="numeric py-1.5 pr-3 text-right text-muted-foreground">
                     ±{formatPercent(c.threshold, 1)}
                   </td>

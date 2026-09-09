@@ -302,6 +302,31 @@ export interface TickerHit {
   exchange?: string;
   /** Derived from `type` and `market`; `other` when unrecognised. */
   assetClass?: AssetClass;
+  /**
+   * Reference fields the DETAIL endpoint carries and search does not.
+   *
+   * Every one is optional and stays optional, because which of them comes back
+   * depends on the instrument. Verified against the live endpoint 2026-09-09:
+   * common stock (KO, SHOP) returns the full set, an ETF (SPY, XLK) returns a
+   * share count and a listing date with no SIC code and no market cap. An
+   * absent field means the vendor did not state it — never zero, never a
+   * default, and never inferred from one of the others.
+   */
+  sicCode?: string;
+  sicDescription?: string;
+  marketCap?: number;
+  /**
+   * Shares of THIS class.
+   *
+   * Prefer it over `weightedSharesOutstanding` anywhere it is divided into
+   * volume: the volume traded is volume in one listed class, so the
+   * denominator has to be that class's count. SHOP reports 1.209bn here
+   * against a weighted 1.287bn, and the gap is far larger for a company whose
+   * other classes are the bigger ones.
+   */
+  sharesOutstanding?: number;
+  weightedSharesOutstanding?: number;
+  listDate?: string;
 }
 
 interface TickersResponse {
@@ -344,7 +369,18 @@ interface TickerDetailResponse {
     type?: string;
     currency_name?: string;
     primary_exchange?: string;
+    sic_code?: string;
+    sic_description?: string;
+    market_cap?: number;
+    share_class_shares_outstanding?: number;
+    weighted_shares_outstanding?: number;
+    list_date?: string;
   };
+}
+
+/** A vendor number is carried through only when it is one. */
+function positiveNumber(value: unknown): number | undefined {
+  return typeof value === 'number' && Number.isFinite(value) && value > 0 ? value : undefined;
 }
 
 export async function fetchTickerDetail(ticker: string): Promise<TickerHit | null> {
@@ -353,18 +389,68 @@ export async function fetchTickerDetail(ticker: string): Promise<TickerHit | nul
       `/v3/reference/tickers/${encodeURIComponent(ticker)}`,
     );
     if (!body.results) return null;
+    const r = body.results;
     return {
-      ticker: body.results.ticker,
-      name: body.results.name ?? body.results.ticker,
-      market: body.results.market,
-      type: body.results.type,
-      currency: body.results.currency_name?.toUpperCase(),
-      exchange: body.results.primary_exchange,
-      assetClass: __testing.toAssetClass(body.results.type, body.results.market),
+      ticker: r.ticker,
+      name: r.name ?? r.ticker,
+      market: r.market,
+      type: r.type,
+      currency: r.currency_name?.toUpperCase(),
+      exchange: r.primary_exchange,
+      assetClass: __testing.toAssetClass(r.type, r.market),
+      sicCode: typeof r.sic_code === 'string' && r.sic_code ? r.sic_code : undefined,
+      sicDescription:
+        typeof r.sic_description === 'string' && r.sic_description ? r.sic_description : undefined,
+      marketCap: positiveNumber(r.market_cap),
+      sharesOutstanding: positiveNumber(r.share_class_shares_outstanding),
+      weightedSharesOutstanding: positiveNumber(r.weighted_shares_outstanding),
+      listDate: typeof r.list_date === 'string' && r.list_date ? r.list_date : undefined,
     };
   } catch {
     // A missing profile must not take the price chart down with it.
     return null;
+  }
+}
+
+/**
+ * The comparable companies Polygon names for a ticker.
+ *
+ * A VENDOR'S peer list, not one derived here. The alternative was to build a
+ * cohort from the SIC code — every ticker sharing 3571, say — and that is a
+ * worse answer dressed as a better one: SIC groups Apple with contract PC
+ * assemblers, and picking which of them to show would be an editorial decision
+ * with no data behind it. Polygon states the list; if it will not state one,
+ * the desk shows no peers rather than inventing a cohort.
+ *
+ * VERIFIED BEHAVIOUR, 2026-09-09
+ *
+ * The endpoint answers HTTP 200 with NO `results` key for anything it has no
+ * cohort for — SPY, XLK and a nonexistent ticker all did. That is not an
+ * error, and it is not an empty cohort either; it is the vendor declining to
+ * answer, and the caller has to be able to tell that apart from "measured, and
+ * there were none". An empty array here means exactly "Polygon named no
+ * peers", which the desk reports as unavailable with that reason.
+ *
+ * Common stocks do get a list, and it can include other classes of the same
+ * issuer — AAPL returns both GOOG and GOOGL, BRK.B returns BRK.A. De-duping
+ * those is the caller's job, because whether two classes are one comparable
+ * depends on what the caller is comparing.
+ */
+export async function fetchRelatedCompanies(ticker: string): Promise<string[]> {
+  try {
+    const body = await get<{ results?: Array<{ ticker?: string }> }>(
+      `/v1/related-companies/${encodeURIComponent(normalisePolygonTicker(ticker))}`,
+    );
+    const out: string[] = [];
+    for (const row of body.results ?? []) {
+      const t = typeof row?.ticker === 'string' ? row.ticker.trim().toUpperCase() : '';
+      if (t && t !== ticker.trim().toUpperCase() && !out.includes(t)) out.push(t);
+    }
+    return out;
+  } catch {
+    // A peer panel is worth less than the rest of the screen. Rate limits and
+    // entitlement failures here must not cost the reader the price history.
+    return [];
   }
 }
 

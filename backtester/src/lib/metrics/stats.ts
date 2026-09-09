@@ -51,6 +51,38 @@ export function correlation(xs: number[], ys: number[]): number {
   return covariance(xs, ys) / (sx * sy);
 }
 
+/**
+ * Sample autocorrelation of a series at one lag.
+ *
+ * CONVENTION. The estimator divides by the FULL sum of squared deviations
+ * (n terms) rather than by the n − k terms that actually enter the numerator.
+ * That is the standard "biased" definition used by every ACF plot and by
+ * Newey-West-style corrections; it shrinks toward zero at long lags, which is
+ * the behaviour that keeps a sample ACF positive-semidefinite. The alternative
+ * — dividing by n − k — is unbiased per lag and can produce |ρ| > 1, and the
+ * two disagree materially once the lag is a noticeable fraction of the sample.
+ *
+ * The mean is estimated over the whole series, once, for both legs. Returns
+ * null when the lag cannot be measured (too few points) and when the series is
+ * flat, because a constant series has no correlation to report and zero would
+ * read as "no persistence" rather than "no variance".
+ */
+export function autocorrelation(xs: readonly number[], lag: number): number | null {
+  const n = xs.length;
+  if (!Number.isInteger(lag) || lag < 1 || n <= lag) return null;
+
+  const m = mean([...xs]);
+  let denom = 0;
+  for (const x of xs) denom += (x - m) ** 2;
+  if (!(denom > 1e-12)) return null;
+
+  let cov = 0;
+  for (let i = lag; i < n; i++) cov += (xs[i] - m) * (xs[i - lag] - m);
+
+  const rho = cov / denom;
+  return Number.isFinite(rho) ? rho : null;
+}
+
 /** Compounds a list of period returns into one cumulative return. */
 export function chain(returns: number[]): number {
   let acc = 1;

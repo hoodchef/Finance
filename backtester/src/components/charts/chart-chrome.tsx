@@ -18,6 +18,54 @@ export const GRID_PROPS = {
   vertical: false,
 } as const;
 
+/**
+ * The hairline a Recharts tooltip drops at the hovered category.
+ *
+ * Spelled once because it is the thing that makes a tooltip read as a
+ * measurement rather than a floating box: without it the reader has to guess
+ * which bar the numbers belong to, and on a 63-bar chart that guess is wrong
+ * about as often as it is right.
+ */
+export const CURSOR_PROPS = {
+  stroke: 'hsl(var(--muted-foreground))',
+  strokeDasharray: '3 3',
+} as const;
+
+/**
+ * The rendered width of an element, for drawings that must REFLOW.
+ * =============================================================================
+ * `viewBox` alone only ever scales: a 460-wide drawing in a 1100px column is
+ * drawn at 460 and centred, leaving two thirds of the panel empty, and the same
+ * drawing on a phone is either squeezed to illegibility or put behind a
+ * horizontal scrollbar. Both happened on this page.
+ *
+ * Measuring instead lets the SVG use a 1:1 pixel viewBox, so the geometry
+ * spreads into the space it has and — the part scaling cannot do — 9px labels
+ * stay 9px at every width.
+ *
+ * Returns 0 before the first measurement, which callers must treat as "do not
+ * draw yet" rather than as a width.
+ */
+export function useMeasuredWidth<T extends HTMLElement>(): [React.RefObject<T>, number] {
+  const ref = React.useRef<T>(null);
+  const [width, setWidth] = React.useState(0);
+
+  React.useEffect(() => {
+    const node = ref.current;
+    if (!node) return;
+    // Rounded to whole pixels: a fractional width from a flex parent otherwise
+    // oscillates by hundredths and re-renders the drawing on every frame.
+    const observer = new ResizeObserver(([entry]) => {
+      setWidth(Math.round(entry.contentRect.width));
+    });
+    observer.observe(node);
+    setWidth(Math.round(node.getBoundingClientRect().width));
+    return () => observer.disconnect();
+  }, []);
+
+  return [ref, width];
+}
+
 export interface TooltipRow {
   label: string;
   value: string;

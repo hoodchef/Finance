@@ -18,6 +18,11 @@ import { AXIS_PROPS, ChartFrame, ChartLegend, GRID_PROPS } from '@/components/ch
 import { Skeleton } from '@/components/ui/skeleton';
 import { TailRidgePanel, type TailRidgeData } from '@/components/desk/tail-ridge';
 import { RegimeLatticePanel } from '@/components/desk/regime-lattice';
+import {
+  PersistencePanel,
+  RecoveryPanel,
+  SessionSplitPanel,
+} from '@/components/desk/quant-panels';
 import { useActiveTicker, useTickerStore } from '@/store/ticker';
 import { useHydrated } from '@/hooks/use-hydrated';
 import {
@@ -37,6 +42,9 @@ import type {
   VolRung,
 } from '@/lib/desk/models';
 import type { RegimeLattice } from '@/lib/desk/regime-lattice';
+import type { DrawdownTopology } from '@/lib/desk/drawdown-topology';
+import type { SessionSplit } from '@/lib/desk/session-split';
+import type { VolatilityPersistence } from '@/lib/desk/vol-persistence';
 
 /**
  * The desk: one security, read four ways at once.
@@ -71,7 +79,16 @@ interface DeskResponse {
   range: RangeState;
   participation: ParticipationResult | null;
   intradayAvailable: boolean;
-  coverage: { dailyBars: number; from: string; to: string; intradayBars: number };
+  drawdownTopology: DrawdownTopology | null;
+  sessionSplit: SessionSplit | null;
+  volPersistence: VolatilityPersistence | null;
+  coverage: {
+    dailyBars: number;
+    from: string;
+    to: string;
+    intradayBars: number;
+    exDividendDates: number;
+  };
 }
 
 const tone = (v: number | null | undefined) =>
@@ -152,6 +169,12 @@ export function DeskView() {
             <FlowPanel flow={data.flow} />
 
             <RegimeLatticePanel lattice={data.lattice} />
+
+            <RecoveryPanel topology={data.drawdownTopology} />
+
+            <SessionSplitPanel split={data.sessionSplit} />
+
+            <PersistencePanel persistence={data.volPersistence} />
 
             <ParticipationPanel
               participation={data.participation}

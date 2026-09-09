@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import {
   annualReturns,
+  autocorrelation,
   chain,
   computeMetrics,
   drawdownEpisodes,
@@ -11,6 +12,7 @@ import {
   summarise,
   xirr,
 } from '../src/lib/metrics';
+import { smartFactor } from '../src/lib/metrics/extended';
 import type { DailyRecord } from '../src/lib/engine/types';
 import { makeCalendar } from './helpers';
 
@@ -242,5 +244,48 @@ describe('money-weighted return', () => {
         { date: '2021-01-01', amount: -100 },
       ]),
     ).toBeNull();
+  });
+});
+
+describe('autocorrelation', () => {
+  /*
+   * Hand-worked. For [1, −1, 1, −1] the mean is 0, so the denominator is the
+   * full sum of squares, 4. The lag-1 numerator pairs (−1,1), (1,−1), (−1,1),
+   * summing to −3. ρ₁ = −3/4 exactly.
+   *
+   * That the answer is not −1 is the whole point of the convention: this
+   * estimator divides by n terms while the numerator has only n − k, so it
+   * shrinks toward zero at longer lags. The competing n−k denominator would
+   * return exactly −1 here, and the two definitions are both called
+   * "autocorrelation".
+   */
+  it('matches the biased estimator on a perfectly alternating series', () => {
+    expect(autocorrelation([1, -1, 1, -1], 1)).toBeCloseTo(-0.75, 12);
+    // Lag 2 pairs (1,1) and (−1,−1): numerator +2, so ρ₂ = 0.5.
+    expect(autocorrelation([1, -1, 1, -1], 2)).toBeCloseTo(0.5, 12);
+    // Lag 3 pairs (−1,1) alone: numerator −1, so ρ₃ = −0.25.
+    expect(autocorrelation([1, -1, 1, -1], 3)).toBeCloseTo(-0.25, 12);
+  });
+
+  it('has no value for a flat series, rather than reporting zero', () => {
+    // Zero would read as "no persistence". The truth is "no variance", and a
+    // correlation is undefined without it.
+    expect(autocorrelation([3, 3, 3, 3, 3], 1)).toBeNull();
+  });
+
+  it('refuses a lag the series cannot cover', () => {
+    expect(autocorrelation([1, 2, 3], 3)).toBeNull();
+    expect(autocorrelation([1, 2, 3], 4)).toBeNull();
+    expect(autocorrelation([1, 2, 3], 0)).toBeNull();
+    expect(autocorrelation([1, 2, 3], 1.5)).toBeNull();
+    expect(autocorrelation([], 1)).toBeNull();
+  });
+
+  it('is the estimator the smart ratios penalise with', () => {
+    // smartFactor is √(1 + 2·Σ wₖρₖ) with Bartlett weights wₖ = 1 − k/(lags+1),
+    // floored at one. With lags = 1 on this series ρ₁ = −0.75 and the weight is
+    // 1/2, so the radicand is 1 + 2(0.5)(−0.75) = 0.25 — below one, so the
+    // floor applies and the factor is exactly 1.
+    expect(smartFactor([1, -1, 1, -1], 1)).toBe(1);
   });
 });
