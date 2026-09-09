@@ -18,6 +18,7 @@ import { AXIS_PROPS, ChartFrame, ChartLegend, GRID_PROPS } from '@/components/ch
 import { Skeleton } from '@/components/ui/skeleton';
 import { TailRidgePanel, type TailRidgeData } from '@/components/desk/tail-ridge';
 import { RegimeLatticePanel } from '@/components/desk/regime-lattice';
+import { MarketContextPanels, type MarketContextData } from '@/components/desk/market-context';
 import {
   PersistencePanel,
   RecoveryPanel,
@@ -78,6 +79,9 @@ interface DeskResponse {
   lattice: RegimeLattice | null;
   range: RangeState;
   participation: ParticipationResult | null;
+  liquidity: MarketContextData['liquidity'];
+  benchmark: MarketContextData['benchmark'];
+  peers: MarketContextData['peers'];
   intradayAvailable: boolean;
   drawdownTopology: DrawdownTopology | null;
   sessionSplit: SessionSplit | null;
@@ -169,6 +173,13 @@ export function DeskView() {
             <FlowPanel flow={data.flow} />
 
             <RegimeLatticePanel lattice={data.lattice} />
+
+            {/* How it trades, what it moves with, who it trades against —
+                the three readings that only mean anything relative to
+                something else. */}
+            <MarketContextPanels
+              data={{ liquidity: data.liquidity, benchmark: data.benchmark, peers: data.peers }}
+            />
 
             <RecoveryPanel topology={data.drawdownTopology} />
 
