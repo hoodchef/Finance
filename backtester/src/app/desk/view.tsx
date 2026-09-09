@@ -82,6 +82,7 @@ interface DeskResponse {
   liquidity: MarketContextData['liquidity'];
   benchmark: MarketContextData['benchmark'];
   peers: MarketContextData['peers'];
+  resolution: { periodsPerYear: number; interval: string; daily: boolean };
   intradayAvailable: boolean;
   drawdownTopology: DrawdownTopology | null;
   sessionSplit: SessionSplit | null;
@@ -191,6 +192,23 @@ export function DeskView() {
               participation={data.participation}
               available={data.intradayAvailable}
             />
+
+            {/*
+              A coarser series is stated, not hidden. Every horizon label on
+              this page counts BARS, so on weekly data "1M" is twenty-one weeks.
+              The arithmetic is right either way; the label is what would
+              mislead.
+            */}
+            {!data.resolution.daily && (
+              <p className="rounded-md border border-warning/40 bg-muted/40 p-2.5 text-xs leading-relaxed text-muted-foreground">
+                This security is served as <strong>{data.resolution.interval}</strong> bars, not
+                daily — the vendor publishes no daily series for it. Volatility is annualised over
+                about {Math.round(data.resolution.periodsPerYear)} observations a year rather than
+                252, which is correct. But every horizon on this page counts bars, so a label
+                reading &ldquo;1M&rdquo; is twenty-one {data.resolution.interval.replace('ly', 's')}.
+                Any move that began and ended between two bars is invisible.
+              </p>
+            )}
 
             <p className="text-xs leading-relaxed text-muted-foreground">
               {data.coverage.dailyBars} daily bars from {data.coverage.from} to {data.coverage.to}

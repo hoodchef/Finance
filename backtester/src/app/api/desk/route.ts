@@ -31,6 +31,9 @@ import { normaliseAggregates } from '@/lib/charting/bars';
 // engine reads that declaration and applies the splits; every route that read
 // `bars` and ignored `splits` was charting a cliff. See `adjust.ts`.
 import { backAdjustForSplits } from '@/lib/market-data/adjust';
+// Derived from the median gap between observations, not assumed. One
+// definition, shared with the distribution lab.
+import { periodsPerYear } from '@/lib/lattice/realized';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -190,8 +193,23 @@ export async function GET(request: Request) {
     }
 
     const closes = daily.map((b) => b.close);
+
+    /*
+     * The observation frequency is MEASURED, not assumed.
+     *
+     * Not every listing comes back daily. Canadian tickers are served weekly —
+     * Alpha Vantage's daily adjusted endpoint is premium — so XEQT.TO arrives
+     * as one bar a week. Annualising that by sqrt(252) instead of sqrt(52)
+     * overstates its volatility by a factor of 2.2: the cone reported 25.1%
+     * where the truth is about 11.4%, and the tail ridge is drawn from that
+     * same figure, so the error propagates into every horizon on it.
+     *
+     * The backtest engine already gets this right and warns about it. There is
+     * no reason for the desk to assume where the engine measures.
+     */
+    const perYear = periodsPerYear(daily.map((b) => ({ date: b.date, close: b.close })));
     const momentum = momentumTermStructure(closes);
-    const cone = volatilityCone(closes, 252);
+    const cone = volatilityCone(closes, perYear);
 
     /*
      * The ridge uses the LONGEST realised-volatility window, not the shortest.
@@ -213,7 +231,8 @@ export async function GET(request: Request) {
       cone.find((r) => r.window === 126)?.current ??
       cone.find((r) => r.window === 21)?.current ??
       null;
-    const tails = volLong != null ? buildTailRidge({ closes, volatility: volLong }) : null;
+    const tails =
+      volLong != null ? buildTailRidge({ closes, volatility: volLong, periodsPerYear: perYear }) : null;
     const last = daily[daily.length - 1];
     const prev = daily.length > 1 ? daily[daily.length - 2] : null;
 
@@ -249,7 +268,6 @@ export async function GET(request: Request) {
       // Flow over the last quarter: long enough for a trend to be visible,
       // short enough that a change of regime is not buried under two years.
       flow: flowPressure(daily.slice(-63)),
-      // Daily bars, so √252 is the right annualiser.
       volatility: cone,
       tails,
       lattice: buildRegimeLattice(daily),
@@ -275,6 +293,20 @@ export async function GET(request: Request) {
       range: rangeState(daily),
       participation: intraday ? participationProfile(intraday, 30) : null,
       intradayAvailable: Boolean(intraday?.length),
+      /**
+       * What one bar actually is.
+       *
+       * The horizon labels above — 1D, 1W, 1M — count BARS, so on a weekly
+       * series "1M" is twenty-one weeks rather than twenty-one days. Rather
+       * than silently relabel them, the resolution is reported and the page
+       * says what it means. Quietly correct arithmetic under a wrong label is
+       * the worse of the two failures.
+       */
+      resolution: {
+        periodsPerYear: perYear,
+        interval: perYear >= 200 ? 'daily' : perYear >= 40 ? 'weekly' : 'monthly',
+        daily: perYear >= 200,
+      },
       coverage: {
         dailyBars: daily.length,
         from: daily[0].date,
