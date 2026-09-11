@@ -1,0 +1,195 @@
+{
+ "break_suite": [
+  [
+   "probabilities sum to 90%",
+   true
+  ],
+  [
+   "g = 6% (> Rf)",
+   true
+  ],
+  [
+   "WACC lever +1%",
+   true
+  ],
+  [
+   "bonus depreciation OFF",
+   true
+  ],
+  [
+   "satellite life 5 yrs",
+   true
+  ],
+  [
+   "zero commercial adoption",
+   true
+  ],
+  [
+   "Bull take 40% (capacity breach)",
+   true
+  ],
+  [
+   "no launch losses",
+   true
+  ],
+  [
+   "Ligado closes 2026",
+   true
+  ],
+  [
+   "Tier-1 start 2040",
+   true
+  ],
+  [
+   "fleet shrinks after 2029",
+   true
+  ],
+  [
+   "valuation date after stub midpoint",
+   true
+  ]
+ ],
+ "fuzz": [
+  [
+   0,
+   true,
+   1.2255669319137073e-14,
+   46.3797903705269,
+   1
+  ],
+  [
+   1,
+   true,
+   1.2696570801031194e-14,
+   47.9926720153229,
+   0
+  ],
+  [
+   2,
+   true,
+   4.7553669470244105e-14,
+   61.9933298096361,
+   3
+  ],
+  [
+   3,
+   true,
+   4.5630166312093934e-14,
+   59.6211600508293,
+   1
+  ],
+  [
+   4,
+   true,
+   9.33405690072402e-14,
+   44.1416714324549,
+   1
+  ],
+  [
+   5,
+   true,
+   6.732010690973554e-14,
+   45.739312824204,
+   2
+  ]
+ ],
+ "properties": [
+  [
+   "value rises with take_t1",
+   true,
+   [
+    0.0,
+    17.47,
+    41.56,
+    57.4,
+    96.52,
+    170.0
+   ]
+  ],
+  [
+   "value rises with arpu_t1",
+   true,
+   [
+    25.57,
+    41.56,
+    57.4,
+    73.18,
+    88.75
+   ]
+  ],
+  [
+   "value rises with take_t2",
+   true,
+   [
+    47.62,
+    54.14,
+    60.66,
+    73.66
+   ]
+  ],
+  [
+   "value falls with unit_cost",
+   true,
+   [
+    59.19,
+    57.4,
+    55.6,
+    53.81
+   ]
+  ],
+  [
+   "value falls with wacc_shift",
+   true,
+   [
+    97.88,
+    57.4,
+    37.91,
+    26.63
+   ]
+  ],
+  [
+   "value falls with opex_27",
+   true,
+   [
+    61.45,
+    57.4,
+    52.24,
+    44.85
+   ]
+  ],
+  [
+   "value falls with spec_fee",
+   true,
+   [
+    59.84,
+    57.4,
+    54.96
+   ]
+  ],
+  [
+   "value rises with cip_credit",
+   true,
+   [
+    55.34,
+    57.4,
+    59.28
+   ]
+  ],
+  [
+   "per-share value continuous through conversion triggers (max step over 0.01pp take)",
+   true,
+   "max step $0.079; range $57.4-$88.7"
+  ],
+  [
+   "finite, non-negative under extremes",
+   true,
+   [
+    419.09,
+    21.47,
+    22.62,
+    45.69,
+    0.0
+   ]
+  ]
+ ]
+}
