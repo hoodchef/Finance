@@ -10,7 +10,7 @@ import {
   DropdownMenuLabel,
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
-import { TICKER_LENSES } from './nav';
+import { lensesFor } from './nav';
 import { useActiveTicker, useRecentTickers, useTickerStore } from '@/store/ticker';
 import { cn } from '@/lib/utils';
 
@@ -138,7 +138,7 @@ export function TickerBar() {
         aria-label={`Views of ${symbol}`}
         className="ml-auto flex shrink-0 items-center gap-0.5 overflow-x-auto"
       >
-        {TICKER_LENSES.map((lens) => {
+        {lensesFor(symbol).map((lens) => {
           const active = isActive(pathname, lens.href);
           const Icon = lens.icon;
           return (

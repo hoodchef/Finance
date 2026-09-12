@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, it } from 'vitest';
-import { NAV_ITEMS, TICKER_LENSES } from '../src/components/layout/nav';
+import { NAV_ITEMS, TICKER_LENSES, lensesFor } from '../src/components/layout/nav';
 
 /**
  * The security in focus, and the trail behind it.
@@ -191,6 +191,19 @@ describe('the views the bar offers', () => {
       const nav = NAV_ITEMS.find((i) => i.href === lens.href);
       expect(lens.label).toBe(nav?.label);
     }
+  });
+});
+
+describe('a valuation lens, only where a model exists', () => {
+  it('leaves the four peers alone for a ticker without a model', () => {
+    expect(lensesFor('AAPL')).toBe(TICKER_LENSES);
+    expect(lensesFor(null)).toBe(TICKER_LENSES);
+  });
+
+  it('appends Valuation, named as the menu names it, for a modelled ticker', () => {
+    const l = lensesFor('asts');
+    expect(l.map((x) => x.href)).toEqual([...TICKER_LENSES.map((x) => x.href), '/valuation']);
+    expect(l[l.length - 1]).toBe(NAV_ITEMS.find((i) => i.href === '/valuation'));
   });
 });
 

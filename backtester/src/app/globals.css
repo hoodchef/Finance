@@ -61,6 +61,13 @@
     --series-12: #ca8a04;
     --series-13: #c026d3;
     --series-14: #64748b;
+    /* Valuation scenarios, worst to best (Distress, Bear, Base, Bull). Chosen from this
+       theme's own series by the palette validator: separable under deutan, protan
+       and normal vision, contrast against the card, and no green on the losing cases. */
+    --scenario-0: var(--series-1);
+    --scenario-1: var(--series-5);
+    --scenario-2: var(--series-9);
+    --scenario-3: var(--series-12);
 
     --radius: 0.5rem;
   }
@@ -115,6 +122,13 @@
     --series-12: #facc15;
     --series-13: #e879f9;
     --series-14: #94a3b8;
+    /* Valuation scenarios, worst to best (Distress, Bear, Base, Bull). Chosen from this
+       theme's own series by the palette validator: separable under deutan, protan
+       and normal vision, contrast against the card, and no green on the losing cases. */
+    --scenario-0: var(--series-1);
+    --scenario-1: var(--series-8);
+    --scenario-2: var(--series-11);
+    --scenario-3: var(--series-12);
   }
 
   /**
@@ -184,6 +198,13 @@
     --series-12: #bfe3f0;
     --series-13: #f0c674;
     --series-14: #8a8578;
+    /* Valuation scenarios, worst to best (Distress, Bear, Base, Bull). Chosen from this
+       theme's own series by the palette validator: separable under deutan, protan
+       and normal vision, contrast against the card, and no green on the losing cases. */
+    --scenario-0: var(--series-2);
+    --scenario-1: var(--series-8);
+    --scenario-2: var(--series-11);
+    --scenario-3: var(--series-14);
   }
 
   /**
@@ -254,6 +275,13 @@
     --series-12: #dce775;
     --series-13: #9575cd;
     --series-14: #90a4ae;
+    /* Valuation scenarios, worst to best (Distress, Bear, Base, Bull). Chosen from this
+       theme's own series by the palette validator: separable under deutan, protan
+       and normal vision, contrast against the card, and no green on the losing cases. */
+    --scenario-0: var(--series-3);
+    --scenario-1: var(--series-5);
+    --scenario-2: var(--series-6);
+    --scenario-3: var(--series-13);
   }
 }
 

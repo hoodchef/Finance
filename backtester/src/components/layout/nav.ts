@@ -6,6 +6,7 @@ import {
   CandlestickChart,
   FlaskConical,
   History,
+  Landmark,
   Hourglass,
   LayoutDashboard,
   LineChart,
@@ -18,15 +19,16 @@ import {
   Waves,
 } from 'lucide-react';
 import type { LucideIcon } from 'lucide-react';
+import { intrinsicModelFor } from '@/lib/valuation/registry';
 
 /**
  * Platform information architecture.
  *
- * Fourteen destinations, grouped by **what each one is about** rather than by
+ * Nineteen destinations, grouped by **what each one is about** rather than by
  * what you do there:
  *
  *   Plan       — you: your income, your taxes, your retirement.
- *   Markets    — one security: its price, its filings, its options.
+ *   Markets    — one security: its price, its filings, its value, its options.
  *   Portfolio  — one allocation: build it, test it, take it apart, project it.
  *   Workspace  — your saved work, and the machinery underneath it.
  *
@@ -36,8 +38,8 @@ import type { LucideIcon } from 'lucide-react';
  * across two groups, so Research sat beside Studies and Simulator, which are
  * about a portfolio, while Options sat five rows from the chart of the same
  * company. Grouping by subject puts Charts, Research and Options together,
- * which is exactly the set `TickerBar` moves between, and gives four menus of
- * three, three, five and three instead of three, two, six and three.
+ * which is exactly the set `TickerBar` moves between, and at the time gave four
+ * menus of three, three, five and three instead of three, two, six and three.
  *
  * Route paths are stable even where labels changed; they are deep-link
  * contracts and renaming them buys nothing. Labels are load-bearing too:
@@ -120,6 +122,13 @@ export const NAV_GROUPS: NavGroup[] = [
         icon: Building2,
         short: 'Co',
         hint: 'Company fundamentals from SEC filings',
+      },
+      {
+        href: '/valuation',
+        label: 'Valuation',
+        icon: Landmark,
+        short: 'Value',
+        hint: 'Intrinsic value, scenario by scenario',
       },
       {
         href: '/options',
@@ -241,6 +250,19 @@ export const NAV_ITEMS: NavItem[] = NAV_GROUPS.flatMap((g) => g.items);
 export const TICKER_LENSES: NavItem[] = ['/chart', '/research', '/options', '/backtest']
   .map((href) => NAV_ITEMS.find((i) => i.href === href))
   .filter((i): i is NavItem => Boolean(i));
+
+/**
+ * The lenses for one security: the four every security has, plus Valuation
+ * for the few with an intrinsic model. Appended rather than added to the four,
+ * because it is not a peer of them — a chart exists for every ticker, a
+ * valuation only where someone has built one — and a bar that offered it for
+ * every ticker would lead most of them to an empty page.
+ */
+export function lensesFor(symbol: string | null | undefined): NavItem[] {
+  if (!intrinsicModelFor(symbol)) return TICKER_LENSES;
+  const valuation = NAV_ITEMS.find((i) => i.href === '/valuation');
+  return valuation ? [...TICKER_LENSES, valuation] : TICKER_LENSES;
+}
 
 /**
  * The bottom bar on mobile. Five, not fourteen: a bar of fourteen targets is

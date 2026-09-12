@@ -19,6 +19,15 @@ import { Skeleton } from '@/components/ui/skeleton';
 import { TailRidgePanel, type TailRidgeData } from '@/components/desk/tail-ridge';
 import { RegimeLatticePanel } from '@/components/desk/regime-lattice';
 import { MarketContextPanels, type MarketContextData } from '@/components/desk/market-context';
+import dynamic from 'next/dynamic';
+import { intrinsicModelFor } from '@/lib/valuation/registry';
+
+// Loaded only for a security that has an intrinsic model, so the engine is not
+// part of the desk for the tickers — nearly all of them — that do not.
+const IntrinsicValueCard = dynamic(
+  () => import('@/components/valuation/intrinsic-card').then((m) => m.IntrinsicValueCard),
+  { ssr: false },
+);
 import {
   PersistencePanel,
   RecoveryPanel,
@@ -163,6 +172,11 @@ export function DeskView() {
         ) : data ? (
           <>
             <Tape data={data} />
+
+            {/* Only for securities with an intrinsic model. */}
+            {intrinsicModelFor(data.symbol) && (
+              <IntrinsicValueCard symbol={data.symbol} price={data.last?.close ?? null} />
+            )}
 
             <div className="grid gap-4 xl:grid-cols-2">
               <MomentumPanel rungs={data.momentum.rungs} agreement={data.momentum.agreement} />

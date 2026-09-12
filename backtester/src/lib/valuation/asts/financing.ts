@@ -43,8 +43,16 @@ import { perShare, type ModelRun, type ScenarioRun } from './engine';
 export const LIGADO_FACILITY = 550;
 
 export interface FinancingOptions {
-  /** Issue price for new equity, $ per share in today's dollars. */
-  issuePrice: number;
+  /**
+   * Issue price for new equity, $ per share in today's dollars — one price for
+   * every scenario, or one per scenario (Distress, Bear, Base, Bull).
+   *
+   * Per scenario is the coherent choice: a raise in the Bear world happens at a
+   * Bear-world price. One price for all — today's quote, say — assumes the
+   * market never learns which world it is in, so it shows new money overpaying
+   * in the bad states and existing holders "gaining" from it.
+   */
+  issuePrice: number | readonly number[];
   /** Count the committed Ligado SPV facility as liquidity from the closing year. */
   useLigadoFacility: boolean;
   /** Liquidity kept in reserve before a raise is triggered, $mm. The Risk sheet's measure is 0. */
@@ -53,6 +61,7 @@ export interface FinancingOptions {
 
 export interface ScenarioFinancing {
   s: number;
+  issuePrice: number;
   availableLiquidity: number;
   /** New equity raised each period, $mm nominal (value view). */
   raises: number[];
@@ -98,6 +107,7 @@ function outstandingFraction(y: number, maturity: string): number {
 
 export function scenarioFinancing(inputs: AstsInputs, r: ScenarioRun, o: FinancingOptions): ScenarioFinancing {
   const L0 = availableLiquidity(inputs);
+  const issuePrice = typeof o.issuePrice === 'number' ? o.issuePrice : o.issuePrice[r.s];
   const facilityCum = YEARS.map((y) => (o.useLigadoFacility && y >= r.p.ligado_year ? LIGADO_FACILITY : 0));
 
   /* ---- value view: raise the FCFF shortfall, just in time */
@@ -111,7 +121,8 @@ export function scenarioFinancing(inputs: AstsInputs, r: ScenarioRun, o: Financi
     }
   });
   const raisedPv = raises.reduce((t, x, i) => t + x * r.df[i], 0);
-  const newShares = o.issuePrice > 0 ? raisedPv / o.issuePrice : raisedPv > 0 ? Infinity : 0;
+  // At a zero issue price any raise takes the whole company: today's holders keep nothing.
+  const newShares = issuePrice > 0 ? raisedPv / issuePrice : raisedPv > 0 ? Infinity : 0;
   const vpsFinanced =
     raisedPv === 0 ? r.vps : Number.isFinite(newShares) ? perShare(r.E0 + raisedPv, r.S0 + newShares, r.instruments).vps : 0;
 
@@ -140,11 +151,13 @@ export function scenarioFinancing(inputs: AstsInputs, r: ScenarioRun, o: Financi
 
   return {
     s: r.s,
+    issuePrice,
     availableLiquidity: L0,
     raises,
     raisedNominal: raised,
     raisedPv,
-    newShares: Number.isFinite(newShares) ? newShares : 0,
+    // Infinite when a raise is priced at zero: the new money takes the whole company.
+    newShares,
     vpsModel: r.vps,
     vpsFinanced,
     transfer: vpsFinanced - r.vps,
@@ -166,4 +179,9 @@ export function financing(inputs: AstsInputs, model: ModelRun, o: FinancingOptio
     pwModel: model.pw,
     pwFinanced: scenarios.reduce((t, f, i) => t + model.probs[i] * f.vpsFinanced, 0),
   };
+}
+
+/** Issue prices at a discount to each scenario's own fair value — the basis that nests the model at 0%. */
+export function valueBasisPrices(model: ModelRun, discount: number): [number, number, number, number] {
+  return model.runs.map((r) => r.vps * (1 - discount)) as [number, number, number, number];
 }

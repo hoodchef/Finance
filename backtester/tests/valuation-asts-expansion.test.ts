@@ -4,7 +4,8 @@ import path from 'node:path';
 import { deliveredInputs, YEARS } from '../src/lib/valuation/asts/inputs';
 import { runModel, snapshotStats } from '../src/lib/valuation/asts/engine';
 import { headline, expectedReturn } from '../src/lib/valuation/asts/summary';
-import { availableLiquidity, financing, scenarioFinancing } from '../src/lib/valuation/asts/financing';
+import { availableLiquidity, financing, scenarioFinancing, valueBasisPrices } from '../src/lib/valuation/asts/financing';
+import { ANALYST_MC, ANALYST_PW } from '../src/lib/valuation/asts/stamped';
 
 const FIX = JSON.parse(fs.readFileSync(path.join(__dirname, 'fixtures', 'asts-reference.json'), 'utf8'));
 const rel = (a: number, b: number) => Math.abs(a - b) / Math.max(1, Math.abs(b));
@@ -128,5 +129,57 @@ describe('financing — cash view', () => {
   it('coupons stop at maturity', () => {
     const y2037 = f.runway.interest[YEARS.indexOf(2037)];
     expect(y2037).toBe(0);
+  });
+});
+
+describe('the analyst’s stamped figures shown beside the live ones', () => {
+  it('are exactly what analytics.json and the workbook say', () => {
+    const mc = FIX.analytics.mc;
+    expect(ANALYST_MC.mean).toBe(mc.mean);
+    expect(ANALYST_MC.se).toBe(mc.se);
+    expect(ANALYST_MC.p5).toBe(mc.pct['5']);
+    expect(ANALYST_MC.p10).toBe(mc.pct['10']);
+    expect(ANALYST_MC.p50).toBe(mc.pct['50']);
+    expect(ANALYST_MC.p90).toBe(mc.pct['90']);
+    expect(ANALYST_MC.pAbove).toBe(mc.p_above);
+    expect(ANALYST_MC.pZero).toBe(mc.p_zero);
+    expect(ANALYST_MC.meanNonDistress).toBe(mc.mean_nondistress);
+    expect(ANALYST_MC.paths).toBe(mc.n);
+    expect(ANALYST_MC.seed).toBe(mc.seed);
+    expect(ANALYST_MC.price).toBe(FIX.market.price);
+    // analytics.json's value; the fixture's recomputation lands 2 ulp away (a different summation
+    // path), and the workbook stores 15 significant digits. Same number, three spellings.
+    expect(Math.abs(ANALYST_PW - FIX.delivered.pw)).toBeLessThan(1e-12);
+    expect(Math.abs(ANALYST_PW - FIX.workbook.summary.pw)).toBeLessThan(1e-12);
+  });
+});
+
+describe('financing — the issue-price basis', () => {
+  const opts = (issuePrice: number | readonly number[]) => ({ issuePrice, useLigadoFacility: false, minBuffer: 0 });
+
+  it('priced at each scenario’s own value, a 0% discount reproduces the model in every scenario', () => {
+    const f = financing(inputs, model, opts(valueBasisPrices(model, 0)));
+    f.scenarios.forEach((sc, s) => close(sc.vpsFinanced, model.runs[s].vps, `scenario ${s}`));
+    close(f.pwFinanced, model.pw, 'prob-weighted');
+  });
+
+  it('a discount to scenario value can only dilute', () => {
+    for (const d of [0.1, 0.2, 0.3]) {
+      const f = financing(inputs, model, opts(valueBasisPrices(model, d)));
+      f.scenarios.forEach((sc, s) => expect(sc.vpsFinanced).toBeLessThanOrEqual(model.runs[s].vps + 1e-9));
+      expect(f.pwFinanced).toBeLessThan(model.pw);
+    }
+  });
+
+  it('one price for every scenario shows the other lens: new money overpaying where value has collapsed', () => {
+    // Bear value ~$1.19; raising Bear's $2.5bn at today's $62.42 transfers value to today's holders.
+    const f = financing(inputs, model, opts(PRICE));
+    expect(f.scenarios[1].vpsFinanced).toBeGreaterThan(model.runs[1].vps);
+  });
+
+  it('a raise at a zero issue price leaves today’s holders nothing', () => {
+    const f = scenarioFinancing(inputs, model.runs[1], opts([0, 0, 0, 0]));
+    expect(f.raisedPv).toBeGreaterThan(0);
+    expect(f.vpsFinanced).toBe(0);
   });
 });
